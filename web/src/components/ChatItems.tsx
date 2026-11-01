@@ -1,6 +1,6 @@
 import { memo, useRef, useState } from 'react';
 import MarkdownView, { CopyButton } from './MarkdownView';
-import type { ChatItem } from '../lib/chatStore';
+import { injectedSummary, type ChatItem } from '../lib/chatStore';
 import { imageSrc } from '../lib/api';
 import { openLightbox } from './Lightbox';
 import { t, useLang } from '../lib/i18n';
@@ -50,6 +50,20 @@ export function UserItem({ item, onRewind }: { item: Extract<ChatItem, { kind: '
   const menu = useContextMenu();
   const bubble = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  if (item.injected) {
+    const summary = injectedSummary(item.injected, item.text);
+    return (
+      <div className="my-1 rounded-lg border border-dashed border-white/10 bg-white/[0.02] text-xs">
+        <button className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-zinc-400 hover:text-zinc-200" onClick={() => setOpen((v) => !v)}>
+          <span className="text-[10px] shrink-0">{open ? '▾' : '▸'}</span>
+          <span className="shrink-0">{t(item.injected === 'task' ? 'chat.injectedTask' : 'chat.injectedCommand')}</span>
+          {summary && <span className="min-w-0 truncate text-zinc-500">{summary}</span>}
+          <span className="ml-auto shrink-0 text-[10px] text-zinc-600">{t('chat.injectedHint')}</span>
+        </button>
+        {open && <div className="px-3 pb-2 whitespace-pre-wrap font-mono text-[11px] text-zinc-400 max-h-80 overflow-auto">{item.text}</div>}
+      </div>
+    );
+  }
   if (item.compact) {
     return (
       <div className="my-1 rounded-lg border border-dashed border-white/10 bg-white/[0.02] text-xs">

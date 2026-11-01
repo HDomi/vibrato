@@ -1,4 +1,4 @@
-import { currentTodos, displayTitle, type ChatSession } from './chatStore';
+import { currentTodos, displayTitle, isInjected, type ChatSession } from './chatStore';
 import { t } from './i18n';
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -9,7 +9,7 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s
  */
 export function handoffText(s: ChatSession): string {
   const author = s.agent === 'claude' ? 'Claude' : 'Codex';
-  const asks = s.items.filter((i) => i.kind === 'user' && !i.compact && i.text.trim()).slice(-8)
+  const asks = s.items.filter((i) => i.kind === 'user' && !isInjected(i) && i.text.trim()).slice(-8)
     .map((i) => `- ${clip((i as { text: string }).text.trim().replace(/\n+/g, ' '), 300)}`);
   let last = '';
   for (let i = s.items.length - 1; i >= 0; i--) { const it = s.items[i]; if (it.kind === 'assistant' && !it.parent && it.text.trim()) { last = it.text.trim(); break; } }

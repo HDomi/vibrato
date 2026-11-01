@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { currentTodos, displayTitle, type ChatItem, type ChatSession } from '../lib/chatStore';
+import { currentTodos, displayTitle, isInjected, type ChatItem, type ChatSession } from '../lib/chatStore';
 import type { AgentId, Attachment, PermissionModeId, RewindResult } from '../lib/agent';
 import { api, type Backlog, type HistorySession, type ModelInfo, type WorktreeInfo } from '../lib/api';
 import LeftoverWorktrees from './LeftoverWorktrees';
@@ -101,7 +101,7 @@ export function ModelSelect({ agent, value, onChange, compact }: { agent: AgentI
 
 function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: { approve: Props['onApprove']; answer: Props['onAnswer']; cwd: string; rewind?: (messageId: string) => void; latestVerify?: string; verify?: () => void; review?: (changes: Extract<ChatItem, { kind: 'changes' }>) => void; otherAgent?: string }): React.ReactNode {
   switch (it.kind) {
-    case 'user': return <UserItem key={it.id} item={it} onRewind={actions.rewind && UUID_RE.test(it.id) && !it.compact ? () => actions.rewind!(it.id) : undefined} />;
+    case 'user': return <UserItem key={it.id} item={it} onRewind={actions.rewind && UUID_RE.test(it.id) && !isInjected(it) ? () => actions.rewind!(it.id) : undefined} />;
     case 'assistant': return <AssistantItem key={it.id} item={it} baseDir={actions.cwd} />;
     case 'tool': {
       const kids = childrenOf.get(it.id);
@@ -431,7 +431,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   };
   const jump = () => { stick.current = true; setAtBottom(true); scrollToBottom(); };
   // Blocks worth picking by default: the conversation itself, not tool calls or status lines.
-  const exportable = top.filter((it) => !(it.kind === 'assistant' && it.streaming && !it.text) && !(it.kind === 'user' && it.compact));
+  const exportable = top.filter((it) => !(it.kind === 'assistant' && it.streaming && !it.text) && !(it.kind === 'user' && isInjected(it)));
   const chatOnly = () => new Set(exportable.filter((it) => it.kind === 'user' || it.kind === 'assistant').map((it) => it.id));
   const startExport = () => { setSearching(false); setPicked(chatOnly()); };
   const togglePick = (id: string) => setPicked((p) => { if (!p) return p; const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });

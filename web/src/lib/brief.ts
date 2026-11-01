@@ -1,4 +1,4 @@
-import { currentTodos, type ChatSession } from './chatStore';
+import { currentTodos, isInjected, type ChatSession } from './chatStore';
 
 export interface SessionBrief { asks: number; files: string[]; commits: string[]; todos: string[]; last: string | null }
 
@@ -29,7 +29,7 @@ export function sessionBrief(s: Pick<ChatSession, 'items' | 'todos' | 'cwd'>): S
   let last: string | null = null;
   const rel = (p: string) => (p.startsWith(s.cwd + '/') ? p.slice(s.cwd.length + 1) : p);
   for (const it of s.items) {
-    if (it.kind === 'user' && !it.compact && it.text.trim()) asks++;
+    if (it.kind === 'user' && !isInjected(it) && it.text.trim()) asks++;
     else if (it.kind === 'assistant' && !it.parent && it.text.trim()) last = it.text.trim();
     else if (it.kind === 'changes') for (const f of it.files) files.add(f.path);
     else if (it.kind === 'tool' && !it.isError) {

@@ -2,7 +2,8 @@ import type { WorktreeInfo } from './api';
 import type { AgentEvent, AgentId, Attachment, PermissionModeId, Question, TaskInfo, TodoItem, TurnFile, VerifyStatus } from './agent';
 
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string; attachments: Attachment[]; pending?: boolean; /** Compaction summary injected by the CLI, not typed by the user. */ compact?: boolean }
+  | { kind: 'user'; id: string; text: string; attachments: Attachment[]; pending?: boolean; /** Compaction summary injected by the CLI, not typed by the user. */ compact?: boolean;
+      /** Other user-role turns the CLI wrote itself: background task notices, slash commands run in the terminal. */ injected?: InjectedKind }
   | { kind: 'assistant'; id: string; text: string; thinking: string; parent: string | null; streaming: boolean; /** When the block finished (server ms); absent for blocks loaded from saved history. */ at?: number }
   | { kind: 'tool'; id: string; name: string; input: unknown; output: string | null; isError: boolean; parent: string | null; elapsed: number; done: boolean; /** Images the tool returned: absolute paths, or data: URIs from saved history. */ images?: string[] }
   | { kind: 'approval'; id: string; toolName: string; input: unknown; canAlwaysAllow: boolean; decision: string | null }
@@ -17,10 +18,38 @@ const COMPACT_PREFIX = 'This session is being continued from a previous conversa
 /** Claude Code injects its compaction summary as a user turn; it must not be shown or titled as the user's words. */
 export function isCompactSummary(text: string): boolean { return text.trimStart().startsWith(COMPACT_PREFIX); }
 
+export type InjectedKind = 'task' | 'command';
+/**
+ * Claude Code records some turns as user messages that the user never typed: "<task-notification>" when a
+ * background task or monitor ends (or was orphaned by a restart), and "<command-name>" / "<local-command-stdout>"
+ * for slash commands run in the terminal CLI. Live they never reach the chat; a transcript replay must not show
+ * them as the user's words. "skip" is pure bookkeeping (the caveat line before a local command).
+ */
+export function injectedKind(text: string): InjectedKind | 'skip' | null {
+  const m = text.trimStart().match(/^<([\w-]+)>/);
+  if (!m) return null;
+  if (m[1] === 'task-notification') return 'task';
+  if (m[1] === 'local-command-caveat') return 'skip';
+  if (/^(command-name|command-message|command-args|local-command-stdout|local-command-stderr)$/.test(m[1])) return 'command';
+  return null;
+}
+
+/** One line for a collapsed injected turn: the notice's summary, or the command and its output. */
+export function injectedSummary(kind: InjectedKind, text: string): string {
+  const tag = (name: string) => text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim() ?? '';
+  const oneLine = (v: string) => v.replace(/\s+/g, ' ').trim().slice(0, 160);
+  if (kind === 'task') return oneLine(tag('summary') || tag('status'));
+  const cmd = [tag('command-name'), tag('command-args')].filter(Boolean).join(' ');
+  return oneLine(cmd || tag('local-command-stdout') || tag('local-command-stderr'));
+}
+
+/** A user item the user did not type (compaction summary, CLI notice): not a prompt, title, or rewind point. */
+export function isInjected(it: Extract<ChatItem, { kind: 'user' }>): boolean { return !!(it.compact || it.injected); }
+
 /** Tab / sidebar title: the first real user prompt, skipping compaction summaries. */
 export function sessionTitle(items: ChatItem[], max = 40): string | null {
   for (const it of items) {
-    if (it.kind === 'user' && !it.compact && it.text.trim()) return it.text.trim().split('\n')[0].slice(0, max);
+    if (it.kind === 'user' && !isInjected(it) && it.text.trim()) return it.text.trim().split('\n')[0].slice(0, max);
   }
   return null;
 }
@@ -306,7 +335,14 @@ export function itemsFromHistory(messages: Array<{ type: string; uuid: string; m
     const msg = m.message as { role?: string; content?: unknown } | undefined;
     const content = msg?.content;
     if (m.type === 'user') {
-      if (typeof content === 'string') { const s = splitAttachments(content); out.push({ kind: 'user', id: m.uuid, text: s.text, attachments: s.attachments, compact: isCompactSummary(s.text) || undefined }); continue; }
+      const pushUser = (raw: string) => {
+        const injected = injectedKind(raw);
+        if (injected === 'skip') return;
+        if (injected) { out.push({ kind: 'user', id: m.uuid, text: raw.trim(), attachments: [], injected }); return; }
+        const s = splitAttachments(raw);
+        out.push({ kind: 'user', id: m.uuid, text: s.text, attachments: s.attachments, compact: isCompactSummary(s.text) || undefined });
+      };
+      if (typeof content === 'string') { pushUser(content); continue; }
       if (!Array.isArray(content)) continue;
       const texts: string[] = [];
       for (const b of content as Array<Record<string, unknown>>) {
@@ -320,7 +356,7 @@ export function itemsFromHistory(messages: Array<{ type: string; uuid: string; m
           if (i >= 0) out[i] = { ...(out[i] as Extract<ChatItem, { kind: 'tool' }>), output: text, isError: Boolean(b.is_error), done: true, ...(images.length ? { images } : {}) };
         }
       }
-      if (texts.length && !m.parent_tool_use_id) { const s = splitAttachments(texts.join('\n')); out.push({ kind: 'user', id: m.uuid, text: s.text, attachments: s.attachments, compact: isCompactSummary(s.text) || undefined }); }
+      if (texts.length && !m.parent_tool_use_id) pushUser(texts.join('\n'));
     } else if (m.type === 'assistant' && Array.isArray(content)) {
       let text = ''; let thinking = '';
       for (const b of content as Array<Record<string, unknown>>) {
