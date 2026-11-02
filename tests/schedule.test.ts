@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { cleanSchedule, dueAction, earliestNext, latestOccurrence, promptText, ScheduleError, type Schedule, type ScheduleRun } from '../server/schedule';
 import { HELPER_SCRIPT, parseOwnWakes, sudoersRule } from '../server/schedulePower';
+import { describeCron, parseCron } from '../web/src/lib/toolbox/cron';
 
 const at = (h: number, m = 0, d = 29) => new Date(2026, 9, d, h, m).getTime();
 const base = (over: Partial<Schedule> = {}): Schedule => ({
@@ -83,4 +84,26 @@ test('schedule watch: notifies status changes worth telling, never on the first 
   const prev = new Map([['a', run('a', 'running')], ['b', run('b', 'done')]]);
   const out = runTransitions(prev, [run('a', 'waiting'), run('b', 'done'), run('c', 'missed'), run('d', 'running')]);
   assert.deepEqual(out.map((r) => [r.id, r.status]), [['a', 'waiting'], ['c', 'missed']]);
+});
+
+test('cron description: either day field may match, months, repeats, both languages', () => {
+  const d = (e: string, lang: 'ko' | 'en') => describeCron(parseCron(e), lang);
+  assert.equal(d('59 23 3 11 1', 'ko'), '11월 3일 또는 11월의 매주 월요일 23:59');
+  assert.equal(d('59 23 3 11 1', 'en'), 'November 3 or every Monday in November at 23:59');
+  assert.equal(d('0 9 * * 1-5', 'ko'), '매주 월~금 09:00');
+  assert.equal(d('0 9 * * 1-5', 'en'), 'Every Mon–Fri at 09:00');
+  assert.equal(d('0 3 1 * *', 'ko'), '매월 1일 03:00');
+  assert.equal(d('0 3 1 * *', 'en'), 'Day 1 of every month at 03:00');
+  assert.equal(d('30 18 * 11 *', 'ko'), '11월 매일 18:30');
+  assert.equal(d('*/15 9-18 * * 1-5', 'ko'), '매주 월~금 09:00~18:59 사이 15분마다');
+  assert.equal(d('*/15 9-18 * * 1-5', 'en'), 'Every 15 minutes between 09:00 and 18:59, every Mon–Fri');
+  assert.equal(d('0 */6 * * *', 'ko'), '6시간마다 정각');
+  assert.equal(d('0 */6 * * *', 'en'), 'Every 6 hours at :00');
+  assert.equal(d('0 * * * *', 'ko'), '매시 정각');
+  // "0,30" is two clock minutes, not "every 30 minutes"; "*/30" is the repeat.
+  assert.equal(d('0,30 9,18 * * *', 'ko'), '매일 09:00 · 09:30 · 18:00 · 18:30');
+  assert.equal(d('*/30 9,18 * * *', 'ko'), '9, 18시에 30분마다');
+  assert.equal(d('* * * * *', 'en'), 'Every minute');
+  assert.equal(d('0 9 * * 1,3,5', 'ko'), '매주 월, 수, 금요일 09:00');
+  assert.equal(d('@yearly', 'en'), 'January 1 at 00:00');
 });

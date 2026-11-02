@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import cronstrue from 'cronstrue';
-import 'cronstrue/locales/ko';
-import { CRON_FIELD_NAMES, CRON_PRESETS, fieldSummary, nextRuns, parseCron } from '../../lib/toolbox/cron';
+import { CRON_FIELD_NAMES, CRON_PRESETS, describeCron, fieldSummary, nextRuns, parseCron } from '../../lib/toolbox/cron';
 import { getLang, t } from '../../lib/i18n';
 import { relativeTime } from '../../lib/toolbox/time';
 import { CopyButton, Section, Seg, btn, errText, input, mono, usePersisted } from './ui';
@@ -13,10 +11,7 @@ export default function CronTool() {
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(id); }, []);
   const ko = getLang() === 'ko';
   const parsed = useMemo(() => { try { return { ok: true as const, s: parseCron(expr) }; } catch (e) { return { ok: false as const, msg: errText(e) }; } }, [expr]);
-  const desc = useMemo(() => {
-    if (!parsed.ok) return '';
-    try { return cronstrue.toString(parsed.s.source, { locale: ko ? 'ko' : 'en', use24HourTimeFormat: true, verbose: true }); } catch { return ''; }
-  }, [parsed, ko]);
+  const desc = useMemo(() => (parsed.ok ? describeCron(parsed.s, ko ? 'ko' : 'en') : ''), [parsed, ko]);
   const runs = useMemo(() => (parsed.ok ? nextRuns(parsed.s, 10, now, zone === 'utc') : []), [parsed, now, zone]);
   const fmt = (d: Date) => zone === 'utc'
     ? d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC'

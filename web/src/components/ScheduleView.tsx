@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import cronstrue from 'cronstrue';
-import 'cronstrue/locales/ko';
 import { api, type AgentContext, type RecentSession, type Schedule, type ScheduleInput, type ScheduleRun, type ScheduleRunStatus, type ScheduleSnapshot, type SchedulePower } from '../lib/api';
-import { CRON_PRESETS, nextRuns, parseCron } from '../lib/toolbox/cron';
+import { CRON_PRESETS, describeCron as describe, nextRuns, parseCron } from '../lib/toolbox/cron';
 import { relativeTime } from '../lib/toolbox/time';
 import { getLang, t, useLang } from '../lib/i18n';
 import AgentIcon from './AgentIcon';
@@ -25,7 +23,7 @@ const blank = (cwd: string): Draft => ({ name: '', cwd, agent: 'claude', skill: 
 const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent: s.agent, skill: s.skill, prompt: s.prompt, cron: s.cron, permissionMode: s.permissionMode, enabled: s.enabled, graceMinutes: s.graceMinutes, power: s.power, resumeSessionId: s.resumeSessionId, resumeTitle: s.resumeTitle });
 
 function describeCron(expr: string): string {
-  try { return cronstrue.toString(parseCron(expr).source, { locale: getLang() === 'ko' ? 'ko' : 'en', use24HourTimeFormat: true }); } catch { return ''; }
+  try { return describe(parseCron(expr), getLang() === 'ko' ? 'ko' : 'en'); } catch { return ''; }
 }
 const when = (ms: number) => new Date(ms).toLocaleString(getLang() === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 const rel = (ms: number) => relativeTime(ms, Date.now(), getLang());
