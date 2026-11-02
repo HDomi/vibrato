@@ -25,7 +25,11 @@ const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent:
 function describeCron(expr: string): string {
   try { return describe(parseCron(expr), getLang() === 'ko' ? 'ko' : 'en'); } catch { return ''; }
 }
-const when = (ms: number) => new Date(ms).toLocaleString(getLang() === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+// Dates outside this year carry the year: a yearly schedule's next runs are the same day in different years.
+const when = (ms: number) => {
+  const d = new Date(ms);
+  return d.toLocaleString(getLang() === 'ko' ? 'ko-KR' : 'en-US', { ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+};
 const rel = (ms: number) => relativeTime(ms, Date.now(), getLang());
 const lateBy = (ms: number) => { const m = Math.round(ms / 60000); return m < 60 ? t('sched.grace.min', { n: m }) : t('sched.grace.hour', { n: Math.round(m / 6) / 10 }); };
 

@@ -106,4 +106,5 @@ test('cron description: either day field may match, months, repeats, both langua
   assert.equal(d('* * * * *', 'en'), 'Every minute');
   assert.equal(d('0 9 * * 1,3,5', 'ko'), '매주 월, 수, 금요일 09:00');
   assert.equal(d('@yearly', 'en'), 'January 1 at 00:00');
+  assert.equal(d('59 23 3 11 *', 'ko'), '11월 3일 23:59');
 });
