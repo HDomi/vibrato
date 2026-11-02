@@ -22,6 +22,10 @@ export interface Schedule {
   /** Arguments after the skill, or the whole prompt without one. */
   prompt: string;
   cron: string;
+  /** CLI session (Claude session id / Codex thread id) the prompt continues; empty for a fresh session each run. */
+  resumeSessionId?: string;
+  /** Title of that session when it was picked, for display. */
+  resumeTitle?: string;
   permissionMode: PermissionModeId;
   model?: string;
   enabled: boolean;
@@ -125,6 +129,9 @@ export function cleanSchedule(body: unknown, prev: Schedule | null, now: number,
   if (!skill && !prompt.trim()) throw new ScheduleError('Pick a skill or write a prompt');
   const cron = str('cron', 200).trim();
   try { parseCron(cron); } catch (e) { throw new ScheduleError((e as Error).message); }
+  const resumeSessionId = str('resumeSessionId', 200).trim() || undefined;
+  if (resumeSessionId && !/^[\w.-]+$/.test(resumeSessionId)) throw new ScheduleError('Invalid session id');
+  const resumeTitle = resumeSessionId ? str('resumeTitle', 200).trim() || undefined : undefined;
   let permissionMode = MODES.includes(b.permissionMode as PermissionModeId) ? b.permissionMode as PermissionModeId : 'acceptEdits';
   // Auto mode is Claude's classifier; Codex has no equivalent.
   if (agent === 'codex' && permissionMode === 'auto') permissionMode = 'default';
@@ -136,7 +143,7 @@ export function cleanSchedule(body: unknown, prev: Schedule | null, now: number,
   const name = str('name', 80).trim() || (skill ? `/${skill}` : prompt.trim().split('\n')[0].slice(0, 40));
   const rescheduled = !prev || prev.cron !== cron || (!prev.enabled && enabled);
   return {
-    id, name, cwd, agent, skill, prompt, cron, permissionMode, model, enabled, graceMinutes, power,
+    id, name, cwd, agent, skill, prompt, cron, resumeSessionId, resumeTitle, permissionMode, model, enabled, graceMinutes, power,
     createdAt: prev?.createdAt ?? now,
     cursor: rescheduled ? now : prev.cursor,
   };

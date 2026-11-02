@@ -195,8 +195,11 @@ export class Scheduler {
     try {
       await assertDir(s.cwd);
       await waitForNetwork(API_HOST[s.agent]);
-      const session = await this.registry.startHeadless({ agent: s.agent, cwd: s.cwd, permissionMode: s.permissionMode, model: s.model });
-      this.patch(run, { sessionId: session.id });
+      // A schedule that continues a conversation sends into it where it is already open; otherwise the
+      // conversation is resumed in a headless session, like a fresh run.
+      const live = s.resumeSessionId ? this.registry.list().find((x) => x.agent === s.agent && x.agentSessionId === s.resumeSessionId) : undefined;
+      const session = (live && this.registry.get(live.id)) || await this.registry.startHeadless({ agent: s.agent, cwd: s.cwd, permissionMode: s.permissionMode, model: s.model, resume: s.resumeSessionId });
+      this.patch(run, { sessionId: session.id, agentSessionId: s.resumeSessionId });
       const settled = new Promise<void>((resolve) => {
         const off = session.onEvent((e) => {
           if (e.kind === 'session.init' && e.agentSessionId && !run.agentSessionId) this.patch(run, { agentSessionId: e.agentSessionId });
@@ -214,6 +217,8 @@ export class Scheduler {
       await this.registry.send(session.id, () => session.send(promptText(s), [], randomUUID()));
       await settled;
       const id = session.id;
+      // A session a window opened stays with the window.
+      if (live) return;
       const close = () => {
         if (!this.registry.get(id)) return;
         if (this.registry.watchers(id) > 0) return;

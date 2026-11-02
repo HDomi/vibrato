@@ -78,6 +78,8 @@ export type ScheduleRunStatus = 'running' | 'waiting' | 'done' | 'failed' | 'mis
 export interface Schedule {
   id: string; name: string; cwd: string; agent: 'claude' | 'codex'; skill: string; prompt: string; cron: string;
   permissionMode: string; model?: string; enabled: boolean; graceMinutes: number; power: SchedulePower; createdAt: number; cursor: number;
+  /** CLI session the prompt continues (Claude session id / Codex thread id); absent for a fresh session each run. */
+  resumeSessionId?: string; resumeTitle?: string;
   /** Next run time (server computed); null when disabled or never. */
   next: number | null;
 }

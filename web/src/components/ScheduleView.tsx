@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import cronstrue from 'cronstrue';
 import 'cronstrue/locales/ko';
-import { api, type AgentContext, type Schedule, type ScheduleInput, type ScheduleRun, type ScheduleRunStatus, type ScheduleSnapshot, type SchedulePower } from '../lib/api';
+import { api, type AgentContext, type RecentSession, type Schedule, type ScheduleInput, type ScheduleRun, type ScheduleRunStatus, type ScheduleSnapshot, type SchedulePower } from '../lib/api';
 import { CRON_PRESETS, nextRuns, parseCron } from '../lib/toolbox/cron';
 import { relativeTime } from '../lib/toolbox/time';
 import { getLang, t, useLang } from '../lib/i18n';
@@ -19,10 +19,10 @@ const GRACE = [0, 30, 60, 180, 720, 1440];
 const POWER: SchedulePower[] = ['none', 'awake', 'wake'];
 const input = 'w-full bg-white/5 rounded-md px-2.5 py-1.5 outline-none border border-white/5 focus:border-white/20';
 
-type Draft = Required<Pick<ScheduleInput, 'name' | 'cwd' | 'agent' | 'skill' | 'prompt' | 'cron' | 'permissionMode' | 'enabled' | 'graceMinutes' | 'power'>>;
+type Draft = Required<Pick<ScheduleInput, 'name' | 'cwd' | 'agent' | 'skill' | 'prompt' | 'cron' | 'permissionMode' | 'enabled' | 'graceMinutes' | 'power'>> & Pick<ScheduleInput, 'resumeSessionId' | 'resumeTitle'>;
 
 const blank = (cwd: string): Draft => ({ name: '', cwd, agent: 'claude', skill: '', prompt: '', cron: '0 9 * * 1-5', permissionMode: 'acceptEdits', enabled: true, graceMinutes: 720, power: 'awake' });
-const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent: s.agent, skill: s.skill, prompt: s.prompt, cron: s.cron, permissionMode: s.permissionMode, enabled: s.enabled, graceMinutes: s.graceMinutes, power: s.power });
+const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent: s.agent, skill: s.skill, prompt: s.prompt, cron: s.cron, permissionMode: s.permissionMode, enabled: s.enabled, graceMinutes: s.graceMinutes, power: s.power, resumeSessionId: s.resumeSessionId, resumeTitle: s.resumeTitle });
 
 function describeCron(expr: string): string {
   try { return cronstrue.toString(parseCron(expr).source, { locale: getLang() === 'ko' ? 'ko' : 'en', use24HourTimeFormat: true }); } catch { return ''; }
@@ -50,6 +50,43 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   const [ctx, setCtx] = useState<AgentContext | null>(null);
   const [skillFilter, setSkillFilter] = useState('');
   const [, tick] = useState(0);
+  // "@" in the prompt: the token containing the caret starts with "@" and has no whitespace; it picks a past session.
+  const [caret, setCaret] = useState(0);
+  const [sessions, setSessions] = useState<RecentSession[] | null>(null);
+  const [sessionIdx, setSessionIdx] = useState(0);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const mention = useMemo(() => {
+    const m = draft.prompt.slice(0, caret).match(/(?:^|\s)@([^\s@]*)$/);
+    return m ? { query: m[1], start: caret - m[1].length - 1 } : null;
+  }, [draft.prompt, caret]);
+  useEffect(() => {
+    if (!mention || sessions) return;
+    let live = true;
+    api.historyAll(300).then((rows) => { if (live) setSessions(rows); }).catch(() => { if (live) setSessions([]); });
+    return () => { live = false; };
+  }, [mention, sessions]);
+  const sessionHits = useMemo(() => {
+    if (!mention) return [];
+    const q = mention.query.toLowerCase();
+    return (sessions ?? []).filter((r) => r.agent === draft.agent && (!q || r.title.toLowerCase().includes(q)))
+      // The project's own sessions first.
+      .sort((a, b) => Number(b.cwd === draft.cwd) - Number(a.cwd === draft.cwd)).slice(0, 12);
+  }, [mention, sessions, draft.agent, draft.cwd]);
+  useEffect(() => { setSessionIdx(0); }, [mention?.query]);
+  const pickSession = (r: RecentSession) => {
+    if (!mention) return;
+    const prompt = (draft.prompt.slice(0, mention.start) + draft.prompt.slice(caret)).replace(/^\s+/, '');
+    setDraft((d) => ({ ...d, prompt, resumeSessionId: r.sessionId, resumeTitle: r.title, cwd: r.cwd ?? d.cwd }));
+    setCaret(mention.start);
+    requestAnimationFrame(() => { const el = promptRef.current; if (el) { el.focus(); el.setSelectionRange(mention.start, mention.start); } });
+  };
+  const onPromptKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!mention) return;
+    if (e.key === 'ArrowDown' && sessionHits.length) { e.preventDefault(); setSessionIdx((i) => (i + 1) % sessionHits.length); }
+    else if (e.key === 'ArrowUp' && sessionHits.length) { e.preventDefault(); setSessionIdx((i) => (i - 1 + sessionHits.length) % sessionHits.length); }
+    else if ((e.key === 'Enter' || e.key === 'Tab') && sessionHits[sessionIdx]) { e.preventDefault(); pickSession(sessionHits[sessionIdx]); }
+    else if (e.key === 'Escape') { e.preventDefault(); setCaret(0); }
+  };
 
   const load = () => api.schedules().then((s) => { setSnap(s); setError(null); }).catch((e) => setError((e as Error).message));
   useEffect(() => {
@@ -133,7 +170,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                   <div className="flex-1" />
                   {last && <span className={`w-2 h-2 shrink-0 rounded-full ${STATUS_DOT[last.status]}`} title={t(`sched.status.${last.status}`)} />}
                 </div>
-                <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{describeCron(s.cron) || s.cron} · {s.cwd.split('/').pop()}</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{describeCron(s.cron) || s.cron} · {s.cwd.split('/').pop()}{s.resumeSessionId ? ` · ↻ ${s.resumeTitle || s.resumeSessionId}` : ''}</div>
                 <div className="text-[11px] text-zinc-500">{s.next ? t('sched.nextAt', { when: when(s.next), rel: rel(s.next) }) : t('sched.off')}{s.power === 'wake' ? ' · ⏰' : ''}</div>
               </button>
             );
@@ -197,9 +234,37 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
             </div>
           </Field>
 
-          <Field label={draft.skill ? t('sched.args') : t('sched.prompt')}>
-            <textarea className={`${input} min-h-[72px] font-mono text-[12px]`} rows={3} value={draft.prompt} onChange={(e) => set('prompt', e.target.value)}
-              placeholder={draft.skill ? t('sched.argsPlaceholder', { skill: draft.skill }) : t('sched.promptPlaceholder')} />
+          <Field label={draft.skill ? t('sched.args') : t('sched.prompt')} hint={draft.resumeSessionId ? t('sched.resumeHint') : undefined}>
+            {draft.resumeSessionId && (
+              <div className="mb-1.5 flex items-center gap-2 rounded-md border border-violet-400/20 bg-violet-500/10 px-2.5 py-1.5">
+                <Icon name="reload" size={12} className="shrink-0 text-violet-200" />
+                <span className="shrink-0 text-[11px] text-violet-200/80">{t('sched.resume')}</span>
+                <span className="min-w-0 truncate text-violet-100" title={draft.resumeSessionId}>{draft.resumeTitle || draft.resumeSessionId}</span>
+                <div className="flex-1" />
+                <button className="shrink-0 text-[11px] text-zinc-400 hover:text-zinc-100" onClick={() => setDraft((d) => ({ ...d, resumeSessionId: undefined, resumeTitle: undefined }))}>{t('sched.resumeClear')}</button>
+              </div>
+            )}
+            <div className="relative">
+              <textarea ref={promptRef} className={`${input} min-h-[72px] font-mono text-[12px]`} rows={3} value={draft.prompt}
+                onChange={(e) => { set('prompt', e.target.value); setCaret(e.target.selectionStart); }}
+                onSelect={(e) => setCaret(e.currentTarget.selectionStart)} onKeyDown={onPromptKey} onBlur={() => setCaret(0)}
+                placeholder={draft.skill ? t('sched.argsPlaceholder', { skill: draft.skill }) : t('sched.promptPlaceholder')} />
+              {mention && (
+                <div className="absolute top-full left-0 mt-1 w-[520px] max-w-full rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1 z-10">
+                  {sessions === null && <div className="px-3 py-1.5 text-zinc-500">{t('common.loading')}</div>}
+                  {sessions !== null && !sessionHits.length && <div className="px-3 py-1.5 text-zinc-500">{t('sched.resumeNone')}</div>}
+                  {sessionHits.map((r, i) => (
+                    <div key={`${r.agent}:${r.sessionId}`} onMouseEnter={() => setSessionIdx(i)} onMouseDown={(e) => { e.preventDefault(); pickSession(r); }}
+                      className={`px-3 py-1 flex items-center gap-2 cursor-pointer ${i === sessionIdx ? 'bg-blue-500/20 text-white' : 'text-zinc-300'}`}>
+                      <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                      {r.cwd && <span className="shrink-0 text-[11px] text-zinc-500">{r.cwd.split('/').pop()}</span>}
+                      <span className="shrink-0 text-[11px] text-zinc-600">{rel(r.lastModified)}</span>
+                    </div>
+                  ))}
+                  <div className="px-3 pt-1 text-[10px] text-zinc-600">{t('sched.resumeMentionHint')}</div>
+                </div>
+              )}
+            </div>
           </Field>
 
           <Field label={t('sched.when')}>

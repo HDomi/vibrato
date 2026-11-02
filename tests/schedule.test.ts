@@ -46,6 +46,14 @@ test('schedule: prompt text, earliest next run, validation', () => {
   assert.throws(() => cleanSchedule({ cwd: '/a', agent: 'claude', prompt: 'x', cron: '61 * * * *' }, null, 0, 'i'), ScheduleError);
   assert.throws(() => cleanSchedule({ cwd: '/a', agent: 'claude', skill: 'a b', cron: '* * * * *' }, null, 0, 'i'), /Invalid skill/);
 
+  // A schedule may continue a past conversation instead of starting fresh; the title only matters with an id.
+  const r = cleanSchedule({ cwd: '/a', agent: 'claude', prompt: 'go on', cron: '* * * * *', resumeSessionId: '0f2b-abc', resumeTitle: ' Fix login ' }, null, 0, 'i');
+  assert.equal(r.resumeSessionId, '0f2b-abc');
+  assert.equal(r.resumeTitle, 'Fix login');
+  assert.equal(cleanSchedule({ cwd: '/a', agent: 'claude', prompt: 'x', cron: '* * * * *', resumeTitle: 't' }, null, 0, 'i').resumeTitle, undefined);
+  assert.equal(cleanSchedule({ resumeSessionId: '' }, r, 1, 'i').resumeSessionId, undefined);
+  assert.throws(() => cleanSchedule({ cwd: '/a', agent: 'claude', prompt: 'x', cron: '* * * * *', resumeSessionId: 'a b' }, null, 0, 'i'), /Invalid session id/);
+
   // Renaming keeps the cursor; changing the timetable or re-enabling moves it to now.
   const prev = base({ cursor: 5 });
   assert.equal(cleanSchedule({ name: 'x' }, prev, 99, 's1').cursor, 5);
