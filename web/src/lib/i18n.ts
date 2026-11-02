@@ -542,7 +542,7 @@ const en: Record<string, string> = {
   'usage.refresh': 'Refresh usage',
   'usage.week': 'wk',
   'usage.tools': 'Tools',
-  'usage.schedule': 'Schedules',
+  'usage.schedule': 'Scheduler',
   'composer.form': 'Send as form',
   'composer.formHint': 'Build the prompt from a structured form (separate from the text above)',
   // prompt form
@@ -654,7 +654,7 @@ const en: Record<string, string> = {
   'form.settings.confirmRestore': 'Replace your form types with the built-in ones?',
   'form.settings.discard': 'Discard changes',
   // schedules
-  'sched.title': 'Scheduled runs',
+  'sched.title': 'Scheduler',
   'sched.new': 'New',
   'sched.empty': 'No schedules yet. Pick a project, a skill and a time on the right.',
   'sched.nextAt': 'Next {when} ({rel})',
@@ -1893,7 +1893,7 @@ const ko: Record<string, string> = {
   'usage.refresh': '사용량 새로고침',
   'usage.week': '주',
   'usage.tools': '도구',
-  'usage.schedule': '예약',
+  'usage.schedule': '스케쥴러',
   'composer.form': 'Form으로 전송',
   'composer.formHint': '정해진 칸을 채워 프롬프트를 만들어 (위 입력창과 별개)',
   // prompt form
@@ -2005,7 +2005,7 @@ const ko: Record<string, string> = {
   'form.settings.confirmRestore': '유형을 기본값으로 바꿀까? 지금 설정은 사라져.',
   'form.settings.discard': '변경 취소',
   // schedules
-  'sched.title': '예약 실행',
+  'sched.title': '스케쥴러',
   'sched.new': '새 예약',
   'sched.empty': '아직 예약이 없어. 오른쪽에서 프로젝트, 스킬, 시간을 골라.',
   'sched.nextAt': '다음 {when} ({rel})',
