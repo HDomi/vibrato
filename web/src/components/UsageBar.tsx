@@ -6,7 +6,7 @@ import Icon from './Icon';
 
 export type ViewMode = 'vibe' | 'ide' | 'agent' | 'tools' | 'schedule';
 
-interface Props { mode: ViewMode; onMode: (m: ViewMode) => void; companions?: boolean; onCompanions?: () => void }
+interface Props { mode: ViewMode; onMode: (m: ViewMode) => void }
 
 function color(remain: number) {
   if (remain > 50) return 'bg-emerald-400';
@@ -69,7 +69,7 @@ export function Battery({ label, win, error, loading, empty }: { label: string; 
   );
 }
 
-export default function UsageBar({ mode, onMode, companions, onCompanions }: Props) {
+export default function UsageBar({ mode, onMode }: Props) {
   useLang();
   const { usage: u, loading, error: loadError, forecast } = useUsage();
   const [fullScreen, setFullScreen] = useState(false);
@@ -80,7 +80,7 @@ export default function UsageBar({ mode, onMode, companions, onCompanions }: Pro
 
   return (
     <div className="titlebar-drag h-[45px] shrink-0 flex items-center border-b border-white/10 bg-[#0e1117] text-xs select-none">
-      {/* Left: room for the macOS window buttons, a divider, then the mode switch and the companion toggle. */}
+      {/* Left: room for the macOS window buttons, a divider, then the mode switch. */}
       <div className={`shrink-0 flex items-center ${windowButtons ? 'pl-[80px]' : 'pl-3'}`}>
         {windowButtons && <span className="w-px h-[18px] bg-white/10 mr-3" aria-hidden="true" />}
         <div className="titlebar-nodrag flex items-center rounded-md bg-white/5 p-0.5">
@@ -91,12 +91,6 @@ export default function UsageBar({ mode, onMode, companions, onCompanions }: Pro
             </button>
           ))}
         </div>
-        {onCompanions && <button className={`titlebar-nodrag shrink-0 ml-1.5 w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 ${companions ? 'text-amber-300' : 'text-zinc-500'}`}
-          aria-pressed={companions} onClick={onCompanions} title={t('usage.companions')} aria-label={t('usage.companions')}>
-          <svg width="19" height="22" viewBox="0 0 24 28" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="13" cy="5" r="3" /><path d="m13 8-2 8m1-6-5 4-3-3m8 0 5 3 3-4m-9 6-5 8m5-8 6 4 3 5" />
-          </svg>
-        </button>}
       </div>
       {/* Usage batteries, right-aligned. When the cell gets narrow (small window) they compact in steps
           instead of running under the switch: percentages, then window labels, then agent names. */}

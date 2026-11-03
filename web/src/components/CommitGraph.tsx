@@ -18,7 +18,7 @@ export default function CommitGraph({ commits, selected, onSelect }: { commits: 
         const row = graph.rows[i];
         const current = commit.refs.some((ref) => ref === 'HEAD' || ref.startsWith('HEAD -> '));
         return (
-          <div key={commit.hash} data-companion-rung="" onClick={onSelect ? () => onSelect(commit) : undefined}
+          <div key={commit.hash} onClick={onSelect ? () => onSelect(commit) : undefined}
             className={`group flex border-b border-white/[0.035] transition-colors hover:bg-white/[0.035] ${onSelect ? 'cursor-pointer' : ''} ${selected === commit.hash ? 'bg-blue-500/15' : current ? 'bg-violet-400/[0.045]' : ''}`}
             style={{ height: GRAPH_ROW_HEIGHT, minWidth: graph.width + 180 }}>
             <svg aria-hidden="true" width={graph.width} height={GRAPH_ROW_HEIGHT} className="shrink-0 overflow-visible">

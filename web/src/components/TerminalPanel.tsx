@@ -76,7 +76,7 @@ export default function TerminalPanel({ cwd, visible }: Props) {
 
   return (
     <div className="h-full flex flex-col">
-      <div data-companion-floor="terminal-tabs" data-companion-edge="bottom" className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-white/10 text-xs overflow-x-auto">
+      <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-white/10 text-xs overflow-x-auto">
         {tabs.map((tab) => (
           <div key={tab.id} className={`flex items-center gap-1 rounded-md px-2 py-1 cursor-pointer ${active === tab.id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5'}`} onClick={() => activateTerminal(tab.id)}>
             <span className="truncate max-w-[120px]">{tab.title}</span>

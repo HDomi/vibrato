@@ -33,7 +33,6 @@ import BacklogPanel from './components/BacklogPanel';
 import AgentContextDialog from './components/AgentContextDialog';
 import { EMPTY_BACKLOG, useBacklogs } from './lib/backlog';
 import Icon from './components/Icon';
-import SessionCompanions from './components/SessionCompanions';
 
 // CodeMirror and the explorer load the first time IDE mode is shown; the toolbox likewise.
 const EditorPanel = lazy(() => import('./components/editor/EditorPanel'));
@@ -82,8 +81,6 @@ function AppInner() {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [companions, setCompanions] = useState(() => { try { return localStorage.getItem('vibe.companions') !== '0'; } catch { return true; } });
-  useEffect(() => { try { localStorage.setItem('vibe.companions', companions ? '1' : '0'); } catch { /* ignore */ } }, [companions]);
   const [view, setView] = useState<ViewMode>(() => {
     try { return (localStorage.getItem(LS_MODE) as ViewMode) || (localStorage.getItem(LS_MODE_V1) === 'agent' ? 'agent' : 'vibe'); } catch { return 'vibe'; }
   });
@@ -366,8 +363,7 @@ function AppInner() {
         <Lightbox />
         <Toaster />
         {previewPopup && <PreviewDialog entry={previewPopup} onClose={() => setPreviewPopup(null)} />}
-        <UsageBar mode={view} onMode={setView} companions={companions} onCompanions={() => setCompanions((v) => !v)} />
-        {companions && <SessionCompanions sessions={Object.values(S.sessions)} scene={`${view}:${rightTab}:${rightCollapsed}`} />}
+        <UsageBar mode={view} onMode={setView} />
         {view === 'agent' ? (
           <AgentView home={home?.home ?? '~'} S={S} active={agentActive} setActive={setAgentActive} onFocusSession={(id) => focusSession.current(id)} />
         ) : view === 'tools' ? (
@@ -387,16 +383,16 @@ function AppInner() {
           </div>
         ) : (
         <div className="flex-1 flex min-h-0 relative">
-          <div data-companion-zone="left" data-companion-wall="right" style={{ width: collapsed ? 40 : sidebar.width }} className={`shrink-0 h-full overflow-hidden ${paneTransition}`}>
+          <div style={{ width: collapsed ? 40 : sidebar.width }} className={`shrink-0 h-full overflow-hidden ${paneTransition}`}>
             <Sidebar home={home} favorites={favorites} cwd={project ?? ''} collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)}
               onNavigate={openProject} onFavoritesChange={setFavorites}
               onPickFolder={pickFolder} onOpenSettings={() => setShowTools(true)} onResumeSession={resumeSession} />
           </div>
           {!collapsed && <Splitter onStart={() => setDragging(true)} onEnd={() => setDragging(false)} onDrag={(dx) => sidebar.setWidth(sidebar.width + dx)} />}
           <main className="flex-1 min-w-0 flex">
-            <div data-companion-zone="prompt" className="flex-1 min-w-0 flex flex-col">
+            <div className="flex-1 min-w-0 flex flex-col">
               {project && projectSessions.length > 0 && (
-                <div data-companion-floor="session-tabs" data-companion-edge="bottom" className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-white/10 text-xs">
+                <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-white/10 text-xs">
                   {/* Only the tabs scroll; the new-session button stays pinned at the right end. */}
                   <div className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto">
                   {projectSessions.map((s) => (
@@ -461,8 +457,8 @@ function AppInner() {
                 ))}
               </div>
             )}
-            <div data-companion-zone="right" data-companion-wall="left" style={{ width: rightCollapsed ? 0 : right.width }} className={`shrink-0 flex flex-col min-w-0 overflow-hidden ${paneTransition}`}>
-              <div data-companion-floor="right-tabs" data-companion-edge="bottom" className="h-10 shrink-0 flex items-stretch border-b border-white/10 text-xs" style={{ minWidth: right.width }}>
+            <div style={{ width: rightCollapsed ? 0 : right.width }} className={`shrink-0 flex flex-col min-w-0 overflow-hidden ${paneTransition}`}>
+              <div className="h-10 shrink-0 flex items-stretch border-b border-white/10 text-xs" style={{ minWidth: right.width }}>
                 <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {rightTabs.map(([t, label]) => (
                     <button key={t} className={`shrink-0 px-3 flex items-center gap-1.5 ${rightTab === t ? 'text-white border-b-2 border-blue-400' : 'text-zinc-500 hover:text-zinc-300'}`} onClick={() => setRightTab(t)}>
@@ -523,7 +519,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   return (
     <div className="flex-1 flex min-h-0 relative">
-      <aside data-companion-zone="left" data-companion-wall="right" className="w-64 shrink-0 h-full flex flex-col border-r border-white/10 bg-[#0e1117]">
+      <aside className="w-64 shrink-0 h-full flex flex-col border-r border-white/10 bg-[#0e1117]">
         <div className="h-10 flex items-center px-3 text-xs text-zinc-500">
           <span className="font-medium text-zinc-400">{t('app.agent')}</span>
           <div className="flex-1" />
@@ -551,7 +547,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
             </div>
           ))}
         </div>
-        <div data-companion-floor="agent-list-bottom" className="h-px shrink-0 bg-white/10 mb-4" />
+        <div className="h-px shrink-0 bg-white/10 mb-4" />
       </aside>
       <div className="flex-1 min-w-0">
         <ChatPanel cwd={home} scope="home" session={session}

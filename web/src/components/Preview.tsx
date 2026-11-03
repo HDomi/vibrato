@@ -21,7 +21,7 @@ function CodeView({ content, name, ext }: { content: string; name: string; ext: 
   const lines = useMemo(() => highlightedLines(highlight(content, lang)), [content, lang]);
   return (
     <div className="h-full flex flex-col">
-      <div data-companion-floor="preview-language" data-companion-edge="bottom" className="h-8 shrink-0 flex items-center gap-2 px-3 border-b border-white/5 text-[11px] text-zinc-500">
+      <div className="h-8 shrink-0 flex items-center gap-2 px-3 border-b border-white/5 text-[11px] text-zinc-500">
         <span>{t('preview.language')}</span>
         <select value={lang} onChange={(e) => { setLang(e.target.value); rememberLanguage(name, ext, e.target.value); }} className="bg-white/5 rounded px-1.5 py-0.5 outline-none text-zinc-300">
           {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
@@ -165,7 +165,7 @@ export default function Preview({ entry, onClose }: Props) {
   const url = api.rawUrl(entry.path);
   return (
     <div className="h-full flex flex-col min-w-0">
-      <div data-companion-floor="preview-toolbar" data-companion-edge="bottom" className="h-10 flex items-center gap-3 px-4 border-b border-white/10 text-sm">
+      <div className="h-10 flex items-center gap-3 px-4 border-b border-white/10 text-sm">
         <span className="truncate font-medium">{entry.name}</span>
         <span className="text-zinc-500 text-xs">{formatSize(entry.size)}</span>
         <div className="flex-1" />

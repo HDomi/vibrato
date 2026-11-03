@@ -111,7 +111,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
 
   return (
     <div className="h-full flex flex-col text-xs" data-own-find>
-      <div data-companion-floor="run-scripts" data-companion-edge="bottom" className="shrink-0 border-b border-white/10 px-2 py-2">
+      <div className="shrink-0 border-b border-white/10 px-2 py-2">
         <div className="flex flex-wrap items-center gap-1">
           {scripts.map((s) => {
             const on = runningNames.has(s.name);

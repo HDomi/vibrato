@@ -71,11 +71,11 @@ export default function EditorPanel({ root, visible, onAttach }: Props) {
     <div data-editor-scope data-own-find className="h-full flex-1 flex min-w-0" style={{ background: M.bg, color: M.fg }} onKeyDown={onKey}>
       {tree && root && (
         <>
-          <div data-companion-zone="left" data-companion-wall="right" className="shrink-0 min-w-0" style={{ width: treeW.width }}><FileTree root={root} activePath={ed.active} onAttach={onAttach} /></div>
+          <div className="shrink-0 min-w-0" style={{ width: treeW.width }}><FileTree root={root} activePath={ed.active} onAttach={onAttach} /></div>
           <Splitter onStart={() => { dragStart.current = treeW.width; }} onDrag={(dx) => treeW.setWidth(dragStart.current + dx)} />
         </>
       )}
-      <div data-companion-zone="prompt" className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
         <div className="h-8 shrink-0 flex items-stretch" style={{ background: M.bg, borderBottom: `1px solid ${M.border}` }}>
           {root && (
             <button className="shrink-0 w-8 flex items-center justify-center hover:text-white" style={{ color: tree ? M.fg : M.faint }} title={`${t('editor.toggleTree')} (⌘B)`} onClick={() => setTree((v) => !v)}>

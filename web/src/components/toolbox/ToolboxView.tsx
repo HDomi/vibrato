@@ -63,7 +63,7 @@ export default function ToolboxView() {
   const pick = (id: string) => { setActive(id); setQuery(''); };
   return (
     <div className="flex-1 flex min-h-0">
-      <aside data-companion-zone="left" data-companion-wall="right" className="w-56 shrink-0 h-full flex flex-col border-r border-white/10 bg-[#0e1117]">
+      <aside className="w-56 shrink-0 h-full flex flex-col border-r border-white/10 bg-[#0e1117]">
         <div className="h-10 shrink-0 flex items-center gap-2 px-3">
           <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('tb.search')} spellCheck={false}
             onKeyDown={(e) => {
@@ -89,10 +89,10 @@ export default function ToolboxView() {
             })}
           {q && !visible.length && <div className="px-2 py-2 text-[12px] text-zinc-600">{t('tb.noMatch')}</div>}
         </div>
-        <div data-companion-floor="tools-list-bottom" className="h-px shrink-0 bg-white/10 mb-4" />
+        <div className="h-px shrink-0 bg-white/10 mb-4" />
       </aside>
-      <div data-companion-zone="prompt" className="flex-1 min-w-0 flex flex-col min-h-0">
-        <div data-companion-floor="tool-header" data-companion-edge="bottom" className="h-10 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 text-xs">
+      <div className="flex-1 min-w-0 flex flex-col min-h-0">
+        <div className="h-10 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 text-xs">
           <span className="font-medium text-zinc-200">{t(`tb.${tool.id}.name`)}</span>
           <span className="text-zinc-500 truncate">{t(`tb.${tool.id}.desc`)}</span>
           <div className="flex-1" />

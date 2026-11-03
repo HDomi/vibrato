@@ -44,24 +44,6 @@ html, body, #root {
 ::highlight(chat-search) { background-color: rgba(250, 204, 21, 0.3); }
 ::highlight(chat-search-active) { background-color: #f59e0b; color: #000; }
 
-/* Only the 77%-size figures capture pointers, leaving the surrounding UI usable. */
-.session-companions { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 15; }
-.session-companion { position: absolute; left: 0; top: 0; width: 36.96px; height: 46.2px; visibility: hidden; will-change: transform; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
-.session-companion[data-pose="drag"] { cursor: grabbing; }
-.session-companion-claude { color: #e9a58b; }
-.session-companion-codex { color: #d7e5f5; }
-.companion-figure { position: absolute; left: 18.48px; width: 48px; height: 60px; margin-left: -24px; transform-origin: 24px 0; filter: drop-shadow(0 1px 2px #000); pointer-events: none; }
-.session-companion[data-pose="hurt"] .companion-figure { filter: drop-shadow(0 0 3px #f87171) drop-shadow(0 1px 2px #000); }
-.companion-head { position: absolute; top: 0; left: 0; will-change: transform; }
-.companion-shadow { position: absolute; left: 9px; top: 41px; width: 19px; height: 2px; border-radius: 50%; background: #0005; pointer-events: none; }
-.session-companion:is([data-pose="jump"], [data-pose="fall"], [data-pose="climb"], [data-pose="drag"], [data-pose="limp"]) .companion-shadow { opacity: 0; }
-.companion-tracer { position: absolute; left: 0; top: 0; height: 2px; transform-origin: 0 50%; background: linear-gradient(90deg, #fff7cc, #ffd166 55%, #ff9f1c00); box-shadow: 0 0 4px #ffd166aa; pointer-events: none; animation: companion-tracer .22s ease-out forwards; }
-/* Positioned with left/top: an individual `scale` would multiply a transform translate and fling the dot across the screen. */
-.companion-spark { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(#fff, #ffb703 45%, #ff9f1c00 70%); pointer-events: none; animation: companion-spark .28s ease-out forwards; }
-@keyframes companion-tracer { from { opacity: 1; } to { opacity: 0; } }
-@keyframes companion-spark { from { opacity: 1; transform: scale(.6); } to { opacity: 0; transform: scale(2.2); } }
-@media (prefers-reduced-motion: reduce) { .session-companions { display: none; } }
-
 /* Lock screen (components/lock/LockScreen.tsx) */
 .lock-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }

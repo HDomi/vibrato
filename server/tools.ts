@@ -73,7 +73,7 @@ async function probeTools(): Promise<{ tools: ToolStatus[]; installers: Installe
 }
 
 /**
- * The companions ask every minute; each probe starts both CLIs twice (version, auth status).
+ * Each probe starts both CLIs twice (version, auth status), so results are cached.
  * The settings panel and installs pass `force` so a change shows at once.
  */
 const TOOLS_TTL_MS = 5 * 60 * 1000;

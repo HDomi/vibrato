@@ -223,7 +223,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
         <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 text-zinc-400" onClick={newFolder} title={t('files.newFolder')}><Icon name="folderPlus" /></button>
         <button className={`w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 ${isFavorite ? 'text-amber-300' : 'text-zinc-400'}`} onClick={onToggleFavorite} title={isFavorite ? t('sidebar.removeFavorite') : t('sidebar.addFavorite')}><Icon name="star" filled={isFavorite} /></button>
       </div>
-      <div data-companion-floor="files-toolbar" data-companion-edge="bottom" className="h-9 shrink-0 flex items-center gap-2 px-3 border-b border-white/5">
+      <div className="h-9 shrink-0 flex items-center gap-2 px-3 border-b border-white/5">
         <Icon name="search" size={14} className="text-zinc-500" />
         <input ref={searchInput} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('files.searchPlaceholder')} aria-label={t('files.searchPlaceholder')}
           onKeyDown={(e) => {
@@ -247,7 +247,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
           {hits?.map((h, i) => {
             const slash = h.rel.lastIndexOf('/');
             return (
-              <div key={h.path} data-companion-rung="" onMouseEnter={() => setHitIdx(i)} onClick={() => openHit(h)} onContextMenu={(ev) => menu.open(ev, hitMenu(h))} title={h.path}
+              <div key={h.path} onMouseEnter={() => setHitIdx(i)} onClick={() => openHit(h)} onContextMenu={(ev) => menu.open(ev, hitMenu(h))} title={h.path}
                 draggable onDragStart={(ev) => { ev.dataTransfer.setData('text/plain', h.path); ev.dataTransfer.setData('application/x-vibe-path', h.path); }}
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer ${i === hitIdx ? 'bg-blue-500/20' : 'hover:bg-white/5'}`}>
                 <FileIcon name={h.rel.slice(slash + 1)} isDir={h.isDir} />
@@ -274,7 +274,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
                   <td colSpan={3} className="py-1 pr-3"><input autoFocus value={draft} placeholder={creating === 'file' ? t('tree.newFilePlaceholder') : undefined} onChange={(e) => setDraft(e.target.value)} onBlur={createEntry} onKeyDown={(e) => { e.stopPropagation(); if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') createEntry(); if (e.key === 'Escape') setCreating(false); }} className="w-full bg-black/40 rounded px-2 py-0.5 outline-none border border-blue-400/50" /></td></tr>
               )}
               {entries.map((e) => (
-                <tr key={e.path} data-companion-rung=""
+                <tr key={e.path}
                   className={`cursor-default border-b border-white/5 ${selected.has(e.path) ? 'bg-blue-500/25' : 'hover:bg-white/5'} ${e.hidden ? 'opacity-50' : ''}`}
                   onClick={(ev) => select(e, ev)} onDoubleClick={() => open(e)} onContextMenu={(ev) => menu.open(ev, itemMenu(e))}
                   draggable
@@ -298,7 +298,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
         )}
       </div>
       )}
-      <div data-companion-floor="files-footer" data-companion-ground="" className="h-6 shrink-0 flex items-center px-3 text-[10px] text-zinc-600 border-t border-white/5">
+      <div className="h-6 shrink-0 flex items-center px-3 text-[10px] text-zinc-600 border-t border-white/5">
         {selected.size > 0 ? t('files.selected', { n: selected.size }) : t('files.items', { n: entries.length })} · {t('files.footerHint')}
       </div>
     </div>

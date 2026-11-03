@@ -28,7 +28,7 @@ function Item({ label, path, active, onClick, onContextMenu, hint, indent, dragg
   draggable?: boolean; onDragStart?: (e: React.DragEvent) => void; icon?: boolean; lead?: React.ReactNode;
 }) {
   return (
-    <div data-companion-rung=""
+    <div
       className={`group flex items-center gap-2 rounded-md py-1.5 text-sm cursor-pointer select-none ${indent ? 'pl-6 pr-2' : 'px-2'} ${active ? 'bg-white/10 text-white' : 'text-zinc-300 hover:bg-white/5'}`}
       onClick={onClick} onContextMenu={onContextMenu} title={path} draggable={draggable} onDragStart={onDragStart}
     >
@@ -201,10 +201,10 @@ export default function Sidebar(p: Props) {
           </div>
           {favorites.length === 0 && !creatingGroup && <div className="px-2 text-xs text-zinc-600">{t('sidebar.emptyFavorites')}</div>}
         </Section>
-        <div data-companion-floor="favorites-divider" role="separator" className="h-px bg-white/10 mx-2 mb-4" />
+        <div role="separator" className="h-px bg-white/10 mx-2 mb-4" />
       </div>
       {/* Recent sessions: pinned to the bottom quarter of the sidebar with its own scroll. */}
-      <div data-companion-floor="recent-sessions" className="h-1/4 min-h-[120px] shrink-0 flex flex-col border-t border-white/10 bg-[#0b0d12]">
+      <div className="h-1/4 min-h-[120px] shrink-0 flex flex-col border-t border-white/10 bg-[#0b0d12]">
         <div className="h-8 shrink-0 flex items-center gap-2 px-3 bg-white/[0.04] border-b border-white/5">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
           <span className="text-[11px] font-semibold tracking-wide text-zinc-300">{t('sidebar.recentSessions')}</span>
