@@ -40,7 +40,7 @@ async function main() {
     window.renderGit = cwd => target.render(<GitPanel cwd={cwd} visible />);
     window.renderUpdate = () => target.render(<UpdateBadge />);
     window.renderMarkdown = text => target.render(<MarkdownView text={text} baseDir="/fixture" />);
-    window.renderUsage = () => target.render(<UsageBar mode="ide" onMode={() => {}} />);
+    window.renderUsage = () => target.render(<UsageBar mode="vibe" onMode={() => {}} />);
     window.addEventListener('error', event => console.error(event.message));
   `);
   await build({ entryPoints: [entry], outfile: path.join(temp, 'harness.js'), bundle: true, platform: 'browser', jsx: 'automatic', nodePaths: [path.join(root, 'node_modules')] });
@@ -135,9 +135,10 @@ async function main() {
   assert.equal(await js(`document.querySelector('[data-update-locked]').dataset.updateLocked`), 'false');
   await js(`renderUsage()`);
   await until(`!!document.querySelector('[aria-label*="HTTP 429"]')`);
-  assert.equal(await js(`document.body.textContent.includes('Claude') && document.querySelector('[aria-label*="HTTP 429"]').textContent.includes('—')`), true);
+  assert.equal(await js(`!!document.querySelector('[data-agent="claude"]') && document.querySelector('[aria-label*="HTTP 429"]').textContent.includes('—')`), true);
   usageFailed = false;
-  await js(`document.querySelector('button[title="Refresh usage"]').click()`);
+  // Any usage button refreshes.
+  await js(`document.querySelector('[aria-label*="HTTP 429"]').click()`);
   await until(`!!document.querySelector('[aria-label^="5h: 0% used"]')`);
   assert.equal(await js(`document.querySelector('[aria-label^="5h: 0% used"]').textContent.includes('100%')`), true);
   assert.deepEqual(errors, []);

@@ -94,8 +94,8 @@ export default function PromptFormDialog({ cwd, agent, draftKey, running, onSend
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center" onMouseDown={onClose}>
-      <div className="w-[1120px] max-w-[95vw] h-[86vh] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl flex flex-col text-[12.5px]" onMouseDown={(e) => e.stopPropagation()}
+    <div className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onMouseDown={onClose}>
+      <div className="w-[1120px] max-w-[95vw] h-[86vh] glass-pop pop-in !rounded-[22px] flex flex-col text-[12.5px]" onMouseDown={(e) => e.stopPropagation()}
         onPaste={(e) => { const f = Array.from(e.clipboardData.files); if (f.length && has('attachments')) { e.preventDefault(); void addFiles(f); } }}>
         <div className="flex items-center gap-3 pl-5 pr-3 h-[56px] shrink-0 border-b border-white/10">
           <div className="text-[14px] font-semibold shrink-0">{t('form.title')}</div>
@@ -283,7 +283,7 @@ function SkillInput({ skills, value, onChange }: { skills: AgentContext['skills'
           if (e.key === 'Escape' && open && q) { e.preventDefault(); setQ(''); setOpen(false); }
         }} />
       {open && hits.length > 0 && (
-        <div ref={listRef} className="absolute left-0 right-0 top-full mt-1 z-10 max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1">
+        <div ref={listRef} className="absolute left-0 right-0 top-full mt-1 z-10 max-h-72 overflow-y-auto glass-pop pop-in rounded-xl py-1">
           {hits.map((s, i) => (
             <div key={`${s.scope}:${s.name}`} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); pick(s.name); }}
               className={`px-3 py-1.5 cursor-pointer ${i === idx ? 'bg-blue-500/20' : ''}`}>
@@ -333,7 +333,7 @@ function FilesInput({ cwd, files, onChange }: { cwd: string | null; files: strin
             if (e.key === 'Enter') { e.preventDefault(); const h = hits[idx]; add(h ? h.rel + (h.isDir ? '/' : '') : q.trim()); }
           }} />
         {hits.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1">
+          <div className="absolute left-0 right-0 top-full mt-1 z-10 glass-pop pop-in rounded-xl py-1">
             {hits.map((h, i) => (
               <div key={h.rel} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); add(h.rel + (h.isDir ? '/' : '')); }}
                 className={`flex items-center gap-2 px-3 py-1 cursor-pointer font-mono text-[12px] ${i === idx ? 'bg-blue-500/20 text-white' : 'text-zinc-300'}`}>

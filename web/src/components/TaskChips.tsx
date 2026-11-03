@@ -103,7 +103,7 @@ function TaskGraphPopover({ tasks, selected, onSelect, onClose, rootLabel, rootS
 
   return (
     <div ref={box} role="dialog" aria-label={t('tasks.title')}
-      className="absolute bottom-full left-0 mb-1 w-[640px] max-w-full rounded-lg border border-violet-400/25 bg-[#171a22] shadow-xl z-20 text-[12px]">
+      className="absolute bottom-full left-0 mb-1 w-[640px] max-w-full glass-pop pop-in rounded-xl !border-violet-400/25 z-20 text-[12px]">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
         <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
         <span className="font-medium text-zinc-200">{t('tasks.title')}</span>

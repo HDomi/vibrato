@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { UsageWindow } from '../lib/api';
 import { loadUsage, useUsage } from '../lib/usageStore';
 import { t, useLang } from '../lib/i18n';
+import { UpdateBadge } from './UpdatePanel';
 import Icon from './Icon';
 
-export type ViewMode = 'vibe' | 'ide' | 'agent' | 'tools' | 'schedule';
+export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule';
+export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule'];
 
-interface Props { mode: ViewMode; onMode: (m: ViewMode) => void }
+interface Props {
+  mode: ViewMode;
+  onMode: (m: ViewMode) => void;
+  /** Shown in VIBE only. */
+  onPickFolder?: () => void;
+  onOpenSettings?: () => void;
+}
 
 function color(remain: number) {
   if (remain > 50) return 'bg-emerald-400';
@@ -28,88 +36,118 @@ function resetLabel(ts: number | null) {
   return left ? t('usage.resetsAfter', { time: left }) : t('usage.reset');
 }
 
-/** Tiny battery: remaining % fills the cell from the left. Hover shows when the window resets. */
 /** "47m" / "2h 5m" for a forecast in minutes. */
 export function minutesLabel(m: number): string {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 }
 
-export function Battery({ label, win, error, loading, empty }: { label: string; win: UsageWindow | null; error?: string; loading: boolean; /** Minutes until used up at the recent rate (before the reset). */ empty?: number | null }) {
+/**
+ * One usage window as a round glass button tinted with its agent's color: a small battery over "5h: 99%".
+ * Hover shows the reset time and forecast; a click refreshes all usage.
+ */
+export function UsageChip({ agent, label, win, error, loading, empty }: {
+  agent: 'claude' | 'codex'; label: string; win: UsageWindow | null; error?: string; loading: boolean;
+  /** Minutes until used up at the recent rate (before the reset). */ empty?: number | null;
+}) {
   const [hover, setHover] = useState(false);
   const [, tick] = useState(0);
-  // Keep the countdown live while the popover is open.
+  // Keep the countdown live while the tooltip is open.
   useEffect(() => {
     if (!hover) return;
     const timer = setInterval(() => tick((n) => n + 1), 30000);
     return () => clearInterval(timer);
   }, [hover]);
   const remain = win ? Math.min(100, Math.max(0, 100 - win.usedPct)) : null;
+  const name = agent === 'claude' ? 'Claude' : 'Codex';
   const title = error
     ? t(win ? 'usage.cached' : 'usage.unavailable', { label, reason: error })
     : win ? t('usage.used', { label, pct: win.usedPct, reset: resetLabel(win.resetsAt) }) : t(loading ? 'usage.loading' : 'usage.unavailable', { label, reason: '' });
   return (
-    <div className="titlebar-nodrag relative flex items-center gap-[5px] cursor-default" aria-label={title} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {hover && (
-        <div role="tooltip" className="absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-md border border-white/10 bg-[#171a22] px-2.5 py-1.5 text-[11px] text-zinc-200 shadow-xl pointer-events-none">
-          {win ? <div className="tabular-nums"><span className="text-zinc-400">{label}</span> {remain}% · {resetLabel(win.resetsAt)}</div> : !error && <div className="text-zinc-400">{t(loading ? 'usage.loading' : 'usage.unavailable', { label, reason: '' })}</div>}
-          {empty != null && <div className="text-amber-300 tabular-nums">{t('usage.forecast', { time: minutesLabel(empty) })}</div>}
-          {error && <div className="text-amber-300">{error}</div>}
-        </div>
-      )}
-      <span className="text-[12.5px] text-zinc-500 @max-[470px]:hidden">{label}</span>
-      <span className="relative inline-flex items-center">
-        <span className="w-[23px] h-[11px] rounded-[3px] border border-zinc-500/80 p-px flex">
-          <span className={`h-full rounded-[1px] ${remain === null ? 'bg-zinc-600' : color(remain)}`} style={{ width: `${remain ?? 0}%` }} />
+    <button type="button" aria-label={title} data-agent={agent} onClick={() => loadUsage(true)} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      className="titlebar-nodrag glass-pill relative h-10 min-w-10 px-1.5 flex flex-col items-center justify-center gap-[3px] transition-[filter] duration-150 hover:brightness-125 active:brightness-95">
+      <span className={`absolute inset-0 rounded-full pointer-events-none ${agent === 'claude' ? 'bg-claude/[0.16] ring-1 ring-inset ring-claude/30' : 'bg-codex/[0.11] ring-1 ring-inset ring-codex/25'}`} />
+      <span className={`relative inline-flex items-center ${loading ? 'animate-pulse' : ''}`}>
+        <span className="w-[19px] h-[9px] rounded-[2.5px] border border-zinc-300/60 p-px flex">
+          <span className={`h-full rounded-[1px] transition-[width] duration-500 ease-glass ${remain === null ? 'bg-zinc-600' : color(remain)}`} style={{ width: `${remain ?? 0}%` }} />
         </span>
-        <span className="w-[3px] h-[5px] bg-zinc-500/80 rounded-r-[1px] ml-px" />
-        {empty != null && empty <= 60 && <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+        <span className="w-[2px] h-[4px] bg-zinc-300/60 rounded-r-[1px] ml-px" />
+        {empty != null && empty <= 60 && <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
       </span>
-      <span className={`text-[12.5px] tabular-nums w-[35px] @max-[660px]:hidden ${error ? 'text-amber-400' : 'text-zinc-400'}`}>{remain === null ? '—' : `${remain}%`}</span>
+      <span className={`relative text-[9.5px] leading-none tabular-nums whitespace-nowrap ${error ? 'text-amber-300' : 'text-zinc-200'}`}>{label}: {remain === null ? '—' : `${remain}%`}</span>
+      {hover && (
+        <span role="tooltip" className="glass-pop pop-in absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[11px] text-zinc-200 pointer-events-none">
+          <span className="block font-medium text-zinc-100">{name} · {label}</span>
+          {win ? <span className="block tabular-nums text-zinc-300">{remain}% · {resetLabel(win.resetsAt)}</span> : !error && <span className="block text-zinc-400">{t(loading ? 'usage.loading' : 'usage.unavailable', { label, reason: '' })}</span>}
+          {empty != null && <span className="block text-amber-300 tabular-nums">{t('usage.forecast', { time: minutesLabel(empty) })}</span>}
+          {error && <span className="block text-amber-300">{error}</span>}
+          <span className="block mt-1 text-[10px] text-zinc-500">{t('usage.clickRefresh')}</span>
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Round glass icon button for the title bar. */
+function CircleButton({ title, onClick, children }: { title: string; onClick?: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick}
+      className="titlebar-nodrag glass-pill w-8 h-8 shrink-0 flex items-center justify-center text-zinc-300 transition-[filter,color] duration-150 hover:text-white hover:brightness-125 active:brightness-95">
+      {children}
+    </button>
+  );
+}
+
+/** View switch: a glass capsule whose opaque white marker slides to the selected tab. */
+function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => void }) {
+  const refs = useRef<Partial<Record<ViewMode, HTMLButtonElement | null>>>({});
+  const [marker, setMarker] = useState<{ left: number; width: number } | null>(null);
+  const lang = useLang();
+  useLayoutEffect(() => {
+    const el = refs.current[mode];
+    if (el) setMarker({ left: el.offsetLeft, width: el.offsetWidth });
+  }, [mode, lang]);
+  return (
+    <div className="titlebar-nodrag glass-pill relative flex items-center p-1 text-[12px] font-medium">
+      {marker && <span className="absolute top-1 bottom-1 rounded-full bg-selected shadow-[0_2px_10px_rgb(0_0_0/.25)] transition-[left,width] duration-300 ease-glass" style={{ left: marker.left, width: marker.width }} />}
+      {VIEW_ORDER.map((m) => (
+        <button key={m} ref={(el) => { refs.current[m] = el; }} onClick={() => onMode(m)}
+          className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-400 hover:text-zinc-100'}`}>
+          {t(`usage.${m}`)}
+        </button>
+      ))}
     </div>
   );
 }
 
-export default function UsageBar({ mode, onMode }: Props) {
+/** Title bar: folder + settings at the left, the view switch centered, usage on the right. No background: the wallpaper shows through. */
+export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }: Props) {
   useLang();
   const { usage: u, loading, error: loadError, forecast } = useUsage();
   const [fullScreen, setFullScreen] = useState(false);
   useEffect(() => window.vibe?.onFullScreen?.(setFullScreen), []);
   const windowButtons = typeof window !== 'undefined' && !!window.vibe?.isElectron && !fullScreen;
-
-  const load = (force = false) => loadUsage(force);
+  const claudeError = loadError ?? u?.errors.find((e) => e.startsWith('claude:'));
+  const codexError = loadError ?? u?.errors.find((e) => e.startsWith('codex:'));
+  const showFolder = mode === 'vibe' && !!onPickFolder;
 
   return (
-    <div className="titlebar-drag h-[45px] shrink-0 flex items-center border-b border-white/10 bg-[#0e1117] text-xs select-none">
-      {/* Left: room for the macOS window buttons, a divider, then the mode switch. */}
-      <div className={`shrink-0 flex items-center ${windowButtons ? 'pl-[80px]' : 'pl-3'}`}>
-        {windowButtons && <span className="w-px h-[18px] bg-white/10 mr-3" aria-hidden="true" />}
-        <div className="titlebar-nodrag flex items-center rounded-md bg-white/5 p-0.5">
-          {(['vibe', 'ide', 'agent', 'tools', 'schedule'] as ViewMode[]).map((m) => (
-            <button key={m} onClick={() => onMode(m)}
-              className={`px-3 py-0.5 rounded text-[11px] font-medium transition-colors ${mode === m ? 'bg-white/15 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>
-              {t(`usage.${m}`)}
-            </button>
-          ))}
+    <div className="titlebar-drag h-[88px] py-6 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-xs select-none">
+      {/* Left: room for the macOS window buttons, then the folder (VIBE only) and settings buttons. */}
+      <div className={`min-w-0 flex items-center ${windowButtons ? 'pl-[84px]' : 'pl-4'}`}>
+        <div className={`shrink-0 overflow-hidden transition-[width,margin,opacity] duration-300 ease-glass ${showFolder ? 'w-8 mr-2 opacity-100' : 'w-0 mr-0 opacity-0'}`} aria-hidden={!showFolder}>
+          <CircleButton title={t('sidebar.openFolder')} onClick={onPickFolder}><Icon name="folderPlus" size={15} /></CircleButton>
         </div>
+        {onOpenSettings && <CircleButton title={t('common.settings')} onClick={onOpenSettings}><Icon name="gear" size={15} /></CircleButton>}
+        <span className="ml-2"><UpdateBadge onlyAvailable /></span>
       </div>
-      {/* Usage batteries, right-aligned. When the cell gets narrow (small window) they compact in steps
-          instead of running under the switch: percentages, then window labels, then agent names. */}
-      <div className="@container flex-1 min-w-0 h-full flex items-center justify-end">
-      <div className="flex items-center gap-[15px] @max-[660px]:gap-3 pr-3 min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-[12.5px] text-zinc-400 font-medium @max-[360px]:hidden">Claude</span>
-            <Battery label="5h" win={u?.claude?.fiveHour ?? null} error={loadError ?? u?.errors.find((e) => e.startsWith('claude:'))} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
-            <Battery label={t('usage.week')} win={u?.claude?.weekly ?? null} error={loadError ?? u?.errors.find((e) => e.startsWith('claude:'))} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
-            {u?.claude?.model && <Battery label={u.claude.model.name.slice(0, 5)} win={u.claude.model} loading={loading} />}
-          </div>
-        <span className="text-zinc-700">|</span>
-          <div className="flex items-center gap-2.5">
-            <span className="text-[12.5px] text-zinc-400 font-medium @max-[360px]:hidden">Codex</span>
-            <Battery label="5h" win={u?.codex?.fiveHour ?? null} error={loadError ?? u?.errors.find((e) => e.startsWith('codex:'))} loading={loading} empty={forecast('codex.fiveHour', u?.codex?.fiveHour ?? null)} />
-            <Battery label={t('usage.week')} win={u?.codex?.weekly ?? null} error={loadError ?? u?.errors.find((e) => e.startsWith('codex:'))} loading={loading} empty={forecast('codex.weekly', u?.codex?.weekly ?? null)} />
-          </div>
-        <button className={`titlebar-nodrag w-7 h-7 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-white/10 ${loading ? 'animate-spin' : ''}`} onClick={() => load(true)} title={t('usage.refresh')}><Icon name="reload" size={14} /></button>
-      </div>
+      <ModeTabs mode={mode} onMode={onMode} />
+      <div className="min-w-0 flex items-center justify-end gap-1.5 pr-4">
+        <UsageChip agent="claude" label="5h" win={u?.claude?.fiveHour ?? null} error={claudeError} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
+        <UsageChip agent="claude" label={t('usage.week')} win={u?.claude?.weekly ?? null} error={claudeError} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
+        {u?.claude?.model && <UsageChip agent="claude" label={u.claude.model.name.slice(0, 5)} win={u.claude.model} loading={loading} />}
+        <span className="w-2.5 shrink-0" aria-hidden="true" />
+        <UsageChip agent="codex" label="5h" win={u?.codex?.fiveHour ?? null} error={codexError} loading={loading} empty={forecast('codex.fiveHour', u?.codex?.fiveHour ?? null)} />
+        <UsageChip agent="codex" label={t('usage.week')} win={u?.codex?.weekly ?? null} error={codexError} loading={loading} empty={forecast('codex.weekly', u?.codex?.weekly ?? null)} />
       </div>
     </div>
   );

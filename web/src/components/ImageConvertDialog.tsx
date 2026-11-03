@@ -147,8 +147,8 @@ export default function ImageConvertDialog({ entry, onClose, onSaved }: Props) {
   const input = 'w-24 bg-black/30 border border-white/10 rounded px-2 py-1 text-[13px] outline-none focus:border-blue-400/60 tabular-nums';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div role="dialog" aria-label={t('image.title')} className="w-[440px] max-w-[92vw] rounded-xl border border-white/10 bg-[#12151c] shadow-2xl text-sm">
+    <div className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div role="dialog" aria-label={t('image.title')} className="glass-pop pop-in w-[440px] max-w-[92vw] !rounded-[22px] text-sm">
         <div className="px-5 pt-4 pb-3 border-b border-white/10">
           <div className="font-medium">{t('image.title')}</div>
           <div className="mt-1 text-[12px] text-zinc-500 truncate" title={entry.path}>

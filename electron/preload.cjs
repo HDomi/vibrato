@@ -7,6 +7,8 @@ ipcRenderer.on('full-screen', (_e, on) => { fullScreen = !!on; });
 contextBridge.exposeInMainWorld('vibe', {
   isElectron: true,
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  openIde: (root, file) => ipcRenderer.invoke('open-ide', root, file),
+  onIdeOpenFile: (cb) => { const h = (_e, file) => cb(file); ipcRenderer.on('ide-open-file', h); return () => ipcRenderer.removeListener('ide-open-file', h); },
   // Native Save As sheet: { defaultPath, ext, label } -> chosen path or null.
   saveDialog: (opts) => ipcRenderer.invoke('save-dialog', opts),
   // Absolute path of a File dropped from Finder (browser mode cannot read this).

@@ -180,7 +180,7 @@ export default function Preview({ entry, onClose }: Props) {
         <ImageConvertDialog entry={entry} onClose={() => setConverting(false)}
           onSaved={(p) => { if (p === entry.path) setRev((r) => r + 1); else window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: p } })); }} />
       )}
-      <div className="flex-1 overflow-auto bg-[#0b0d12]">
+      <div className="flex-1 overflow-auto">
         {entry.kind === 'markdown' && <TextView path={entry.path} markdown name={entry.name} ext={entry.ext} reload={rev} />}
         {entry.kind === 'text' && <TextView path={entry.path} markdown={false} name={entry.name} ext={entry.ext} reload={rev} />}
         {entry.kind === 'image' && (
@@ -218,8 +218,8 @@ export function PreviewDialog({ entry, onClose }: { entry: Entry; onClose: () =>
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center" onMouseDown={onClose}>
-      <div className="w-[960px] max-w-[94vw] h-[86vh] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onMouseDown={onClose}>
+      <div className="w-[960px] max-w-[94vw] h-[86vh] glass-pop pop-in !rounded-[22px] overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
         <Preview entry={entry} onClose={onClose} />
       </div>
     </div>

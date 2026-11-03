@@ -5,12 +5,15 @@ import { keepAwakeEnabled, setKeepAwakeEnabled } from '../lib/power';
 import Icon from './Icon';
 import LockSettings from './LockSettings';
 import FormTypesSettings from './FormTypesSettings';
+import WallpaperSettings from './WallpaperSettings';
+import { UpdateBadge } from './UpdatePanel';
 
 interface Props { onClose: () => void; /** Open at the lock screen tab (from the menu bar). */ focusLock?: boolean; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
 
-type Tab = 'general' | 'customPrompt' | 'formTypes' | 'lock' | 'agents';
+type Tab = 'general' | 'wallpaper' | 'customPrompt' | 'formTypes' | 'lock' | 'agents';
 const TABS: { id: Tab; key: string }[] = [
   { id: 'general', key: 'settings.general' },
+  { id: 'wallpaper', key: 'settings.tab.wallpaper' },
   { id: 'customPrompt', key: 'settings.customPrompt' },
   { id: 'formTypes', key: 'settings.tab.formTypes' },
   { id: 'lock', key: 'settings.tab.lock' },
@@ -39,6 +42,10 @@ function GeneralSettings() {
   return (
     <div className="rounded-lg border border-white/10 p-4 space-y-3">
       <div className="font-medium">{t('settings.general')}</div>
+      <div className="flex items-center gap-3 text-sm">
+        <span className="w-28 text-zinc-400">{t('settings.version')}</span>
+        <UpdateBadge />
+      </div>
       <label className="flex items-center gap-3 text-sm">
         <span className="w-28 text-zinc-400">{t('settings.language')}</span>
         <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="bg-white/5 rounded-md text-xs px-2 py-1.5 outline-none">
@@ -131,8 +138,8 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center" onClick={onClose}>
-      <div className="w-[980px] max-w-[94vw] h-[85vh] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onClick={onClose}>
+      <div className="w-[980px] max-w-[94vw] h-[85vh] glass-pop pop-in !rounded-[22px] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center pl-6 pr-4 h-[60px] shrink-0 border-b border-white/10">
           <div className="text-[15px] font-semibold">{t('settings.title')}</div>
           <div className="flex-1" />
@@ -152,6 +159,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
           {/* Every tab stays mounted so unsaved edits survive switching. */}
           <div className="flex-1 min-w-0 p-5 overflow-y-auto">
             <div className={tab === 'general' ? '' : 'hidden'}><GeneralSettings /></div>
+            <div className={tab === 'wallpaper' ? '' : 'hidden'}><WallpaperSettings /></div>
             <div className={tab === 'customPrompt' ? '' : 'hidden'}><CustomPromptSettings /></div>
             <div className={tab === 'formTypes' ? '' : 'hidden'}><FormTypesSettings focus={focusFormTypes} /></div>
             <div className={tab === 'lock' ? '' : 'hidden'}><LockSettings focus={focusLock} /></div>

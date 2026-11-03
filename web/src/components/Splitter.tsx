@@ -15,9 +15,11 @@ interface Props {
   onDrag: (dx: number) => void;
   onStart?: () => void;
   onEnd?: () => void;
+  /** Sits in the 16px gap between two glass cards: invisible until hovered or dragged. */
+  gap?: boolean;
 }
 
-export default function Splitter({ onDrag, onStart, onEnd }: Props) {
+export default function Splitter({ onDrag, onStart, onEnd, gap }: Props) {
   const startX = useRef(0);
   const [active, setActive] = useState(false);
   const onDown = (e: React.PointerEvent) => {
@@ -32,6 +34,13 @@ export default function Splitter({ onDrag, onStart, onEnd }: Props) {
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   };
+  if (gap) {
+    return (
+      <div onPointerDown={onDown} className="relative w-4 shrink-0 cursor-col-resize group" role="separator" aria-orientation="vertical">
+        <div className={`absolute inset-y-10 left-1/2 w-[3px] -ml-[1.5px] rounded-full transition-colors duration-200 ${active ? 'bg-white/50' : 'group-hover:bg-white/25'}`} />
+      </div>
+    );
+  }
   return (
     <div onPointerDown={onDown} className={`relative w-px shrink-0 bg-white/10 cursor-col-resize group ${active ? 'bg-blue-400' : ''}`}>
       <div className="absolute inset-y-0 -left-1 -right-1" />

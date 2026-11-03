@@ -4,7 +4,8 @@ import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
 
 /** Small badge for the sidebar header; opens the modal with commit list and apply log. */
-export function UpdateBadge() {
+/** `onlyAvailable`: render nothing until an update is out (the header); Settings shows the version always. */
+export function UpdateBadge({ onlyAvailable = false }: { onlyAvailable?: boolean }) {
   useLang();
   const [st, setSt] = useState<UpdateStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -14,6 +15,7 @@ export function UpdateBadge() {
   useEffect(() => { load(true); }, []);
   const available = !!st?.available;
   const installed = st?.installed;
+  if (onlyAvailable && !available && !open) return null;
   return (
     <>
       <button className={`titlebar-nodrag text-[11px] rounded-full px-2 py-0.5 ${available ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : 'text-zinc-600 hover:text-zinc-300'}`}
@@ -75,8 +77,8 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
   };
 
   return (
-    <div data-update-locked={locked} className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center" onClick={close}>
-      <div className="w-[640px] max-w-[92vw] max-h-[85vh] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div data-update-locked={locked} className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onClick={close}>
+      <div className="w-[640px] max-w-[92vw] max-h-[85vh] glass-pop pop-in !rounded-[22px] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center px-5 h-12 border-b border-white/10">
           <div className="font-medium">{t('update.title')}</div>
           <div className="flex-1" />

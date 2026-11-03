@@ -40,7 +40,7 @@ export default function PromptMenu({ draft, onInsert, disabled }: { draft: strin
         📝 {t('prompts.button')}
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-96 max-w-[80vw] rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1 text-[13px] z-30">
+        <div className="absolute bottom-full left-0 mb-2 w-96 max-w-[80vw] glass-pop pop-in rounded-xl py-1 text-[13px] z-30">
           {error && <div className="px-3 py-1 text-[11px] text-red-300">{error}</div>}
           {list.length === 0 && <div className="px-3 py-2 text-xs text-zinc-500">{t('prompts.empty')}</div>}
           <div className="max-h-72 overflow-y-auto">

@@ -32,6 +32,8 @@ export interface ToolStatus {
 }
 export interface ToolsInfo { tools: ToolStatus[]; installers: { brew: string | null; npm: string | null; node: string | null } }
 
+export interface Wallpaper { kind: 'color' | 'image'; color: string; blur: number; dim: number; version: number; hasImage: boolean }
+
 export interface UsageWindow { usedPct: number; resetsAt: number | null }
 export interface UsageSnapshot {
   fetchedAt: number;
@@ -163,6 +165,18 @@ export const api = {
   tools: (force = false) => req<ToolsInfo>(`/api/tools${force ? '?force=1' : ''}`),
   installUrl: (tool: string, method: string) => `/api/tools/install?tool=${q(tool)}&method=${q(method)}`,
   usage: (force = false) => req<UsageSnapshot>(`/api/usage${force ? '?force=1' : ''}`),
+  wallpaper: () => req<Wallpaper>('/api/wallpaper'),
+  setWallpaper: (patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'blur' | 'dim'>>) =>
+    req<Wallpaper>('/api/wallpaper', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }),
+  /** `original` is omitted when only the blurred copy was remade (blur changed). */
+  uploadWallpaper: (images: { original?: Blob; blur: Blob }, radius: number) => {
+    const fd = new FormData();
+    if (images.original) fd.append('original', images.original, 'wall.jpg');
+    fd.append('blur', images.blur, 'wall-blur.jpg');
+    fd.append('radius', String(radius));
+    return req<Wallpaper>('/api/wallpaper/image', { method: 'POST', body: fd });
+  },
+  wallpaperUrl: (which: 'original' | 'blur', version: number) => `/api/wallpaper/${which}?v=${version}`,
   attach: (files: File[]) => {
     const fd = new FormData();
     for (const f of files) fd.append('files', f, f.name);

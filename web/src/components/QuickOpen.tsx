@@ -42,7 +42,7 @@ export default function QuickOpen({ cwd, onClose, onOpen, onAttach }: Props) {
 
   return (
     <div className="absolute inset-0 z-30 bg-black/50 flex items-start justify-center pt-[12vh]" onClick={onClose}>
-      <div className="w-[640px] max-w-[92vw] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="w-[640px] max-w-[92vw] glass-pop pop-in !rounded-[22px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={t('quickopen.placeholder')}
           className="w-full bg-transparent px-4 py-3 text-sm outline-none border-b border-white/10" />
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto py-1">

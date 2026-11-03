@@ -112,7 +112,7 @@ export function VerifyButton({ cwd, running, onRun }: { cwd: string; running: bo
         {saved?.auto && <span className="text-[9px] uppercase tracking-wide rounded bg-sky-400/15 px-1">auto</span>}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-30 w-[380px] rounded-lg border border-white/10 bg-[#151922] shadow-2xl p-3 space-y-3 text-[12px]">
+        <div className="absolute right-0 top-full mt-1.5 z-30 w-[380px] glass-pop pop-in rounded-xl p-3 space-y-3 text-[12px]">
           <div>
             <div className="text-zinc-200 font-medium">{t('verify.title')}</div>
             <div className="text-[11px] text-zinc-500 leading-relaxed mt-0.5">{t('verify.about')}</div>

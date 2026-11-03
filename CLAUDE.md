@@ -10,7 +10,9 @@ Claude 는 Agent SDK 에 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를
 electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts)
 server/     Hono 서버 · 에이전트 어댑터 · PTY · git · 업데이트(updater.ts, releaseUpdate.ts) · 잠금 감시(lockWatch.ts)
             예약 실행(scheduler.ts, schedule.ts, schedulePower.ts: caffeinate · pmset 깨우기 helper)
-web/        React 앱. 잠금화면 cover 는 `/?lock=main|sub` 로 같은 번들을 따로 로드(main.tsx)
+            배경화면(wallpaper.ts: ~/.vibrato/wallpaper 에 원본 · 흐린 사본 저장)
+web/        React 앱. 잠금화면 cover 는 `/?lock=main|sub`, IDE 창은 `/?ide=<root>` 로 같은 번들을 따로 로드(main.tsx)
+            글래스 디자인: index.css 의 @theme 토큰 · .glass(미리 흐린 배경을 fixed 로 깐 카드) · .glass-pop(진짜 backdrop blur)
 tests/      node:test (`npm test`)
 .github/workflows/release.yml   버전 태그 push → DMG 릴리스
 electron-builder.yml            독립 앱 번들 설정(asar 끔, node-pty prebuild, SDK 바이너리 제외)

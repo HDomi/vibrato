@@ -6,12 +6,11 @@ import { reconnectTerminals, terminalsBusy } from './lib/terminals';
 import { keepAwakeEnabled, workInProgress } from './lib/power';
 import { lockSummary } from './lib/lockScreen';
 import { requestNotificationPermission, useSessions, setOnScreenSession } from './lib/useSessions';
-import Sidebar from './components/Sidebar';
+import Dock from './components/Dock';
 import FileList from './components/FileList';
 import Preview, { PreviewDialog } from './components/Preview';
-import { editor } from './lib/editor/store';
 import ToolsPanel from './components/ToolsPanel';
-import UsageBar, { type ViewMode } from './components/UsageBar';
+import UsageBar, { VIEW_ORDER, type ViewMode } from './components/UsageBar';
 import { useScheduleWatch } from './lib/scheduleWatch';
 import ChatPanel, { type PairOptions, type StartOptions } from './components/ChatPanel';
 import type { BackgroundSession } from './components/Composer';
@@ -32,18 +31,17 @@ import Toaster, { toast } from './components/Toast';
 import BacklogPanel from './components/BacklogPanel';
 import AgentContextDialog from './components/AgentContextDialog';
 import { EMPTY_BACKLOG, useBacklogs } from './lib/backlog';
-import Icon from './components/Icon';
+import Icon, { type IconName } from './components/Icon';
+import { IDE_CHANNEL, openIde, type IdeMessage } from './lib/ide';
 
-// CodeMirror and the explorer load the first time IDE mode is shown; the toolbox likewise.
-const EditorPanel = lazy(() => import('./components/editor/EditorPanel'));
+// The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
 
 const LS_CWD = 'vibe.cwd';
 const LS_PROJECT = 'vibe.project';
-const LS_SIDEBAR = 'vibe.sidebar.collapsed';
 const LS_RIGHT = 'vibe.right.collapsed';
-// v2: the old 'ide' value meant today's VIBE mode; IDE is now the editor.
+// v2: the old 'ide' value meant today's VIBE mode. The IDE now has its own window, so a stored 'ide' means VIBE too.
 const LS_MODE = 'vibe.mode.view.v2';
 const LS_MODE_V1 = 'vibe.mode.view';
 const LS_ACTIVE_SESSION = 'vibe.active.session';
@@ -75,20 +73,29 @@ function AppInner() {
   const [runStatus, setRunStatus] = useState({ running: 0, errors: false });
   // Remembered so an update/relaunch comes back to the tab that was on screen, not the new-session view.
   const [activeSession, setActiveSession] = useState<string | 'new' | null>(() => { try { return localStorage.getItem(LS_ACTIVE_SESSION); } catch { return null; } });
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS_SIDEBAR) === '1'; } catch { return false; } });
   const [rightCollapsed, setRightCollapsed] = useState(() => { try { return localStorage.getItem(LS_RIGHT) === '1'; } catch { return false; } });
   const [dragging, setDragging] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [view, setView] = useState<ViewMode>(() => {
-    try { return (localStorage.getItem(LS_MODE) as ViewMode) || (localStorage.getItem(LS_MODE_V1) === 'agent' ? 'agent' : 'vibe'); } catch { return 'vibe'; }
+  const [view, setViewState] = useState<ViewMode>(() => {
+    try {
+      const v = localStorage.getItem(LS_MODE) || (localStorage.getItem(LS_MODE_V1) === 'agent' ? 'agent' : 'vibe');
+      return VIEW_ORDER.includes(v as ViewMode) ? v as ViewMode : 'vibe';
+    } catch { return 'vibe'; }
   });
-  useEffect(() => { editor.setRoot(project); }, [project]);
+  // Views slide in from the side of the tab that was picked (left of the old one: from the left).
+  const [slide, setSlide] = useState<'left' | 'right'>('right');
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const setView = useCallback((v: ViewMode) => {
+    if (v === viewRef.current) return;
+    setSlide(VIEW_ORDER.indexOf(v) > VIEW_ORDER.indexOf(viewRef.current) ? 'right' : 'left');
+    setViewState(v);
+  }, []);
   const [agentActive, setAgentActive] = useState<string | 'new' | null>(null);
   useEffect(() => { try { localStorage.setItem(LS_MODE, view); } catch { /* ignore */ } }, [view]);
   useEffect(() => { try { activeSession ? localStorage.setItem(LS_ACTIVE_SESSION, activeSession) : localStorage.removeItem(LS_ACTIVE_SESSION); } catch { /* ignore */ } }, [activeSession]);
-  const sidebar = usePaneWidth('vibe.w.sidebar', 256, 180, 480);
   const right = usePaneWidth('vibe.w.right', 420, 280, 1200);
   const S = useSessions();
   const B = useBacklogs(S);
@@ -114,7 +121,6 @@ function AppInner() {
     api.favorites().then(setFavorites).catch(() => {});
     api.recent().then(setRecent).catch(() => {});
   }, []);
-  useEffect(() => { try { localStorage.setItem(LS_SIDEBAR, collapsed ? '1' : '0'); } catch { /* ignore */ } }, [collapsed]);
   useEffect(() => { try { localStorage.setItem(LS_RIGHT, rightCollapsed ? '1' : '0'); } catch { /* ignore */ } }, [rightCollapsed]);
   const paneTransition = dragging ? '' : 'transition-[width] duration-250 ease-[cubic-bezier(.2,.8,.2,1)]';
 
@@ -157,16 +163,15 @@ function AppInner() {
       api.stat(path).then((e) => {
         if (e.isDir) {
           navigate(e.path);
-          if (view !== 'vibe' && view !== 'ide') { setPreviewPopup(null); setView('vibe'); }
-          if (view !== 'ide') { setRightTab('files'); setRightCollapsed(false); }
-        } else if (view === 'ide' && project) editor.open(e.path, { kind: e.kind });
-        else if (view === 'vibe') { setSelected(e); setRightTab('preview'); setRightCollapsed(false); }
+          if (view !== 'vibe') { setPreviewPopup(null); setView('vibe'); }
+          setRightTab('files'); setRightCollapsed(false);
+        } else if (view === 'vibe') { setSelected(e); setRightTab('preview'); setRightCollapsed(false); }
         else setPreviewPopup(e);
       }).catch(() => toast(t('preview.openFailed', { path }), 'error'));
     };
     window.addEventListener('vibe:open-file', h);
     return () => window.removeEventListener('vibe:open-file', h);
-  }, [navigate, view, project]);
+  }, [navigate, view, project, setView]);
   useEffect(() => { setPreviewPopup(null); }, [view]);
   const openProject = useCallback((p: string) => {
     setProject(p); navigate(p); setActiveSession(null);
@@ -313,6 +318,25 @@ function AppInner() {
     setPendingAttachments((prev) => [...prev, ...entries.filter((e) => !e.isDir).map((e) => ({ path: e.path, name: e.name, kind: IMAGE_RE.test(e.name) ? 'image' as const : 'file' as const }))]);
     if (!session && project) setActiveSession(null);
   };
+  // "Attach to chat" from an IDE window: show VIBE on that project and queue the files in its composer.
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  const ideTarget = useRef({ project, openProject, setView });
+  ideTarget.current = { project, openProject, setView };
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel(IDE_CHANNEL);
+    ch.onmessage = (ev: MessageEvent<IdeMessage>) => {
+      const m = ev.data;
+      if (m?.kind !== 'attach' || !m.files?.length) return;
+      const { project: cur, openProject: open, setView: show } = ideTarget.current;
+      show('vibe');
+      if (cur !== m.root) open(m.root);
+      attachRef.current(m.files.map((f) => ({ path: f.path, name: f.name, isDir: false, size: 0, mtime: 0, ext: '', hidden: false, kind: 'binary' as const })));
+      window.focus();
+    };
+    return () => ch.close();
+  }, []);
 
   const rightTabs = [['files', t('app.tab.files')], ['preview', t('app.tab.preview')], ['terminal', t('app.tab.terminal')], ['git', t('app.tab.git')], ['run', t('app.tab.run')]] as const;
   const TAB_KEYS = ['1', '2', '3', '4', '5'];
@@ -329,15 +353,7 @@ function AppInner() {
       if (inEditor && (k === 'w' || k === '/' || k === 's' || k === 'k')) return;
       // Tools mode has no sessions or panels; its own ⌘1-9 switch tools (see ToolboxView). Schedules have none either.
       if (view === 'tools' || view === 'schedule') return;
-      if (view === 'ide') {
-        // No chat or right panel on screen: ⌘W closes an editor tab (never a hidden session), ⌘B the explorer.
-        if (k === 'w') { e.preventDefault(); if (editor.active) editor.close(editor.active); return; }
-        if (k === 's') { e.preventDefault(); if (editor.active) void editor.save(editor.active); return; }
-        if (k === 'b') { e.preventDefault(); window.dispatchEvent(new Event('vibe:toggle-tree')); return; }
-        if (k === 'n' || k === 'j' || k === 'k' || TAB_KEYS.includes(e.key)) return;
-      }
       if (k === 'p' && !e.shiftKey) { e.preventDefault(); if (project) setQuickOpen((v) => !v); }
-      else if (k === 'b') { e.preventDefault(); setCollapsed((v) => !v); }
       else if (k === 'j') { e.preventDefault(); setRightCollapsed((v) => !v); }
       else if (k === 'k') { e.preventDefault(); window.dispatchEvent(new Event('vibe:focus-composer')); }
       else if (k === 'f' && !e.shiftKey && !(e.target as HTMLElement)?.closest?.('[data-own-find]')) { e.preventDefault(); window.dispatchEvent(new Event('vibe:chat-search')); }
@@ -358,70 +374,60 @@ function AppInner() {
     return () => window.removeEventListener('keydown', h);
   }, [project, session, S, view, agentActive]);
 
+  const waiting = Object.values(S.sessions).reduce((n, s) => n + pendingRequests(s), 0);
+  const tabIcons: Record<typeof rightTabs[number][0], IconName> = { files: 'list', preview: 'file', terminal: 'terminal', git: 'branch', run: 'play' };
+
   return (
-      <div className="h-full flex flex-col">
+      <div className="app-wall h-full flex flex-col overflow-hidden">
         <Lightbox />
         <Toaster />
         {previewPopup && <PreviewDialog entry={previewPopup} onClose={() => setPreviewPopup(null)} />}
-        <UsageBar mode={view} onMode={setView} />
+        <UsageBar mode={view} onMode={setView} onPickFolder={pickFolder} onOpenSettings={() => setShowTools(true)} />
+        <div key={view} className={`flex-1 min-h-0 flex ${slide === 'right' ? 'view-in-right' : 'view-in-left'}`}>
         {view === 'agent' ? (
           <AgentView home={home?.home ?? '~'} S={S} active={agentActive} setActive={setAgentActive} onFocusSession={(id) => focusSession.current(id)} />
         ) : view === 'tools' ? (
           <Suspense fallback={null}><ToolboxView /></Suspense>
         ) : view === 'schedule' ? (
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
-        ) : view === 'ide' ? (
-          <div className="flex-1 flex min-h-0 relative">
-            {project
-              ? <Suspense fallback={null}><EditorPanel root={project} visible onAttach={attach} /></Suspense>
-              : <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">{t('editor.noProject')}</div>}
-            {quickOpen && project && (
-              <QuickOpen cwd={project} onClose={() => setQuickOpen(false)}
-                onOpen={(h) => { if (!h.isDir) editor.open(h.path); }}
-                onAttach={(h) => { if (!h.isDir) attach([{ path: h.path, name: h.rel.split('/').pop() ?? h.rel, isDir: false, size: 0, mtime: 0, ext: '', hidden: false, kind: 'binary' }]); }} />
-            )}
-          </div>
         ) : (
-        <div className="flex-1 flex min-h-0 relative">
-          <div style={{ width: collapsed ? 40 : sidebar.width }} className={`shrink-0 h-full overflow-hidden ${paneTransition}`}>
-            <Sidebar home={home} favorites={favorites} cwd={project ?? ''} collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)}
-              onNavigate={openProject} onFavoritesChange={setFavorites}
-              onPickFolder={pickFolder} onOpenSettings={() => setShowTools(true)} onResumeSession={resumeSession} />
+        <div className="flex-1 min-w-0 flex px-4 pb-4">
+          <div className="w-14 shrink-0 flex items-center">
+            <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={resumeSession} waiting={waiting} />
           </div>
-          {!collapsed && <Splitter onStart={() => setDragging(true)} onEnd={() => setDragging(false)} onDrag={(dx) => sidebar.setWidth(sidebar.width + dx)} />}
-          <main className="flex-1 min-w-0 flex">
-            <div className="flex-1 min-w-0 flex flex-col">
+          <main className="flex-1 min-w-0 flex ml-8">
+            <section className="glass flex-1 min-w-0 flex flex-col overflow-hidden">
               {project && projectSessions.length > 0 && (
-                <div className="h-9 shrink-0 flex items-center gap-1 px-2 border-b border-white/10 text-xs">
-                  {/* Only the tabs scroll; the new-session button stays pinned at the right end. */}
-                  <div className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto">
+                <div className="h-11 shrink-0 flex items-center gap-1 px-2.5 border-b border-line text-xs">
+                  {/* Only the tabs scroll; the backlog and new-session buttons stay pinned at the right end. */}
+                  <div className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {projectSessions.map((s) => (
                     <div key={s.id} onClick={() => setActiveSession(s.id)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
                       onContextMenu={(e) => menu.open(e, sessionMenu(s, S.setPinned, () => closeSession(s.id)))} {...(s.id !== session?.id ? dropProps(s.id) : {})}
-                      className={`group flex items-center gap-1.5 rounded-md pl-2.5 pr-1 py-1 whitespace-nowrap cursor-pointer ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5'}`}>
+                      className={`group flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 whitespace-nowrap cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
-                      <span className="text-zinc-500" title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
-                      {s.worktree && <span className="flex items-center gap-0.5 rounded bg-violet-400/10 px-1 text-[10px] text-violet-200 max-w-28" title={`${s.worktree.branch} · ${s.worktree.path}`}><Icon name="branch" size={10} /><span className="truncate">{s.worktree.branch}</span></span>}
+                      <span className={session?.id === s.id ? 'text-zinc-100' : 'text-zinc-400'} title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
+                      {s.worktree && <span className="flex items-center gap-0.5 rounded-full bg-violet-400/10 px-1.5 text-[10px] text-violet-200 max-w-28" title={`${s.worktree.branch} · ${s.worktree.path}`}><Icon name="branch" size={10} /><span className="truncate">{s.worktree.branch}</span></span>}
                       <AttentionBadge s={s} />
-                      <button className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/15 opacity-0 group-hover:opacity-100" title={t('app.closeSession')}
+                      <button className="ml-0.5 w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/15 opacity-0 group-hover:opacity-100 transition-opacity" title={t('app.closeSession')}
                         onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}><Icon name="close" size={11} /></button>
                     </div>
                   ))}
                   </div>
                   <div ref={backlogRef} className="relative shrink-0">
-                    <button className={`h-7 px-1.5 flex items-center gap-1 rounded-md hover:bg-white/10 ${projectBacklog.auto ? 'text-amber-300' : 'text-zinc-400 hover:text-white'}`} onClick={() => setBacklogOpen((v) => !v)} title={t('backlog.title')}>
+                    <button className={`h-7 px-2 flex items-center gap-1 rounded-full hover:bg-fill-2 ${projectBacklog.auto ? 'text-amber-300' : 'text-zinc-400 hover:text-white'}`} onClick={() => setBacklogOpen((v) => !v)} title={t('backlog.title')}>
                       <Icon name="list" size={14} />
                       {backlogTodo > 0 && <span className="text-[10px] tabular-nums">{backlogTodo}</span>}
                     </button>
                     {backlogOpen && project && (
-                      <div className="absolute right-0 top-full mt-1.5 z-30 rounded-lg border border-white/10 bg-[#151922] shadow-2xl p-3">
+                      <div className="glass-pop pop-in absolute right-0 top-full mt-2 z-30 p-3">
                         <BacklogPanel backlog={projectBacklog} onChange={(fn) => B.update(project, fn)} onFocusSession={(id) => { setBacklogOpen(false); focusSession.current(S.replaced[id] ?? id); }} />
                       </div>
                     )}
                   </div>
-                  <button className="w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={() => setActiveSession('new')} title={t('app.newSession')}><Icon name="plus" /></button>
+                  <button className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-fill-2" onClick={() => setActiveSession('new')} title={t('app.newSession')}><Icon name="plus" /></button>
                 </div>
               )}
               <div className="flex-1 min-h-0">
@@ -446,57 +452,68 @@ function AppInner() {
                   onCrossReview={(changes) => { if (session) startCrossReview(S, session, changes).then(setActiveSession).catch((e) => window.alert((e as Error).message)); }}
                   onHandoff={() => { if (session) startHandoff(S, session).then(setActiveSession).catch((e) => window.alert((e as Error).message)); }} />
               </div>
-            </div>
-            {!rightCollapsed && <Splitter onStart={() => setDragging(true)} onEnd={() => setDragging(false)} onDrag={(dx) => right.setWidth(right.width - dx)} />}
-            {rightCollapsed && (
-              <div className="w-9 shrink-0 flex flex-col items-center border-l border-white/10 bg-[#0e1117] py-2 gap-1">
-                <button className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 text-zinc-400" onClick={() => setRightCollapsed(false)} title={t('app.expandPanel')}><Icon name="chevronsLeft" /></button>
-                {rightTabs.map(([t, label]) => (
-                  <button key={t} title={label} onClick={() => { setRightTab(t); setRightCollapsed(false); }}
-                    className={`w-7 h-7 rounded text-[10px] ${rightTab === t ? 'bg-white/15 text-white' : 'text-zinc-500 hover:bg-white/10'}`}>{label.slice(0, 1)}</button>
+            </section>
+            {rightCollapsed ? <div className="w-4 shrink-0" /> : <Splitter gap onStart={() => setDragging(true)} onEnd={() => setDragging(false)} onDrag={(dx) => right.setWidth(right.width - dx)} />}
+            <section style={{ width: rightCollapsed ? 56 : right.width }} className={`glass shrink-0 relative overflow-hidden ${paneTransition}`}>
+              {/* Collapsed: a strip as wide as the dock with one button per tab. */}
+              <div className={`absolute inset-0 flex flex-col items-center gap-1.5 py-2 transition-opacity duration-200 ${rightCollapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-hidden={!rightCollapsed}>
+                <button className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full text-zinc-300 hover:bg-fill-2 hover:text-white" onClick={() => setRightCollapsed(false)} title={t('app.expandPanel')}><Icon name="chevronsLeft" /></button>
+                <span className="w-8 h-px bg-line my-0.5" />
+                {rightTabs.map(([k, label]) => (
+                  <button key={k} title={label} aria-label={label} onClick={() => { setRightTab(k); setRightCollapsed(false); }}
+                    className={`relative w-10 h-10 shrink-0 flex items-center justify-center rounded-full transition-colors ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill-2 hover:text-white'}`}>
+                    <Icon name={tabIcons[k]} size={15} />
+                    {k === 'run' && runStatus.running > 0 && <span className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${runStatus.errors ? 'bg-red-400' : 'bg-emerald-400'}`} />}
+                  </button>
                 ))}
               </div>
-            )}
-            <div style={{ width: rightCollapsed ? 0 : right.width }} className={`shrink-0 flex flex-col min-w-0 overflow-hidden ${paneTransition}`}>
-              <div className="h-10 shrink-0 flex items-stretch border-b border-white/10 text-xs" style={{ minWidth: right.width }}>
-                <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {rightTabs.map(([t, label]) => (
-                    <button key={t} className={`shrink-0 px-3 flex items-center gap-1.5 ${rightTab === t ? 'text-white border-b-2 border-blue-400' : 'text-zinc-500 hover:text-zinc-300'}`} onClick={() => setRightTab(t)}>
-                      {label}
-                      {t === 'run' && runStatus.running > 0 && <span className={`w-1.5 h-1.5 rounded-full ${runStatus.errors ? 'bg-red-400' : 'bg-emerald-400'}`} />}
+              <div className={`absolute inset-y-0 left-0 flex flex-col transition-opacity duration-200 ${rightCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} style={{ width: right.width }} aria-hidden={rightCollapsed}>
+                <div className="h-11 shrink-0 flex items-center gap-1 px-2 border-b border-line text-xs">
+                  <div className="flex-1 min-w-0 flex items-center gap-0.5 overflow-x-auto whitespace-nowrap no-scrollbar">
+                    {rightTabs.map(([k, label]) => (
+                      <button key={k} className={`shrink-0 h-7 px-3 rounded-full flex items-center gap-1.5 transition-colors duration-150 ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:text-zinc-100 hover:bg-fill'}`} onClick={() => setRightTab(k)}>
+                        {label}
+                        {k === 'run' && runStatus.running > 0 && <span className={`w-1.5 h-1.5 rounded-full ${runStatus.errors ? 'bg-red-400' : 'bg-emerald-400'}`} />}
+                      </button>
+                    ))}
+                  </div>
+                  {panelRoot && (
+                    <button className="shrink-0 h-7 px-2.5 flex items-center gap-1 rounded-full text-zinc-300 hover:text-white hover:bg-fill-2" title={t('app.openInIde')} onClick={() => openIde(panelRoot)}>
+                      <Icon name="devtools" size={13} />IDE
                     </button>
-                  ))}
+                  )}
+                  {project && (
+                    <button className="shrink-0 h-7 px-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-fill-2" title={t('app.openProjectIn')}
+                      onClick={(e) => menu.open(e, [
+                        { label: t('app.openInIde'), onClick: () => openIde(panelRoot ?? project) },
+                        { separator: true },
+                        { label: t('common.openInTerminal'), onClick: () => api.open(project, 'terminal').catch(() => {}) },
+                        { label: t('common.revealInFinder'), onClick: () => api.open(project, 'finder').catch(() => {}) },
+                        { label: t('common.openInVSCode'), onClick: () => api.open(project, 'vscode').catch(() => {}) },
+                        { label: t('common.openInCursor'), onClick: () => api.open(project, 'cursor').catch(() => {}) },
+                        { separator: true },
+                        { label: t('context.menu'), onClick: () => setContextOpen(true) },
+                        { label: t('common.copyPath'), onClick: () => navigator.clipboard.writeText(project) },
+                      ])}>{t('app.openMenu')}</button>
+                  )}
+                  <button className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-fill-2 text-zinc-400 hover:text-white" onClick={() => setRightCollapsed(true)} title={t('app.collapsePanel')}><Icon name="chevronsRight" /></button>
                 </div>
-                {project && (
-                  <button className="shrink-0 self-center mr-1 px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5" title={t('app.openProjectIn')}
-                    onClick={(e) => menu.open(e, [
-                      { label: t('common.openInTerminal'), onClick: () => api.open(project, 'terminal').catch(() => {}) },
-                      { label: t('common.revealInFinder'), onClick: () => api.open(project, 'finder').catch(() => {}) },
-                      { label: t('common.openInVSCode'), onClick: () => api.open(project, 'vscode').catch(() => {}) },
-                      { label: t('common.openInCursor'), onClick: () => api.open(project, 'cursor').catch(() => {}) },
-                      { separator: true },
-                      { label: t('context.menu'), onClick: () => setContextOpen(true) },
-                      { label: t('common.copyPath'), onClick: () => navigator.clipboard.writeText(project) },
-                    ])}>{t('app.openMenu')}</button>
-                )}
-                <button className="shrink-0 self-center w-7 h-7 mr-1 flex items-center justify-center rounded-md hover:bg-white/10 text-zinc-400" onClick={() => setRightCollapsed(true)} title={t('app.collapsePanel')}><Icon name="chevronsRight" /></button>
-              </div>
-              <div className="flex-1 min-h-0 relative" style={{ minWidth: right.width }}>
-                <div className={`absolute inset-0 ${rightTab === 'files' ? '' : 'invisible'}`}>
-                  <FileList listing={listing} error={error} isFavorite={isFavorite}
-                    onNavigate={navigate} onPreview={(e) => { setSelected(e); setRightTab('preview'); }} onToggleFavorite={toggleFavorite}
-                    onRefresh={() => setRefreshTick((t) => t + 1)} onAttach={project ? attach : undefined}
-                    onOpenInIde={(e) => { editor.open(e.path, { kind: e.kind }); setView('ide'); }} />
+                <div className="flex-1 min-h-0 relative">
+                  <div className={`absolute inset-0 ${rightTab === 'files' ? '' : 'invisible'}`}>
+                    <FileList listing={listing} error={error} isFavorite={isFavorite}
+                      onNavigate={navigate} onPreview={(e) => { setSelected(e); setRightTab('preview'); }} onToggleFavorite={toggleFavorite}
+                      onRefresh={() => setRefreshTick((t) => t + 1)} onAttach={project ? attach : undefined}
+                      onOpenInIde={(e) => openIde(panelRoot ?? project ?? e.path, e.isDir ? undefined : e.path)} />
+                  </div>
+                  <div className={`absolute inset-0 ${rightTab === 'preview' ? '' : 'invisible'}`}><Preview entry={selected} /></div>
+                  <div className={`absolute inset-0 ${rightTab === 'terminal' ? '' : 'invisible'}`}><TerminalPanel cwd={panelRoot} visible={rightTab === 'terminal' && !rightCollapsed} /></div>
+                  <div className={`absolute inset-0 ${rightTab === 'git' ? '' : 'invisible'}`}><GitPanel cwd={panelRoot} visible={rightTab === 'git' && !rightCollapsed} /></div>
+                  <div className={`absolute inset-0 ${rightTab === 'run' ? '' : 'invisible'}`}><RunPanel cwd={panelRoot} visible={rightTab === 'run' && !rightCollapsed} onStatus={setRunStatus} /></div>
                 </div>
-                <div className={`absolute inset-0 ${rightTab === 'preview' ? '' : 'invisible'}`}><Preview entry={selected} /></div>
-                <div className={`absolute inset-0 ${rightTab === 'terminal' ? '' : 'invisible'}`}><TerminalPanel cwd={panelRoot} visible={rightTab === 'terminal'} /></div>
-                <div className={`absolute inset-0 ${rightTab === 'git' ? '' : 'invisible'}`}><GitPanel cwd={panelRoot} visible={rightTab === 'git'} /></div>
-                <div className={`absolute inset-0 ${rightTab === 'run' ? '' : 'invisible'}`}><RunPanel cwd={panelRoot} visible={rightTab === 'run' && !rightCollapsed} onStatus={setRunStatus} /></div>
               </div>
-            </div>
+            </section>
           </main>
-          {contextOpen && panelRoot && <AgentContextDialog cwd={panelRoot} onClose={() => setContextOpen(false)} onOpenFile={(p) => { setContextOpen(false); editor.open(p); setView('ide'); }} />}
-          {showTools && <ToolsPanel focusLock={toolsFocusLock} focusFormTypes={toolsFocusForms} onClose={() => { setShowTools(false); setToolsFocusLock(false); setToolsFocusForms(false); }} />}
+          {contextOpen && panelRoot && <AgentContextDialog cwd={panelRoot} onClose={() => setContextOpen(false)} onOpenFile={(p) => { setContextOpen(false); openIde(panelRoot, p); }} />}
           {quickOpen && project && (
             <QuickOpen cwd={project} onClose={() => setQuickOpen(false)}
               onOpen={(h) => { if (h.isDir) navigate(h.path); else api.stat(h.path).then((e) => { setSelected(e); setRightTab('preview'); setRightCollapsed(false); }).catch(() => {}); }}
@@ -504,6 +521,8 @@ function AppInner() {
           )}
         </div>
         )}
+        </div>
+        {showTools && <ToolsPanel focusLock={toolsFocusLock} focusFormTypes={toolsFocusForms} onClose={() => { setShowTools(false); setToolsFocusLock(false); setToolsFocusForms(false); }} />}
       </div>
   );
 }
@@ -518,16 +537,16 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
   const start = (c: string, o?: StartOptions) => S.start(c, o).then(setActive).catch((e) => window.alert(e.message));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   return (
-    <div className="flex-1 flex min-h-0 relative">
-      <aside className="w-64 shrink-0 h-full flex flex-col border-r border-white/10 bg-[#0e1117]">
-        <div className="h-10 flex items-center px-3 text-xs text-zinc-500">
-          <span className="font-medium text-zinc-400">{t('app.agent')}</span>
+    <div className="flex-1 min-w-0 flex gap-4 px-4 pb-4 relative">
+      <aside className="glass w-72 shrink-0 flex flex-col overflow-hidden">
+        <div className="h-12 shrink-0 flex items-center px-4 border-b border-line">
+          <span className="text-[13px] font-semibold text-zinc-100">{t('app.agent')}</span>
           <div className="flex-1" />
-          <button className="px-2 py-1 rounded hover:bg-white/10 text-zinc-300" onClick={() => setActive('new')} title={t('app.newConversation')}>{t('app.newBtn')}</button>
+          <button className="h-7 px-3 flex items-center gap-1 rounded-full bg-fill-2 hover:bg-fill-3 text-xs text-zinc-100 transition-colors" onClick={() => setActive('new')} title={t('app.newConversation')}>{t('app.newBtn')}</button>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 py-1">
-          <div className="px-2 mb-1 text-[11px] uppercase tracking-wider text-zinc-500">{t('app.openSessions')}</div>
-          {live.length === 0 && <div className="px-2 text-xs text-zinc-600">{t('app.nothingOpen')}</div>}
+        <div className="flex-1 overflow-y-auto p-2">
+          <div className="px-2.5 pt-1 pb-1.5 text-[11px] uppercase tracking-wider text-zinc-500">{t('app.openSessions')}</div>
+          {live.length === 0 && <div className="px-2.5 text-xs text-zinc-500 leading-relaxed">{t('app.nothingOpen')}</div>}
           {live.map((s) => (
             <div key={s.id} onClick={() => setActive(s.id)}
               onDragOver={(e) => { if (s.id !== session?.id && hasTransfer(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropTarget(s.id); } }}
@@ -537,7 +556,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
                 if ((s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
                 S.close(s.id); if (session?.id === s.id) setActive(null);
               }))}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-white/10 text-white' : 'text-zinc-300 hover:bg-white/5'}`}>
+              className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-300 hover:bg-fill'}`}>
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
               <AgentIcon agent={s.agent} size={16} />
               {s.pinned && <span className="text-[10px]" title={t('common.pin')}>📌</span>}
@@ -547,9 +566,8 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
             </div>
           ))}
         </div>
-        <div className="h-px shrink-0 bg-white/10 mb-4" />
       </aside>
-      <div className="flex-1 min-w-0">
+      <section className="glass flex-1 min-w-0 overflow-hidden">
         <ChatPanel cwd={home} scope="home" session={session}
           onStart={start}
           onSend={(t, a) => session && S.send(session.id, t, a)}
@@ -565,7 +583,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
           onVerify={() => session && S.verify(session.id)}
           onCrossReview={(changes) => { if (session) startCrossReview(S, session, changes).then(setActive).catch((e) => window.alert((e as Error).message)); }}
           onHandoff={() => { if (session) startHandoff(S, session).then(setActive).catch((e) => window.alert((e as Error).message)); }} />
-      </div>
+      </section>
     </div>
   );
 }

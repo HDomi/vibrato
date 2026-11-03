@@ -87,7 +87,7 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
   useEffect(() => { if (ranges.length) jump(index); }, [ranges]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="absolute top-2 right-4 z-20 flex items-center gap-1 rounded-lg border border-white/15 bg-[#171a22] shadow-xl px-2 py-1 text-xs">
+    <div className="absolute top-2 right-4 z-20 flex items-center gap-1 glass-pop rounded-xl px-2 py-1 text-xs">
       <input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('chat.searchPlaceholder')} aria-label={t('chat.searchPlaceholder')}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;

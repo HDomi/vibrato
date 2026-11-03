@@ -2,19 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import UsageBar, { Battery, untilReset } from '../web/src/components/UsageBar';
+import UsageBar, { UsageChip, untilReset } from '../web/src/components/UsageBar';
 import { normalizeClaudeUsage, queryClaudeUsage, type UsageQuery } from '../server/claudeUsage';
 
-test('usage batteries distinguish zero usage, exhausted quota and unavailable data', () => {
-  const zero = renderToStaticMarkup(<Battery label="5h" win={{ usedPct: 0, resetsAt: null }} loading={false} />);
+test('usage buttons distinguish zero usage, exhausted quota and unavailable data', () => {
+  const zero = renderToStaticMarkup(<UsageChip agent="claude" label="5h" win={{ usedPct: 0, resetsAt: null }} loading={false} />);
   assert.match(zero, /100%/); assert.match(zero, /0% used/);
-  const exhausted = renderToStaticMarkup(<Battery label="5h" win={{ usedPct: 100, resetsAt: null }} loading={false} />);
-  assert.match(exhausted, />0%</);
-  const missing = renderToStaticMarkup(<Battery label="5h" win={null} error="HTTP 429" loading={false} />);
+  const exhausted = renderToStaticMarkup(<UsageChip agent="claude" label="5h" win={{ usedPct: 100, resetsAt: null }} loading={false} />);
+  assert.match(exhausted, /5h: 0%</);
+  const missing = renderToStaticMarkup(<UsageChip agent="codex" label="5h" win={null} error="HTTP 429" loading={false} />);
   assert.match(missing, /5h/); assert.match(missing, /—/); assert.match(missing, /HTTP 429/);
   assert.doesNotMatch(missing, /100%/);
-  const initial = renderToStaticMarkup(<UsageBar mode="ide" onMode={() => {}} />);
-  assert.match(initial, /Claude/); assert.match(initial, /Codex/);
+  const initial = renderToStaticMarkup(<UsageBar mode="vibe" onMode={() => {}} />);
+  assert.match(initial, /data-agent="claude"/); assert.match(initial, /data-agent="codex"/);
 });
 
 test('Claude current meter rows take precedence over legacy fields and retain model usage', () => {

@@ -153,19 +153,19 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   const projectOptions = [...new Set([...(draft.cwd ? [draft.cwd] : []), ...projects])];
 
   return (
-    <div className="flex-1 flex min-h-0 text-[12.5px]">
-      <aside className="w-[320px] shrink-0 border-r border-white/10 flex flex-col min-h-0">
-        <div className="h-12 shrink-0 flex items-center gap-2 px-4 border-b border-white/10">
+    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-4 pb-4 text-[12.5px]">
+      <aside className="glass w-[320px] shrink-0 flex flex-col min-h-0 overflow-hidden">
+        <div className="h-12 shrink-0 flex items-center gap-2 px-4 border-b border-line">
           <span className="text-[14px] font-semibold">{t('sched.title')}</span>
           <div className="flex-1" />
-          <button className="flex items-center gap-1 rounded-md px-2 py-1 text-zinc-300 hover:bg-white/10" onClick={() => select(null)}><Icon name="plus" size={12} />{t('sched.new')}</button>
+          <button className="h-7 flex items-center gap-1 rounded-full bg-fill-2 hover:bg-fill-3 px-3 text-zinc-100 transition-colors" onClick={() => select(null)}><Icon name="plus" size={12} />{t('sched.new')}</button>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
           {snap && !snap.schedules.length && <div className="px-2 py-3 text-zinc-500">{t('sched.empty')}</div>}
           {snap?.schedules.map((s) => {
             const last = lastRun(s.id);
             return (
-              <button key={s.id} onClick={() => select(s)} className={`w-full text-left rounded-lg px-3 py-2 border ${selected === s.id ? 'border-white/20 bg-white/[0.06]' : 'border-transparent hover:bg-white/[0.03]'}`}>
+              <button key={s.id} onClick={() => select(s)} className={`w-full text-left rounded-xl px-3 py-2 border transition-colors duration-150 ${selected === s.id ? 'border-white/15 bg-fill-3' : 'border-transparent hover:bg-fill'}`}>
                 <div className="flex items-center gap-2">
                   <AgentIcon agent={s.agent} size={13} />
                   <span className={`truncate font-medium ${s.enabled ? 'text-zinc-100' : 'text-zinc-500 line-through'}`}>{s.name}</span>
@@ -187,7 +187,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
         )}
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-y-auto">
+      <main className="glass flex-1 min-w-0 overflow-y-auto">
         <div className="max-w-[860px] mx-auto px-8 py-6 space-y-5">
           <div className="flex items-center gap-2">
             <input className={`${input} text-[14px] font-medium`} placeholder={t('sched.namePlaceholder')} value={draft.name} onChange={(e) => set('name', e.target.value)} />
@@ -252,7 +252,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                 onSelect={(e) => setCaret(e.currentTarget.selectionStart)} onKeyDown={onPromptKey} onBlur={() => setCaret(0)}
                 placeholder={draft.skill ? t('sched.argsPlaceholder', { skill: draft.skill }) : t('sched.promptPlaceholder')} />
               {mention && (
-                <div className="absolute top-full left-0 mt-1 w-[520px] max-w-full rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1 z-10">
+                <div className="absolute top-full left-0 mt-1 w-[520px] max-w-full glass-pop pop-in rounded-xl py-1 z-10">
                   {sessions === null && <div className="px-3 py-1.5 text-zinc-500">{t('common.loading')}</div>}
                   {sessions !== null && !sessionHits.length && <div className="px-3 py-1.5 text-zinc-500">{t('sched.resumeNone')}</div>}
                   {sessionHits.map((r, i) => (

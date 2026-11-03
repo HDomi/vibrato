@@ -25,7 +25,7 @@ function DiffView({ text }: { text: string }) {
 /** Sticky section header: colored marker, title, count pill, optional actions on the right. */
 function SectionHeader({ color, title, count, children }: { color: string; title: string; count?: number; children?: ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-8 bg-[#12151c]/95 backdrop-blur border-b border-white/5 text-[11px]">
+    <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-8 glass-fill border-b border-line text-[11px]">
       <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
       <span className="font-medium tracking-wide text-zinc-300">{title}</span>
       {count !== undefined && <span className="min-w-[18px] px-1.5 py-px rounded-full bg-white/5 text-[10px] text-zinc-400 text-center font-mono">{count}</span>}
@@ -253,7 +253,7 @@ export default function GitPanel({ cwd, visible }: Props) {
           </section>
         </div>
         <div className="relative flex-1 min-h-0">
-        <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-[#0b0d12]">
+        <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-black/20">
           {sel ? (
             <>
               <SectionHeader color="bg-blue-400" title={sel.path}>
@@ -279,7 +279,7 @@ export default function GitPanel({ cwd, visible }: Props) {
             onFile={setCommitFile} onClose={() => { setCommitView(null); setCommitFile(null); }} />
         )}
         </div>
-        <div className="shrink-0 border-t border-white/10 bg-[#12151c]">
+        <div className="shrink-0 border-t border-line bg-black/15">
           <div className="flex items-center gap-2 px-3 h-7 text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
             <span className="font-medium tracking-wide text-zinc-300">{t('git.commitTitle')}</span>
@@ -294,7 +294,7 @@ export default function GitPanel({ cwd, visible }: Props) {
           <div className="px-2 pb-2 space-y-2">
             <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={2} placeholder={t('git.commitPlaceholder')}
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); commit(); } }}
-              className="w-full bg-[#0b0d12] rounded-md border border-white/10 focus:border-sky-400/40 px-2 py-1.5 text-xs outline-none resize-none font-mono" />
+              className="w-full bg-black/30 rounded-lg border border-white/10 focus:border-sky-400/40 px-2 py-1.5 text-xs outline-none resize-none font-mono" />
             <div className="flex items-center gap-2">
               <button disabled={busy || !msg.trim() || !staged.length} className="rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs px-3 py-1.5 disabled:opacity-40" onClick={() => commit()}>{t('git.commit', { n: staged.length })}</button>
               <button disabled={busy || !msg.trim() || !staged.length || !!remoteBusy} className="rounded bg-white/5 hover:bg-white/10 text-xs px-3 py-1.5 disabled:opacity-40"
@@ -325,7 +325,7 @@ function CommitDetail({ view, root, file, diff, onFile, onClose }: {
   }, [onClose]);
   const preview = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: `${root.replace(/\/$/, '')}/${path}` } }));
   return (
-    <div className="absolute inset-0 flex flex-col bg-[#0b0d12] z-20">
+    <div className="glass-fill absolute inset-0 flex flex-col z-20">
       <SectionHeader color="bg-violet-400" title={commit.subject} count={files?.length}>
         <span className="font-mono text-violet-300/75" title={commit.hash}>{commit.hash.slice(0, 7)}</span>
         <button className="hover:text-white" onClick={onClose} title="Esc">✕ {t('git.closeCommit')}</button>

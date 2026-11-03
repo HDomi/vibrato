@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { createFile, duplicate, findEnvFiles, FsError, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
 import { CUSTOM_PROMPT_MAX, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import { bodyLimit } from 'hono/body-limit';
@@ -32,6 +33,7 @@ import { revertTurn, turnDiff } from './turns.js';
 import { agentContext } from './agentContext.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
+import { loadWallpaper, saveWallpaperImages, updateWallpaper, WALL_MAX_BYTES, wallpaperPath, WallpaperError, type Wallpaper } from './wallpaper.js';
 import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.js';
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
 import { killProcess, listeningPorts, netInfo, proxyHttp, type ProxyRequest } from './net.js';
@@ -51,7 +53,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('*', async (c, next) => {
     const reason = rejectReason({ host: c.req.header('host'), origin: c.req.header('origin'), secFetchSite: c.req.header('sec-fetch-site') }, port);
     if (reason) return c.json({ error: `Forbidden (${reason})`, code: 'FORBIDDEN' }, 403);
-    if (['POST', 'PATCH', 'PUT'].includes(c.req.method) && c.req.path !== '/api/attach' && !/^application\/json(?:;|$)/i.test(c.req.header('content-type') ?? '')) return c.json({ error: 'JSON body required', code: 'BAD_REQUEST' }, 415);
+    if (['POST', 'PATCH', 'PUT'].includes(c.req.method) && c.req.path !== '/api/attach' && c.req.path !== '/api/wallpaper/image' && !/^application\/json(?:;|$)/i.test(c.req.header('content-type') ?? '')) return c.json({ error: 'JSON body required', code: 'BAD_REQUEST' }, 415);
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
     if (c.res.headers.get('content-type')?.includes('text/html') && !c.res.headers.has('content-security-policy')) c.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
@@ -61,6 +63,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('/api/export/zip', bodyLimit({ maxSize: 96 * 1024 * 1024 }));
   app.use('/api/image/write', bodyLimit({ maxSize: 128 * 1024 * 1024 }));
   app.use('/api/net/http', bodyLimit({ maxSize: 64 * 1024 * 1024 }));
+  app.use('/api/wallpaper/image', bodyLimit({ maxSize: 2 * WALL_MAX_BYTES + 1024 * 1024 }));
   app.use('*', async (c, next) => {
     if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/prompts$|\/api\/custom-prompt$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
     await next();
@@ -335,6 +338,28 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   });
 
   app.get('/api/usage', async (c) => c.json(await getUsage(c.req.query('force') === '1')));
+
+  // App wallpaper (Settings > Appearance). Images are made in the renderer; see server/wallpaper.ts.
+  app.get('/api/wallpaper', async (c) => c.json(await loadWallpaper()));
+  app.put('/api/wallpaper', async (c) => {
+    try { return c.json(await updateWallpaper(await c.req.json<Partial<Wallpaper>>())); }
+    catch (e) { if (e instanceof WallpaperError) return c.json({ error: e.message, code: 'BAD_REQUEST' }, 400); throw e; }
+  });
+  app.post('/api/wallpaper/image', async (c) => {
+    const body = await c.req.parseBody();
+    const original = body['original'] instanceof File ? body['original'] : undefined;
+    const blur = body['blur'] instanceof File ? body['blur'] : undefined;
+    if (!blur) return c.json({ error: 'blurred image required', code: 'BAD_REQUEST' }, 400);
+    try { return c.json(await saveWallpaperImages({ original, blur }, Number(body['radius']))); }
+    catch (e) { if (e instanceof WallpaperError) return c.json({ error: e.message, code: 'BAD_REQUEST' }, 400); throw e; }
+  });
+  app.get('/api/wallpaper/:which{original|blur}', async (c) => {
+    try {
+      const data = await fs.readFile(wallpaperPath(c.req.param('which') as 'original' | 'blur'));
+      // URLs carry ?v=<version>, so a cached copy is never stale.
+      return new Response(data, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=31536000, immutable' } });
+    } catch { return c.json({ error: 'no wallpaper', code: 'NOT_FOUND' }, 404); }
+  });
 
   app.post('/api/attach', async (c) => {
     const body = await c.req.parseBody({ all: true });

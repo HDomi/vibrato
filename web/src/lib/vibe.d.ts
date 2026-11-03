@@ -26,6 +26,10 @@ declare global {
     vibe?: {
       isElectron: boolean;
       pickFolder: () => Promise<string | null>;
+      /** Opens (or focuses) the IDE window for `root`, optionally opening `file` in it. */
+      openIde?: (root: string, file?: string) => Promise<void>;
+      /** IDE window: a file the main window asked to open. */
+      onIdeOpenFile?: (cb: (file: string) => void) => () => void;
       saveDialog?: (opts: { defaultPath?: string; ext?: string; label?: string }) => Promise<string | null>;
       getPathForFile: (file: File) => string;
       loginItem: (enable: boolean | null) => Promise<boolean>;

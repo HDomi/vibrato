@@ -66,7 +66,7 @@ export default function WorktreeChip({ info, running, onFinished, commitTitle, p
         <Icon name="branch" size={12} /><span className="truncate font-mono text-[11px]">{info.branch}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1.5 z-30 w-[340px] rounded-lg border border-white/10 bg-[#151922] shadow-2xl p-3 space-y-2.5 text-[12px] whitespace-normal">
+        <div className="absolute left-0 top-full mt-1.5 z-30 w-[340px] glass-pop pop-in rounded-xl p-3 space-y-2.5 text-[12px] whitespace-normal">
           <div className="flex items-center gap-2">
             <Icon name="branch" size={14} className="text-violet-300" />
             <span className="font-mono text-zinc-100 truncate">{info.branch}</span>

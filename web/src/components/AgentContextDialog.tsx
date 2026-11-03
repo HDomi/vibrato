@@ -32,7 +32,7 @@ function DocEditor({ doc, value, onChange, onSaved, label }: { doc: ContextDoc; 
       {error && <div className="px-3 py-1 text-[11px] text-red-300 border-b border-white/5">{error}</div>}
       <textarea value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} placeholder={t('context.emptyDoc')}
         onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); if (dirty) void save(); } }}
-        className="flex-1 min-h-0 w-full resize-none bg-[#0b0d12] px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-zinc-200 outline-none" />
+        className="flex-1 min-h-0 w-full resize-none bg-black/30 px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-zinc-200 outline-none" />
     </div>
   );
 }
@@ -71,8 +71,8 @@ export default function AgentContextDialog({ cwd, onClose, onOpenFile }: { cwd: 
   const count = (k: Exclude<Tab, 'docs'>) => ctx?.[k].length ?? 0;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center" onClick={onClose}>
-      <div className="w-[1040px] max-w-[94vw] h-[720px] max-h-[88vh] rounded-xl bg-[#12151c] border border-white/10 shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onClick={onClose}>
+      <div className="w-[1040px] max-w-[94vw] h-[720px] max-h-[88vh] glass-pop pop-in !rounded-[22px] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 pl-6 pr-4 h-[60px] shrink-0 border-b border-white/10">
           <div className="text-[15px] font-semibold">{t('context.title')}</div>
           <span className="text-xs text-zinc-500 truncate">{cwd.split('/').pop()}</span>

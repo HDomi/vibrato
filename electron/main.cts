@@ -66,7 +66,7 @@ if (!primaryInstance) {
 } else {
   app.on('second-instance', () => {
     if (isLocked()) return; // the lock cover keeps focus; never surface the app window under it
-    const w = BrowserWindow.getAllWindows()[0];
+    const w = mainWin ?? BrowserWindow.getAllWindows()[0];
     if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
   });
 }
@@ -214,15 +214,41 @@ function startBundleSwap(): boolean {
   }
 }
 
+let mainWin: BrowserWindow | null = null;
+/** IDE windows by project root: opening the same root again focuses the window it already has. */
+const ideWindows = new Map<string, BrowserWindow>();
+
 async function createWindow() {
+  const win = createAppWindow({ width: 1440, height: 920, minWidth: 900, minHeight: 600, title: APP_NAME });
+  mainWin = win;
+  win.on('closed', () => { if (mainWin === win) mainWin = null; });
+  await win.loadURL(DEV ? URL_DEV : URL_PROD);
+}
+
+/** The IDE for `root` in a window of its own (same page, `?ide=<root>`); `file` opens in it. */
+async function openIdeWindow(root: string, file?: string) {
+  const open = ideWindows.get(root);
+  if (open && !open.isDestroyed()) {
+    if (open.isMinimized()) open.restore();
+    open.show(); open.focus();
+    if (file) open.webContents.send('ide-open-file', file);
+    return;
+  }
+  const win = createAppWindow({ width: 1280, height: 860, minWidth: 720, minHeight: 480, title: `${path.basename(root) || root} — IDE` }, { x: 12, y: 7 });
+  ideWindows.set(root, win);
+  win.on('closed', () => { if (ideWindows.get(root) === win) ideWindows.delete(root); });
+  const url = new URL(DEV ? URL_DEV : URL_PROD);
+  url.searchParams.set('ide', root);
+  if (file) url.searchParams.set('file', file);
+  await win.loadURL(url.toString());
+}
+
+/** `buttons`: where the window buttons sit (the IDE has a 28px strip instead of the 46px title bar). */
+function createAppWindow(size: { width: number; height: number; minWidth: number; minHeight: number; title: string }, buttons = { x: 14, y: 16 }) {
   const win = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 900,
-    minHeight: 600,
-    title: APP_NAME,
+    ...size,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 16 }, // centered in the 45px title bar (UsageBar)
+    trafficLightPosition: buttons, // main window: unchanged from before the 88px title bar (UsageBar)
     backgroundColor: '#0b0d12',
     icon: APP_ICON,
     webPreferences: {
@@ -254,8 +280,13 @@ async function createWindow() {
   win.on('enter-full-screen', () => win.webContents.send('full-screen', true));
   win.on('leave-full-screen', () => win.webContents.send('full-screen', false));
   win.webContents.on('did-finish-load', () => { if (win.isFullScreen()) win.webContents.send('full-screen', true); });
-  await win.loadURL(DEV ? URL_DEV : URL_PROD);
+  return win;
 }
+
+ipcMain.handle('open-ide', async (e, root: unknown, file: unknown) => {
+  if (!fromApp(e) || isLocked() || typeof root !== 'string' || !path.isAbsolute(root)) return;
+  await openIdeWindow(path.resolve(root), typeof file === 'string' && path.isAbsolute(file) ? file : undefined);
+});
 
 ipcMain.handle('pick-folder', async (e) => {
   if (!fromApp(e)) return null;
@@ -415,7 +446,8 @@ app.whenReady().then(async () => {
   // After sleep the renderer's sockets may be half-open; tell it to reconnect now rather than wait for the heartbeat.
   powerMonitor.on('resume', () => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('power-resume'); });
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    // The app window may be closed while IDE windows stay open; clicking the Dock icon brings it back.
+    if (!mainWin && !isLocked()) void createWindow();
   });
 }).catch((err) => { dialog.showErrorBox(APP_NAME, (err as Error).message); app.quit(); });
 

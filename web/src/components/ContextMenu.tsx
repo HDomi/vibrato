@@ -51,13 +51,13 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     <MenuCtx.Provider value={value}>
       {children}
       {state && (
-        <div ref={ref} className="fixed z-50 min-w-[190px] rounded-lg border border-white/10 bg-[#171a22] shadow-2xl py-1 text-[13px] select-none" style={{ left: state.x, top: state.y }}
+        <div ref={ref} data-context-menu="" className="glass-pop pop-in fixed z-50 min-w-[190px] rounded-xl p-1 text-[13px] select-none" style={{ left: state.x, top: state.y }}
           onContextMenu={(e) => e.preventDefault()}>
           {state.items.map((it, i) => it.separator
             ? <div key={i} className="my-1 border-t border-white/10" />
             : (
               <button key={i} disabled={it.disabled}
-                className={`w-full flex items-center gap-4 px-3 py-1.5 text-left disabled:opacity-40 ${it.danger ? 'text-red-300 hover:bg-red-500/15' : 'text-zinc-200 hover:bg-white/10'}`}
+                className={`w-full flex items-center gap-4 rounded-lg px-3 py-1.5 text-left disabled:opacity-40 ${it.danger ? 'text-red-300 hover:bg-red-500/15' : 'text-zinc-200 hover:bg-white/10'}`}
                 onClick={() => { close(); it.onClick?.(); }}>
                 <span className="flex-1">{it.label}</span>
                 {it.shortcut && <span className="text-[11px] text-zinc-500">{it.shortcut}</span>}

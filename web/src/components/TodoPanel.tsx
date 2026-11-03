@@ -15,7 +15,7 @@ export default function TodoPanel({ todos, running }: { todos: TodoItem[]; runni
   const current = todos.find((x) => x.status === 'in_progress');
   const toggle = () => setOpen((v) => { try { localStorage.setItem(LS_OPEN, v ? '0' : '1'); } catch { /* ignore */ } return !v; });
   return (
-    <div className="shrink-0 border-t border-white/5 bg-[#0e1117] text-[12px]">
+    <div className="shrink-0 border-t border-line bg-black/15 text-[12px]">
       <button className="w-full h-7 flex items-center gap-2 px-4 text-left text-zinc-400 hover:text-zinc-200" onClick={toggle} aria-expanded={open}>
         <span className="text-[9px] text-zinc-600 w-2">{open ? '▾' : '▸'}</span>
         <span className="font-medium text-zinc-300">{t('todos.title')}</span>

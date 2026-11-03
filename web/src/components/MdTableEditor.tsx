@@ -62,7 +62,7 @@ export default function MdTableEditor({ text, onSave }: { text: string; onSave: 
 
   return (
     <div ref={root} className="flex flex-col gap-4">
-      <div className="sticky top-0 z-10 -mx-5 -mt-5 px-5 py-2 bg-[#0b0d12]/95 border-b border-white/5 flex items-center gap-2 text-[11px] text-zinc-500">
+      <div className="sticky top-0 z-10 -mx-5 -mt-5 px-5 py-2 glass-fill border-b border-line flex items-center gap-2 text-[11px] text-zinc-500">
         <span>{t('preview.table.count', { n: live.length })}</span>
         <div className="flex-1" />
         <span className="truncate">{status}</span>

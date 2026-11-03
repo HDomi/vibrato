@@ -199,7 +199,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
   const modeHint = t(`${MODE_IDS.find((m) => m.id === mode)?.key ?? 'composer.mode.default'}.hint`);
 
   return (
-    <div className={`border-t border-white/10 p-3 ${dragging ? 'bg-blue-500/10' : ''}`}
+    <div className={`px-4 pb-4 pt-2 transition-colors ${dragging ? 'bg-blue-500/10' : ''}`}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
@@ -215,9 +215,9 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
         </div>
       )}
       {uploadError && <div role="alert" className="text-xs text-red-300 mb-2">{uploadError}</div>}
-      <div className="relative rounded-xl border border-white/15 bg-[#12151c] focus-within:border-white/30">
+      <div className="relative rounded-[22px] border border-white/12 bg-black/25 shadow-[0_10px_30px_rgb(0_0_0/.3),inset_0_1px_0_rgb(255_255_255/.06)] transition-colors duration-200 focus-within:border-white/25">
         {mention && fileHits.length > 0 && (
-          <div className="absolute bottom-full left-2 mb-1 w-[480px] max-w-[95%] rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1 text-[13px] z-10">
+          <div className="absolute bottom-full left-2 mb-1 w-[480px] max-w-[95%] glass-pop pop-in rounded-xl py-1 text-[13px] z-10">
             {fileHits.map((h, i) => (
               <div key={h.path} onMouseEnter={() => setFileIdx(i)} onMouseDown={(e) => { e.preventDefault(); pickMention(h); }}
                 className={`px-3 py-1 flex items-center gap-2 cursor-pointer ${i === fileIdx ? 'bg-blue-500/20 text-white' : 'text-zinc-300'}`}>
@@ -229,7 +229,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
           </div>
         )}
         {cmdHits.length > 0 && (
-          <div className="absolute bottom-full left-2 mb-1 w-90 max-w-[90%] rounded-lg border border-white/10 bg-[#171a22] shadow-xl py-1 text-[13px] z-10">
+          <div className="absolute bottom-full left-2 mb-1 w-90 max-w-[90%] glass-pop pop-in rounded-xl py-1 text-[13px] z-10">
             {cmdHits.map((c, i) => (
               <div key={c} onMouseEnter={() => setCmdIdx(i)} onMouseDown={(e) => { e.preventDefault(); setText(c + ' '); }}
                 className={`px-3 py-1 font-mono cursor-pointer ${i === cmdIdx ? 'bg-blue-500/20 text-white' : 'text-zinc-300'}`}>{c}</div>

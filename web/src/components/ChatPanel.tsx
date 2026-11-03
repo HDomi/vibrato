@@ -126,7 +126,7 @@ function ResumeBrief({ session }: { session: ChatSession }) {
   if (hidden || !b.asks) return null;
   const parts = [t('brief.asks', { n: b.asks }), b.files.length ? t('brief.files', { n: b.files.length }) : null, b.commits.length ? t('brief.commits', { n: b.commits.length }) : null, b.todos.length ? t('brief.todos', { n: b.todos.length }) : null].filter(Boolean);
   return (
-    <div className="sticky top-0 z-10 -mx-5 -mt-4 mb-1 px-5 pt-2 pb-2 bg-[#0b0d12]/95 backdrop-blur border-b border-white/5">
+    <div className="sticky top-0 z-10 -mx-5 -mt-4 mb-1 px-5 pt-2 pb-2 glass-fill border-b border-line">
       <div className="rounded-lg border border-sky-400/20 bg-sky-400/[0.05] text-[12px]">
         <div className="flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none" onClick={() => setOpen((v) => !v)}>
           <Icon name="undo" size={12} className="text-sky-300 shrink-0" />
@@ -581,11 +581,11 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
           </div>
         </div>
         {!atBottom && (
-          <button onClick={jump} className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[#1b1f2a] border border-white/15 px-3 py-1 text-xs text-zinc-300 shadow-lg hover:bg-[#242938]">{t('chat.jumpLatest')}</button>
+          <button onClick={jump} className="absolute bottom-3 left-1/2 -translate-x-1/2 glass-pop pop-in !rounded-full px-3.5 py-1.5 text-xs text-zinc-200 hover:text-white">{t('chat.jumpLatest')}</button>
         )}
       </div>
       {activity && (
-        <div className="h-7 shrink-0 flex items-center gap-2 px-4 text-[11px] text-zinc-400 border-t border-white/5 bg-[#0e1117]">
+        <div className="h-7 shrink-0 flex items-center gap-2 px-4 text-[11px] text-zinc-400 border-t border-line bg-black/15">
           <span className="inline-block w-3 h-3 rounded-full border-2 border-amber-400/70 border-t-transparent animate-spin" />
           <span className="shrink-0 whitespace-nowrap text-zinc-600 tabular-nums">{elapsedLabel}</span>
           <span className="truncate">{activity}</span>
