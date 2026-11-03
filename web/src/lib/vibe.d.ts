@@ -1,14 +1,14 @@
 export {};
 
 export interface ViewBounds { x: number; y: number; width: number; height: number }
-export interface LockSettings { mainDisplay: string | null; mainBg: string; subBg: string; heartbeat: boolean }
+export interface LockSettings { mainDisplay: string | null }
 export interface LockDisplay { key: string; label: string; internal: boolean; primary: boolean; main: boolean; bounds: ViewBounds }
 export interface LockSessionSummary { agent: string; total: number; running: number; waiting: number }
 export interface LockInit { role: 'main' | 'sub'; self: ViewBounds; displays: LockDisplay[]; settings: LockSettings; sessions: LockSessionSummary[]; retryIn: number }
 export interface LockBridge {
-  get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
+  get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
   set: (patch: Partial<LockSettings>) => Promise<LockSettings | null>;
-  setPassword: (req: { current?: string; next: string }) => Promise<{ ok: boolean; error?: 'invalid' | 'short' | 'wrong' | 'wait'; retryIn?: number; hasPassword?: boolean; hasRecovery?: boolean; recoveryCode?: string }>;
+  setPassword: (req: { current?: string; next: string }) => Promise<{ ok: boolean; error?: 'invalid' | 'pin' | 'wrong' | 'wait'; retryIn?: number; hasPassword?: boolean; hasPin?: boolean; hasRecovery?: boolean; recoveryCode?: string }>;
   /** Replace the recovery code; needs the current password. The code is returned once. */
   newRecoveryCode: (current: string) => Promise<{ ok: boolean; error?: 'invalid' | 'wrong' | 'wait'; retryIn?: number; recoveryCode?: string }>;
   now: () => void;

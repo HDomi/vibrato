@@ -22,18 +22,23 @@ import path from 'node:path';
  *    Agent sessions live in the server, so they keep running.
  *  - Recovery code: shown once when the password is first set; typed into the cover instead of the
  *    password it unlocks once and is then used up.
+ *  - The cover takes a 4-digit PIN in four boxes. A password set before PINs (any length, stored only as a
+ *    hash) might not fit them, so locking is refused until a PIN is set (`pin` flag).
  *  - A cover page that cannot load at all opens the lock (did-fail-load below).
  */
 
-export interface LockSettings { mainDisplay: string | null; mainBg: string; subBg: string; heartbeat: boolean }
-interface Stored extends LockSettings { salt?: string; hash?: string; recoverySalt?: string; recoveryHash?: string; relaunchLockedAt?: number }
+export interface LockSettings { mainDisplay: string | null }
+interface Stored extends LockSettings { salt?: string; hash?: string; pin?: boolean; recoverySalt?: string; recoveryHash?: string; relaunchLockedAt?: number }
 export interface LockSessionSummary { agent: string; total: number; running: number; waiting: number }
 
-const DEFAULTS: LockSettings = { mainDisplay: null, mainBg: '#0b0d11', subBg: '#0b0d11', heartbeat: true };
-const MIN_PASSWORD = 4;
+const DEFAULTS: LockSettings = { mainDisplay: null };
+const PIN = /^\d{4}$/;
+/** Shown until the cover page has painted the wallpaper. */
+const COVER_BG = '#0b0d11';
+/** A correct PIN shows its green boxes this long before the covers close. */
+const UNLOCK_SHOW_MS = 450;
 /** A relaunch (self-update) within this window comes back locked. Older flags are ignored so a reboot never traps the user. */
 const RELAUNCH_GRACE_MS = 2 * 60 * 1000;
-const COLOR = /^#[0-9a-f]{6}$/i;
 const HEX = /^[0-9a-f]{16,128}$/;
 /** 32 letters and digits without 0/O/1/I; 20 of them = 100 bits, shown as XXXXX-XXXXX-XXXXX-XXXXX. */
 const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -70,7 +75,7 @@ function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<Stored>;
     const hex = (v: unknown) => (typeof v === 'string' && HEX.test(v) ? v : undefined);
-    stored = { ...DEFAULTS, ...sanitize(raw), salt: hex(raw.salt), hash: hex(raw.hash), recoverySalt: hex(raw.recoverySalt), recoveryHash: hex(raw.recoveryHash), relaunchLockedAt: typeof raw.relaunchLockedAt === 'number' ? raw.relaunchLockedAt : undefined };
+    stored = { ...DEFAULTS, ...sanitize(raw), salt: hex(raw.salt), hash: hex(raw.hash), pin: raw.pin === true || undefined, recoverySalt: hex(raw.recoverySalt), recoveryHash: hex(raw.recoveryHash), relaunchLockedAt: typeof raw.relaunchLockedAt === 'number' ? raw.relaunchLockedAt : undefined };
   } catch { stored = { ...DEFAULTS }; }
 }
 function save() {
@@ -82,13 +87,12 @@ function save() {
 function sanitize(raw: Partial<LockSettings>): Partial<LockSettings> {
   const out: Partial<LockSettings> = {};
   if (raw.mainDisplay === null || (typeof raw.mainDisplay === 'string' && raw.mainDisplay.length < 200)) out.mainDisplay = raw.mainDisplay;
-  if (typeof raw.mainBg === 'string' && COLOR.test(raw.mainBg)) out.mainBg = raw.mainBg;
-  if (typeof raw.subBg === 'string' && COLOR.test(raw.subBg)) out.subBg = raw.subBg;
-  if (typeof raw.heartbeat === 'boolean') out.heartbeat = raw.heartbeat;
   return out;
 }
-const settings = (): LockSettings => ({ mainDisplay: stored.mainDisplay, mainBg: stored.mainBg, subBg: stored.subBg, heartbeat: stored.heartbeat });
+const settings = (): LockSettings => ({ mainDisplay: stored.mainDisplay });
 const hasPassword = () => !!(stored.salt && stored.hash);
+/** A password the cover can take: set as a 4-digit PIN. */
+const hasPin = () => hasPassword() && stored.pin === true;
 const hasRecovery = () => !!(stored.recoverySalt && stored.recoveryHash);
 
 function scrypt(password: string, salt: Buffer): Promise<Buffer> {
@@ -158,7 +162,7 @@ export function openLockSettings() {
 
 export function lockNow() {
   if (locked) return;
-  if (!hasPassword()) { openLockSettings(); return; }
+  if (!hasPin()) { openLockSettings(); return; }
   locked = true;
   unlocking = false;
   hiddenWins = appWindows().filter((w) => w.isVisible());
@@ -196,7 +200,7 @@ function buildCovers() {
       enableLargerThanScreen: true,
       hiddenInMissionControl: true,
       focusable: role === 'main',
-      backgroundColor: role === 'main' ? stored.mainBg : stored.subBg,
+      backgroundColor: COVER_BG,
       webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false, backgroundThrottling: false },
     });
     win.setAlwaysOnTop(true, 'screen-saver');
@@ -375,7 +379,7 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
   const isCover = (e: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => covers.some((c) => c.win.webContents === e.sender);
   const fromAppWindow = (e: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => fromApp(e) && !isCover(e);
 
-  ipcMain.handle('lock:get', (e) => fromAppWindow(e) ? { settings: settings(), hasPassword: hasPassword(), hasRecovery: hasRecovery(), displays: layout() } : null);
+  ipcMain.handle('lock:get', (e) => fromAppWindow(e) ? { settings: settings(), hasPassword: hasPassword(), hasPin: hasPin(), hasRecovery: hasRecovery(), displays: layout() } : null);
   ipcMain.handle('lock:set', (e, patch: unknown) => {
     if (!fromAppWindow(e) || !patch || typeof patch !== 'object') return null;
     Object.assign(stored, sanitize(patch as Partial<LockSettings>));
@@ -386,23 +390,24 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
   ipcMain.handle('lock:password', async (e, req: unknown) => {
     if (!fromAppWindow(e) || !req || typeof req !== 'object') return { ok: false, error: 'invalid' };
     const { current, next } = req as { current?: unknown; next?: unknown };
-    if (typeof next !== 'string' || (next !== '' && next.length < MIN_PASSWORD) || next.length > 1024) return { ok: false, error: 'short' };
+    if (typeof next !== 'string' || (next !== '' && !PIN.test(next))) return { ok: false, error: 'pin' };
     if (hasPassword()) {
       if (retryIn() > 0) return { ok: false, error: 'wait', retryIn: retryIn() };
       if (!(await verify(typeof current === 'string' ? current : ''))) { noteFailure(); return { ok: false, error: 'wrong', retryIn: retryIn() }; }
       failures = 0;
     }
     let recoveryCode: string | undefined;
-    if (next === '') { delete stored.salt; delete stored.hash; delete stored.recoverySalt; delete stored.recoveryHash; }
+    if (next === '') { delete stored.salt; delete stored.hash; delete stored.pin; delete stored.recoverySalt; delete stored.recoveryHash; }
     else {
       const salt = crypto.randomBytes(16);
       stored.salt = salt.toString('hex');
       stored.hash = (await scrypt(next, salt)).toString('hex');
+      stored.pin = true;
       // First password (or none left after one was used): hand out a recovery code. A change keeps the existing one.
       if (!hasRecovery()) recoveryCode = await issueRecovery();
     }
     save();
-    return { ok: true, hasPassword: hasPassword(), hasRecovery: hasRecovery(), recoveryCode };
+    return { ok: true, hasPassword: hasPassword(), hasPin: hasPin(), hasRecovery: hasRecovery(), recoveryCode };
   });
   // A new recovery code replaces the old one; needs the current password.
   ipcMain.handle('lock:recovery', async (e, current: unknown) => {
@@ -438,13 +443,13 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
     if (retryIn() > 0) return { ok: false, retryIn: retryIn() };
     const input = typeof password === 'string' ? password : '';
     // Reply before the covers are destroyed, or the cover's pending invoke never settles.
-    if (await verify(input)) { setTimeout(finishUnlock, 30); return { ok: true }; }
+    if (await verify(input)) { setTimeout(finishUnlock, UNLOCK_SHOW_MS); return { ok: true }; }
     const code = normalizeRecovery(input);
     if (code && await matches(code, stored.recoverySalt, stored.recoveryHash)) {
       // Single use: once typed on the cover it may have been seen. Settings then offer a new one.
       delete stored.recoverySalt; delete stored.recoveryHash;
       save();
-      setTimeout(() => { finishUnlock(); openLockSettings(); }, 30);
+      setTimeout(() => { finishUnlock(); openLockSettings(); }, UNLOCK_SHOW_MS);
       return { ok: true };
     }
     noteFailure();
@@ -464,5 +469,5 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
   // Came back from a self-update relaunch that happened while locked.
   const relaunchAt = stored.relaunchLockedAt;
   if (relaunchAt !== undefined) { delete stored.relaunchLockedAt; save(); }
-  return { resumeLocked: !!relaunchAt && Date.now() - relaunchAt < RELAUNCH_GRACE_MS && hasPassword() };
+  return { resumeLocked: !!relaunchAt && Date.now() - relaunchAt < RELAUNCH_GRACE_MS && hasPin() };
 }

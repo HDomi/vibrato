@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { t, useLang } from '../lib/i18n';
 import type { LockDisplay, LockSettings as Settings } from '../lib/vibe';
 
-const DEFAULT_BG = '#0b0d11';
-
 /** The macOS display arrangement scaled down; clicking a display makes it the lock screen's main display. */
 function DisplayMap({ displays, onPick }: { displays: LockDisplay[]; onPick: (key: string) => void }) {
   const box = useRef<HTMLDivElement>(null);
@@ -37,23 +35,13 @@ function DisplayMap({ displays, onPick }: { displays: LockDisplay[]; onPick: (ke
   );
 }
 
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="flex items-center gap-3 text-sm">
-      <span className="w-28 text-zinc-400">{label}</span>
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="w-9 h-7 rounded bg-transparent border border-white/10 cursor-pointer" />
-      <span className="text-xs text-zinc-500 font-mono">{value}</span>
-      {value.toLowerCase() !== DEFAULT_BG && <button className="text-xs text-zinc-400 hover:text-white" onClick={() => onChange(DEFAULT_BG)}>{t('lockSettings.reset')}</button>}
-    </label>
-  );
-}
-
 export default function LockSettings({ focus }: { focus?: boolean }) {
   useLang();
   const lock = window.vibe?.lock;
   const ref = useRef<HTMLDivElement>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
   const [hasRecovery, setHasRecovery] = useState(false);
   const [shownCode, setShownCode] = useState<string | null>(null);
   const [displays, setDisplays] = useState<LockDisplay[]>([]);
@@ -63,7 +51,7 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   const refresh = useCallback(() => {
-    void lock?.get().then((r) => { if (!r) return; setSettings(r.settings); setHasPassword(r.hasPassword); setHasRecovery(r.hasRecovery); setDisplays(r.displays); });
+    void lock?.get().then((r) => { if (!r) return; setSettings(r.settings); setHasPassword(r.hasPassword); setHasPin(r.hasPin); setHasRecovery(r.hasRecovery); setDisplays(r.displays); });
   }, [lock]);
   useEffect(() => {
     refresh();
@@ -79,21 +67,21 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
     void lock.set(p).then(() => { if ('mainDisplay' in p) refresh(); });
   };
   const errorText = (r: { error?: string; retryIn?: number }) =>
-    r.error === 'short' ? t('lockSettings.errShort') : r.error === 'wrong' ? (r.retryIn ? t('lockSettings.errWait', { s: r.retryIn }) : t('lockSettings.errWrong'))
+    r.error === 'pin' ? t('lockSettings.errPin') : r.error === 'wrong' ? (r.retryIn ? t('lockSettings.errWait', { s: r.retryIn }) : t('lockSettings.errWrong'))
       : r.error === 'wait' ? t('lockSettings.errWait', { s: r.retryIn ?? 0 }) : t('lockSettings.errWrong');
   const savePassword = async () => {
-    if (next.length < 4) { setMsg({ text: t('lockSettings.errShort'), ok: false }); return; }
+    if (!/^\d{4}$/.test(next)) { setMsg({ text: t('lockSettings.errPin'), ok: false }); return; }
     if (next !== confirm) { setMsg({ text: t('lockSettings.errMismatch'), ok: false }); return; }
     const r = await lock.setPassword({ current, next });
     if (!r.ok) { setMsg({ text: errorText(r), ok: false }); return; }
-    setHasPassword(true); setHasRecovery(!!r.hasRecovery); setCurrent(''); setNext(''); setConfirm('');
+    setHasPassword(true); setHasPin(true); setHasRecovery(!!r.hasRecovery); setCurrent(''); setNext(''); setConfirm('');
     if (r.recoveryCode) setShownCode(r.recoveryCode);
     setMsg({ text: t('lockSettings.saved'), ok: true });
   };
   const removePassword = async () => {
     const r = await lock.setPassword({ current, next: '' });
     if (!r.ok) { setMsg({ text: errorText(r), ok: false }); return; }
-    setHasPassword(false); setHasRecovery(false); setShownCode(null); setCurrent(''); setNext(''); setConfirm('');
+    setHasPassword(false); setHasPin(false); setHasRecovery(false); setShownCode(null); setCurrent(''); setNext(''); setConfirm('');
     setMsg({ text: t('lockSettings.removed'), ok: true });
   };
   const newRecovery = async () => {
@@ -102,14 +90,16 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
     if (!r.ok || !r.recoveryCode) { setMsg({ text: errorText(r), ok: false }); return; }
     setCurrent(''); setMsg(null); setHasRecovery(true); setShownCode(r.recoveryCode);
   };
-  const field = 'bg-black/20 border border-line rounded-md text-xs px-2 py-1.5 outline-none w-44 placeholder:text-zinc-600';
+  const field = 'bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none w-36 placeholder:text-zinc-600 tracking-[0.3em] placeholder:tracking-normal';
+  // PIN fields keep digits only, at most four.
+  const digits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
 
   return (
     <div ref={ref} id="lock-settings" className="rounded-2xl border border-line bg-black/15 p-5 space-y-4 scroll-mt-4">
       <div className="flex items-center">
         <div className="font-medium">{t('lockSettings.title')}</div>
         <div className="flex-1" />
-        <button disabled={!hasPassword} onClick={() => lock.now()}
+        <button disabled={!hasPin} onClick={() => lock.now()}
           className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 transition-colors text-zinc-200 disabled:opacity-40">{t('lockSettings.lockNow')}</button>
       </div>
       <div className="text-xs text-zinc-500 leading-relaxed">{t('lockSettings.note')}</div>
@@ -117,12 +107,12 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
       <div className="space-y-2">
         <div className="flex items-center gap-3 text-sm">
           <span className="w-28 text-zinc-400">{t('lockSettings.password')}</span>
-          <span className={`text-xs ${hasPassword ? 'text-emerald-300' : 'text-amber-300'}`}>{hasPassword ? t('lockSettings.passwordSet') : t('lockSettings.passwordNone')}</span>
+          <span className={`text-xs ${hasPin ? 'text-emerald-300' : 'text-amber-300'}`}>{hasPin ? t('lockSettings.passwordSet') : hasPassword ? t('lockSettings.pinNeeded') : t('lockSettings.passwordNone')}</span>
         </div>
         <form className="flex flex-wrap items-center gap-2 pl-[124px]" onSubmit={(e) => { e.preventDefault(); void savePassword(); }}>
-          {hasPassword && <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder={t('lockSettings.current')} className={field} autoComplete="off" />}
-          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder={t('lockSettings.new')} className={field} autoComplete="new-password" />
-          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={t('lockSettings.confirm')} className={field} autoComplete="new-password" />
+          {hasPassword && <input type="password" value={current} onChange={(e) => setCurrent(hasPin ? digits(e.target.value) : e.target.value)} placeholder={t('lockSettings.current')} className={field} autoComplete="off" inputMode={hasPin ? 'numeric' : undefined} />}
+          <input type="password" value={next} onChange={(e) => setNext(digits(e.target.value))} placeholder={t('lockSettings.new')} className={field} autoComplete="new-password" inputMode="numeric" maxLength={4} />
+          <input type="password" value={confirm} onChange={(e) => setConfirm(digits(e.target.value))} placeholder={t('lockSettings.confirm')} className={field} autoComplete="new-password" inputMode="numeric" maxLength={4} />
           <button type="submit" disabled={!next} className="text-xs rounded-full bg-selected hover:bg-white text-on-selected font-medium px-3.5 py-1.5 transition-colors disabled:opacity-40">{t('lockSettings.save')}</button>
           {hasPassword && <button type="button" disabled={!current} onClick={() => void removePassword()} className="text-xs text-zinc-400 hover:text-red-300 disabled:opacity-40 px-1">{t('lockSettings.remove')}</button>}
         </form>
@@ -165,12 +155,6 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
             <DisplayMap displays={displays} onPick={(key) => patch({ mainDisplay: key })} />
             <div className="text-xs text-zinc-500">{t('lockSettings.displaysNote')}</div>
           </div>
-          <ColorField label={t('lockSettings.mainBg')} value={settings.mainBg} onChange={(v) => patch({ mainBg: v })} />
-          <ColorField label={t('lockSettings.subBg')} value={settings.subBg} onChange={(v) => patch({ subBg: v })} />
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={settings.heartbeat} onChange={(e) => patch({ heartbeat: e.target.checked })} />
-            {t('lockSettings.heartbeat')}
-          </label>
         </>
       )}
     </div>

@@ -12,6 +12,7 @@ const lock = params.get('lock');
 // IDE windows load it with ?ide=<project root>; likewise without the chat app.
 const ide = params.get('ide');
 if (lock === 'main' || lock === 'sub') {
+  initWallpaper();
   void import('./components/lock/LockScreen').then(({ default: LockScreen }) => root.render(<LockScreen />));
 } else if (ide) {
   void import('./components/editor/IdeApp').then(({ default: IdeApp }) => root.render(<React.StrictMode><IdeApp root={ide} file={params.get('file')} /></React.StrictMode>));
