@@ -147,8 +147,10 @@ export interface ChatSession {
   todos?: TodoItem[];
   /** Subagents and background tasks of the current CLI process, by task id (Claude). Ended ones stay for the relation graph. */
   tasks?: Record<string, TaskInfo>;
-  /** Pinned tabs stay in front of the activity order. */
+  /** Pinned tabs stay in front of the activity order. Shared with the history lists through the server's pin list once the CLI session id is known. */
   pinned?: boolean;
+  /** "agent:cliSessionId" the pin state was last reconciled with; a pin made before the id was known is pushed to the server when it arrives. */
+  pinnedKey?: string;
   /** Set when the session runs in its own git worktree (cwd is the worktree folder). */
   worktree?: WorktreeInfo;
   /** Sessions started together on one prompt (Claude vs Codex comparison) share this key. */

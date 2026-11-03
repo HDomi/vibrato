@@ -374,6 +374,8 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     else await renameSession(b.id, b.title, b.cwd ? { dir: resolvePath(b.cwd) } : undefined);
     return c.json({ ok: true });
   });
+  // Pinned conversations ("agent:cliSessionId"); tabs and the history lists share this one list.
+  app.get('/api/history/pins', async (c) => c.json((await loadConfig()).pinnedSessions));
   app.post('/api/history/pin', async (c) => {
     const b = await c.req.json<{ agent: 'claude' | 'codex'; id: string; pinned: boolean }>();
     const key = `${b.agent}:${b.id}`;

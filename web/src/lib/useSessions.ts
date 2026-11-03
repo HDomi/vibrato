@@ -46,7 +46,7 @@ export function requestNotificationPermission() {
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
 }
 
-interface Persisted { id: string; cwd: string; agent: AgentId; agentSessionId?: string; permissionMode?: PermissionModeId; model?: string; historyLen?: number; title?: string; pinned?: boolean; lastActivity?: number; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean }
+interface Persisted { id: string; cwd: string; agent: AgentId; agentSessionId?: string; permissionMode?: PermissionModeId; model?: string; historyLen?: number; title?: string; pinned?: boolean; pinnedKey?: string; lastActivity?: number; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean }
 interface PendingStart { cwd: string; resolve: (id: string) => void; reject: (err: Error) => void; preload: ChatItem[]; historyLen?: number; replaces?: string; title?: string; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean; /** CLI session being resumed; known before the adapter's init event, so a second resume can be matched right away. */ resume?: string }
 /** A revived session that goes missing again this soon is reported lost instead of looping. */
 const REVIVE_COOLDOWN_MS = 30000;
@@ -179,7 +179,7 @@ export function useSessions() {
     if (!saved.length) return;
     setSessions((prev) => {
       const next = { ...prev };
-      for (const p of saved) if (!next[p.id]) next[p.id] = { id: p.id, agent: p.agent, cwd: p.cwd, agentSessionId: p.agentSessionId, historyLen: p.historyLen, title: p.title, pinned: p.pinned, lastActivity: p.lastActivity, worktree: p.worktree, pairKey: p.pairKey, resumed: p.resumed, permissionMode: p.permissionMode ?? 'default', model: p.model, status: 'idle', items: [], totalCostUsd: 0, lastSeq: 0, restoring: true };
+      for (const p of saved) if (!next[p.id]) next[p.id] = { id: p.id, agent: p.agent, cwd: p.cwd, agentSessionId: p.agentSessionId, historyLen: p.historyLen, title: p.title, pinned: p.pinned, pinnedKey: p.pinnedKey, lastActivity: p.lastActivity, worktree: p.worktree, pairKey: p.pairKey, resumed: p.resumed, permissionMode: p.permissionMode ?? 'default', model: p.model, status: 'idle', items: [], totalCostUsd: 0, lastSeq: 0, restoring: true };
       return next;
     });
     for (const p of saved) void reattach(p);
@@ -208,7 +208,7 @@ export function useSessions() {
   };
 
   useEffect(() => {
-    const list: Persisted[] = Object.values(sessions).filter((s) => s.status !== 'closed').map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, agentSessionId: s.agentSessionId, permissionMode: s.permissionMode, model: s.model, historyLen: s.historyLen, title: s.title, pinned: s.pinned, lastActivity: s.lastActivity, worktree: s.worktree, pairKey: s.pairKey, resumed: s.resumed }));
+    const list: Persisted[] = Object.values(sessions).filter((s) => s.status !== 'closed').map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, agentSessionId: s.agentSessionId, permissionMode: s.permissionMode, model: s.model, historyLen: s.historyLen, title: s.title, pinned: s.pinned, pinnedKey: s.pinnedKey, lastActivity: s.lastActivity, worktree: s.worktree, pairKey: s.pairKey, resumed: s.resumed }));
     try { localStorage.setItem(LS_ACTIVE, JSON.stringify(list)); } catch { /* ignore */ }
   }, [sessions]);
 
@@ -298,9 +298,55 @@ export function useSessions() {
   }), []);
   /** Run the project's verification command now (results arrive as `verify` events). */
   const verify = useCallback((sessionId: string) => agentClient.send({ type: 'session.verify', sessionId }), []);
-  const setPinned = useCallback((sessionId: string, pinned: boolean) => {
-    setSessions((prev) => prev[sessionId] ? { ...prev, [sessionId]: { ...prev[sessionId], pinned: pinned || undefined } } : prev);
+  /**
+   * One pin list for tabs and the history lists: the server's pinnedSessions, keyed by CLI session id.
+   * A tab without that id yet keeps its pin locally and pushes it when the id arrives.
+   */
+  const [pins, setPins] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    const load = () => api.historyPins().then((p) => setPins(new Set(p))).catch(() => {});
+    load();
+    window.addEventListener('vibe:pins-changed', load);
+    return () => window.removeEventListener('vibe:pins-changed', load);
   }, []);
+  const pinKey = (s: Pick<ChatSession, 'agent' | 'agentSessionId'>) => (s.agentSessionId ? `${s.agent}:${s.agentSessionId}` : null);
+  const pushPin = (key: string, pinned: boolean) => {
+    setPins((prev) => { const n = new Set(prev); if (pinned) n.add(key); else n.delete(key); return n; });
+    const [agent, id] = key.split(/:(.*)/) as [AgentId, string];
+    void api.historyPin(agent, id, pinned).catch(() => {});
+  };
+  const idSignature = Object.values(sessions).map((s) => s.agentSessionId ?? '').join(',');
+  useEffect(() => {
+    if (!pins) return;
+    const toPush: string[] = [];
+    setSessions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const s of Object.values(prev)) {
+        const key = pinKey(s);
+        if (!key) continue;
+        if (pins.has(key)) {
+          if (!s.pinned || s.pinnedKey !== key) { next[s.id] = { ...s, pinned: true, pinnedKey: key }; changed = true; }
+        } else if (s.pinned && s.pinnedKey !== key) {
+          // Pinned as a tab before the CLI id was known: the server list learns about it now.
+          toPush.push(key);
+          next[s.id] = { ...s, pinnedKey: key }; changed = true;
+        } else if (s.pinned) {
+          // Unpinned from a history list.
+          next[s.id] = { ...s, pinned: undefined }; changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    for (const key of toPush) pushPin(key, true);
+  }, [pins, idSignature]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setPinned = useCallback((sessionId: string, pinned: boolean) => {
+    const s = sessionsRef.current[sessionId];
+    if (!s) return;
+    const key = pinKey(s);
+    setSessions((prev) => prev[sessionId] ? { ...prev, [sessionId]: { ...prev[sessionId], pinned: pinned || undefined, pinnedKey: key ?? undefined } } : prev);
+    if (key) pushPin(key, pinned);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const close = useCallback((sessionId: string) => {
     agentClient.send({ type: 'session.close', sessionId });
     setSessions((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });

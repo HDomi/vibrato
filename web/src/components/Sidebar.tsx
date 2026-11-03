@@ -84,7 +84,9 @@ export default function Sidebar(p: Props) {
   useEffect(() => {
     const load = () => api.historyAll().then(setSessions).catch(() => {});
     load();
-    return pollWhileActive(load, 60000);
+    window.addEventListener('vibe:pins-changed', load);
+    const stop = pollWhileActive(load, 60000);
+    return () => { stop(); window.removeEventListener('vibe:pins-changed', load); };
   }, []);
 
   if (p.collapsed) {

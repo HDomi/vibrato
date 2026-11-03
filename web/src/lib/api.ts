@@ -170,7 +170,10 @@ export const api = {
   },
   history: (cwd: string, agent: 'claude' | 'codex' | 'all' = 'all', limit?: number) => req<HistorySession[]>(`/api/history?cwd=${q(cwd)}&agent=${agent}${limit ? `&limit=${limit}` : ''}`),
   historyRename: (agent: 'claude' | 'codex', id: string, title: string, cwd?: string) => post<{ ok: true }>('/api/history/rename', { agent, id, title, cwd }),
-  historyPin: (agent: 'claude' | 'codex', id: string, pinned: boolean) => post<{ ok: true }>('/api/history/pin', { agent, id, pinned }),
+  historyPins: () => req<string[]>('/api/history/pins'),
+  /** Pins live in the server config; every list that shows them reloads on `vibe:pins-changed`. */
+  historyPin: (agent: 'claude' | 'codex', id: string, pinned: boolean) => post<{ ok: true }>('/api/history/pin', { agent, id, pinned })
+    .then((r) => { window.dispatchEvent(new Event('vibe:pins-changed')); return r; }),
   historyDelete: (agent: 'claude' | 'codex', id: string, cwd?: string) => req<{ ok: true }>(`/api/history/${q(id)}?agent=${agent}${cwd ? `&cwd=${q(cwd)}` : ''}`, { method: 'DELETE' }),
   /** Zip of the exported markdown and its images, written to `dest` (Save As path). */
   exportZip: (dest: string, name: string, markdown: string, images: { name: string; src: string }[]) =>
