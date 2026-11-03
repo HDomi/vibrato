@@ -40,7 +40,7 @@ function GeneralSettings() {
   const [awake, setAwake] = useState(keepAwakeEnabled);
   useEffect(() => { window.vibe?.loginItem?.(null).then(setLogin).catch(() => {}); }, []);
   return (
-    <div className="rounded-lg border border-white/10 p-4 space-y-3">
+    <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-3">
       <div className="font-medium">{t('settings.general')}</div>
       <div className="flex items-center gap-3 text-sm">
         <span className="w-28 text-zinc-400">{t('settings.version')}</span>
@@ -48,7 +48,7 @@ function GeneralSettings() {
       </div>
       <label className="flex items-center gap-3 text-sm">
         <span className="w-28 text-zinc-400">{t('settings.language')}</span>
-        <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="bg-white/5 rounded-md text-xs px-2 py-1.5 outline-none">
+        <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
           {LANGS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
         </select>
       </label>
@@ -70,7 +70,7 @@ function GeneralSettings() {
       {window.vibe?.openNotificationSettings && (
         <div className="flex items-start gap-3 text-xs">
           <span className="text-zinc-500 leading-relaxed flex-1">{t('settings.notificationStyle')}</span>
-          <button className="shrink-0 rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-zinc-200" onClick={() => window.vibe!.openNotificationSettings!()}>{t('settings.openNotificationSettings')}</button>
+          <button className="shrink-0 rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 text-zinc-200 transition-colors" onClick={() => window.vibe!.openNotificationSettings!()}>{t('settings.openNotificationSettings')}</button>
         </div>
       )}
       <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.shortcuts')}</div>
@@ -86,14 +86,14 @@ function CustomPromptSettings() {
   const dirty = text.trim() !== saved.trim();
   const save = () => api.saveCustomPrompt(text).then((r) => { setText(r.text); setSaved(r.text); setFlash(true); setTimeout(() => setFlash(false), 1500); }).catch(() => {});
   return (
-    <div className="rounded-lg border border-white/10 p-4 space-y-2">
+    <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-2">
       <div className="font-medium">{t('settings.customPrompt')}</div>
       <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.customPromptNote')}</div>
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} spellCheck={false} placeholder={t('settings.customPromptPlaceholder')}
-        className="w-full resize-y rounded-md bg-white/5 px-2.5 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:bg-white/[0.07]" />
+        className="w-full resize-y rounded-2xl bg-black/20 border border-line px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-white/30 transition-colors" />
       <div className="flex items-center justify-end gap-3 text-xs">
         {flash && <span className="text-zinc-500">{t('settings.customPromptSaved')}</span>}
-        <button disabled={!dirty} onClick={save} className="rounded-md bg-white/10 px-2.5 py-1.5 text-zinc-200 hover:bg-white/15 disabled:opacity-40 disabled:hover:bg-white/10">{t('settings.customPromptSave')}</button>
+        <button disabled={!dirty} onClick={save} className="rounded-full bg-fill-2 px-3.5 py-1.5 text-zinc-200 hover:bg-fill-3 disabled:opacity-40 disabled:hover:bg-fill-2 transition-colors">{t('settings.customPromptSave')}</button>
       </div>
     </div>
   );
@@ -144,20 +144,21 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
           <div className="text-[15px] font-semibold">{t('settings.title')}</div>
           <div className="flex-1" />
           {tab === 'agents' && <button className="text-xs text-zinc-400 hover:text-white mr-3" onClick={refresh}>{t('settings.redetect')}</button>}
-          <button className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={onClose} title="Esc"><Icon name="close" /></button>
+          <button className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-fill-2 transition-colors" onClick={onClose} title="Esc"><Icon name="close" /></button>
         </div>
-        <div className="flex-1 min-h-0 flex">
-          <nav className="w-[200px] shrink-0 border-r border-white/10 p-3 space-y-0.5 overflow-y-auto">
+        {/* Left: sections; right: the selected section. Two cards inside the dialog. */}
+        <div className="flex-1 min-h-0 flex gap-3 p-3">
+          <nav className="w-[210px] shrink-0 rounded-[18px] border border-line bg-black/20 p-2 space-y-0.5 overflow-y-auto">
             {tabs.map((x) => (
               <button key={x.id} onClick={() => setTab(x.id)}
-                className={`w-full flex items-center gap-2 text-left rounded-md px-3 py-2 text-sm ${tab === x.id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'}`}>
+                className={`w-full flex items-center gap-2 text-left rounded-xl px-3 py-2 text-sm transition-colors duration-150 ${tab === x.id ? 'bg-selected text-on-selected' : 'text-zinc-300 hover:text-white hover:bg-fill'}`}>
                 <span className="flex-1 truncate">{t(x.key)}</span>
                 {x.id === 'agents' && (running ? <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" /> : agentsNeedAttention && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />)}
               </button>
             ))}
           </nav>
           {/* Every tab stays mounted so unsaved edits survive switching. */}
-          <div className="flex-1 min-w-0 p-5 overflow-y-auto">
+          <div className="flex-1 min-w-0 rounded-[18px] border border-line bg-black/20 p-5 overflow-y-auto">
             <div className={tab === 'general' ? '' : 'hidden'}><GeneralSettings /></div>
             <div className={tab === 'wallpaper' ? '' : 'hidden'}><WallpaperSettings /></div>
             <div className={tab === 'customPrompt' ? '' : 'hidden'}><CustomPromptSettings /></div>
@@ -166,7 +167,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
             <div className={tab === 'agents' ? 'space-y-4' : 'hidden'}>
               {!info && <div className="text-sm text-zinc-500">{t('settings.detecting')}</div>}
               {info?.tools.map((tool) => (
-                <div key={tool.id} className="rounded-lg border border-white/10 p-4">
+                <div key={tool.id} className="rounded-2xl border border-line bg-black/15 p-4">
                   <div className="flex items-center gap-3">
                     <span className={`w-2 h-2 rounded-full ${tool.installed ? (tool.loggedIn ? 'bg-green-400' : 'bg-amber-400') : 'bg-zinc-600'}`} />
                     <div className="font-medium">{tool.name}</div>
@@ -177,7 +178,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
                     )}
                     <div className="flex-1" />
                     {tool.installed && (
-                      <button disabled={!!running} className="text-xs rounded bg-white/5 hover:bg-white/10 px-2 py-1 disabled:opacity-40"
+                      <button disabled={!!running} className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 px-3 py-1 disabled:opacity-40 transition-colors"
                         onClick={() => run(tool.id, 'update')}>{t('settings.update')}</button>
                     )}
                   </div>
@@ -192,7 +193,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
                     <div className="mt-3 flex gap-2 flex-wrap">
                       {methodsFor(tool, info.installers).map((m) => (
                         <button key={m} disabled={!!running}
-                          className="text-xs rounded bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 px-3 py-1.5 disabled:opacity-40"
+                          className="text-xs rounded-full bg-selected hover:bg-white text-on-selected font-medium px-3.5 py-1.5 disabled:opacity-40 transition-colors"
                           onClick={() => run(tool.id, m)}>{t('settings.installVia', { method: methodLabel(m) })}</button>
                       ))}
                     </div>
@@ -205,7 +206,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
                 </div>
               )}
               {log.length > 0 && (
-                <div ref={logRef} className="rounded-lg bg-black/50 p-3 font-mono text-[12px] max-h-64 overflow-auto">
+                <div ref={logRef} className="rounded-2xl bg-black/40 border border-line p-3 font-mono text-[12px] max-h-64 overflow-auto">
                   {log.map((l, i) => <div key={i} className={l.err ? 'text-amber-200' : 'text-zinc-300'}>{l.line}</div>)}
                   {running && <div className="text-zinc-500 animate-pulse">{t('settings.running')}</div>}
                 </div>

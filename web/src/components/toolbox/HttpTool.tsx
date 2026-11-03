@@ -197,7 +197,7 @@ function KV({ rows, onChange, suggest }: { rows: Row[]; onChange: (rows: Row[]) 
           <input type="checkbox" checked={r.on} onChange={(e) => upd(i, { on: e.target.checked })} className={!r.k && !r.v ? 'invisible' : ''} />
           <input className={`${input} w-[38%] ${r.on ? '' : 'opacity-50'}`} value={r.k} list={suggest ? 'http-headers' : undefined} onChange={(e) => upd(i, { k: e.target.value })} placeholder="key" spellCheck={false} />
           <input className={`${input} flex-1 ${r.on ? '' : 'opacity-50'}`} value={r.v} onChange={(e) => upd(i, { v: e.target.value })} placeholder="value" spellCheck={false} />
-          <button className={`w-6 h-6 shrink-0 rounded text-zinc-500 hover:text-white hover:bg-white/10 ${!r.k && !r.v ? 'invisible' : ''}`} onClick={() => onChange(norm(rows.filter((_, j) => j !== i)))}>×</button>
+          <button className={`w-6 h-6 shrink-0 rounded-full text-zinc-500 hover:text-white hover:bg-white/10 ${!r.k && !r.v ? 'invisible' : ''} transition-colors`} onClick={() => onChange(norm(rows.filter((_, j) => j !== i)))}>×</button>
         </div>
       ))}
     </div>

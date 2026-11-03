@@ -139,7 +139,7 @@ function ResumeBrief({ session }: { session: ChatSession }) {
         {open && (
           <div className="border-t border-sky-400/10 px-3 py-2 space-y-2 max-h-72 overflow-y-auto">
             {b.files.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.filesTitle')}</div><div className="flex flex-wrap gap-1">{b.files.slice(0, 30).map((f) => (
-              <button key={f} onClick={() => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: f.startsWith('/') ? f : `${session.cwd}/${f}` } }))} className="rounded bg-white/5 hover:bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-zinc-300">{f}</button>
+              <button key={f} onClick={() => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: f.startsWith('/') ? f : `${session.cwd}/${f}` } }))} className="rounded-full bg-fill hover:bg-fill-2 transition-colors px-1.5 py-0.5 font-mono text-[11px] text-zinc-300">{f}</button>
             ))}{b.files.length > 30 && <span className="text-[11px] text-zinc-500">+{b.files.length - 30}</span>}</div></div>}
             {b.commits.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.commitsTitle')}</div>{b.commits.slice(-8).map((c, i) => <div key={i} className="font-mono text-[11.5px] text-zinc-300 truncate">{c}</div>)}</div>}
             {b.todos.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.todosTitle')}</div>{b.todos.map((x, i) => <div key={i} className="text-zinc-300">☐ {x}</div>)}</div>}
@@ -244,20 +244,23 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
   const agentName = agent === 'claude' ? 'Claude' : 'Codex';
 
   return (
-    <div className="h-full overflow-y-auto p-8 max-w-2xl mx-auto">
+    <div className="@container h-full overflow-y-auto p-6">
+    {/* Wide: start options on the left, previous sessions on the right; narrow: stacked. */}
+    <div className="max-w-6xl mx-auto grid gap-4 items-start @[860px]:grid-cols-2">
+    <section className="rounded-[20px] border border-line bg-black/15 p-6 min-w-0">
       <div className="text-xs text-zinc-500 mb-1">{scope === 'home' ? t('chat.agent') : t('chat.project')}</div>
       {scope === 'home'
         ? <div className="text-lg font-medium mb-6">{t('chat.freeConversation')}</div>
         : <div className="flex items-center gap-3 mb-6" title={cwd}><ProjectIcon path={cwd} name={cwd.split('/').pop() || cwd} size={40} /><div className="text-xl font-semibold truncate">{cwd.split('/').pop() || cwd}</div>
             <div className="flex-1" />
-            <button onClick={() => window.dispatchEvent(new Event('vibe:agent-context'))} className="shrink-0 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-white/5"><Icon name="file" size={13} />{t('context.menu')}</button>
+            <button onClick={() => window.dispatchEvent(new Event('vibe:agent-context'))} className="shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-zinc-300 bg-fill hover:text-white hover:bg-fill-2 transition-colors"><Icon name="file" size={13} />{t('context.menu')}</button>
           </div>}
       {scope === 'home' && <div className="text-xs text-zinc-500 -mt-4 mb-6">{t('chat.freeHint', { cwd })}</div>}
-      <div className="flex items-center gap-1 mb-4 rounded-lg bg-white/5 p-1 w-fit text-sm">
+      <div className="flex items-center gap-1 mb-4 rounded-full bg-black/20 border border-line p-1 w-fit text-sm">
         {(['claude', 'codex'] as AgentId[]).map((a) => (
-          <button key={a} onClick={() => { setAgent(a); setCompare(false); }} className={`px-4 py-1.5 rounded-md ${agent === a && !compare ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white'}`}>{a === 'claude' ? t('chat.claudeCode') : 'Codex'}</button>
+          <button key={a} onClick={() => { setAgent(a); setCompare(false); }} className={`px-4 py-1.5 rounded-full transition-colors duration-150 ${agent === a && !compare ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-white'}`}>{a === 'claude' ? t('chat.claudeCode') : 'Codex'}</button>
         ))}
-        {isGit && onStartPair && <button onClick={() => setCompare(true)} className={`px-4 py-1.5 rounded-md flex items-center gap-1.5 ${compare ? 'bg-violet-500/20 text-violet-100' : 'text-zinc-400 hover:text-white'}`} title={t('pair.hint')}><Icon name="branch" size={13} />{t('pair.tab')}</button>}
+        {isGit && onStartPair && <button onClick={() => setCompare(true)} className={`px-4 py-1.5 rounded-full flex items-center gap-1.5 transition-colors duration-150 ${compare ? 'bg-violet-300 text-violet-950' : 'text-zinc-400 hover:text-white'}`} title={t('pair.hint')}><Icon name="branch" size={13} />{t('pair.tab')}</button>}
       </div>
       {compare && isGit && onStartPair ? (
         <div className="mb-6 rounded-lg border border-violet-400/25 bg-violet-400/[0.05] p-3 space-y-2.5">
@@ -266,11 +269,11 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pairPrompt.trim()) onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: localStorage.getItem('vibe.model.claude'), codex: localStorage.getItem('vibe.model.codex') } }); }}
             className="w-full rounded-md bg-black/40 border border-white/10 focus:border-violet-400/50 px-3 py-2 text-[13px] outline-none resize-y" />
           <div className="flex items-center gap-2 flex-wrap">
-            <button disabled={!pairPrompt.trim()} className="rounded-lg bg-violet-500/30 hover:bg-violet-500/40 disabled:opacity-40 px-4 py-2 text-sm"
+            <button disabled={!pairPrompt.trim()} className="rounded-full bg-violet-300 hover:bg-violet-200 text-violet-950 font-medium disabled:opacity-40 px-4 py-2 text-sm transition-colors"
               onClick={() => onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: localStorage.getItem('vibe.model.claude'), codex: localStorage.getItem('vibe.model.codex') } })}>
-              {t('pair.start')} <span className="text-zinc-400 text-xs ml-1">⌘⏎</span>
+              {t('pair.start')} <span className="opacity-60 text-xs ml-1">⌘⏎</span>
             </button>
-            <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-white/5 rounded-md text-xs px-2 py-1.5 outline-none">
+            <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
               {MODE_IDS.filter((m) => m.id !== 'auto').map((m) => <option key={m.id} value={m.id}>{t(m.key)}</option>)}
             </select>
             <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={t('pair.branchPlaceholder')} spellCheck={false}
@@ -279,14 +282,14 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
         </div>
       ) : <>
       <div className="flex items-center gap-3 mb-3 flex-wrap">
-        <button className="rounded-lg bg-blue-500/30 hover:bg-blue-500/40 px-4 py-2 text-sm" onClick={() => onStart(cwd, opts(isolate ? { isolate: { branch: branch.trim() || undefined } } : {}))}>{t('chat.newSession', { agent: agentName })} <span className="text-zinc-400 text-xs ml-1">⌘N</span></button>
-        <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-white/5 rounded-md text-xs px-2 py-1.5 outline-none">
+        <button className="rounded-full bg-selected hover:bg-white text-on-selected font-medium px-4 py-2 text-sm shadow-[0_4px_14px_rgb(0_0_0/.25)] transition-colors" onClick={() => onStart(cwd, opts(isolate ? { isolate: { branch: branch.trim() || undefined } } : {}))}>{t('chat.newSession', { agent: agentName })} <span className="opacity-50 text-xs ml-1">⌘N</span></button>
+        <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
           {MODE_IDS.filter((m) => m.id !== 'auto' || agent === 'claude').map((m) => <option key={m.id} value={m.id}>{t(m.key)}</option>)}
         </select>
         <ModelSelect agent={agent} value={model} onChange={setModel} />
       </div>
       {isGit && (
-        <div className={`mb-3 rounded-lg border px-3 py-2 text-xs transition-colors ${isolate ? 'border-violet-400/30 bg-violet-400/[0.06]' : 'border-white/5'}`}>
+        <div className={`mb-3 rounded-2xl border px-3.5 py-2.5 text-xs transition-colors ${isolate ? 'border-violet-400/30 bg-violet-400/[0.06]' : 'border-line bg-black/10'}`}>
           <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
             <input type="checkbox" checked={isolate} onChange={(e) => setIsolate(e.target.checked)} />
             <Icon name="branch" size={13} className={isolate ? 'text-violet-300' : 'text-zinc-500'} />
@@ -305,20 +308,22 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
       </>}
       {isGit && onOpenWorktree && scope === 'folder' && <LeftoverWorktrees cwd={cwd} open={openWorktrees ?? []} onOpen={onOpenWorktree} />}
       {backlog && onBacklogChange && scope === 'folder' && (
-        <div className="mb-6 rounded-lg border border-white/5 p-3">
+        <div className="rounded-2xl border border-line bg-black/10 p-3.5">
           <BacklogPanel compact backlog={backlog} onChange={onBacklogChange} onFocusSession={(id) => onOpenBacklogSession?.(id)} />
         </div>
       )}
-      <div className="flex items-center text-xs text-zinc-500 mb-2 gap-3">
-        <span>{scope === 'home' ? t('chat.previousAll', { n: history.length }) : t('chat.previousFolder')}</span>
+    </section>
+    <section className="rounded-[20px] border border-line bg-black/15 p-4 min-w-0">
+      <div className="flex items-center text-xs text-zinc-400 mb-3 px-1 gap-3 h-7">
+        <span className="font-medium">{scope === 'home' ? t('chat.previousAll', { n: history.length }) : t('chat.previousFolder')}</span>
         <div className="flex-1" />
-        {scope === 'home' && <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('common.search')} className="bg-white/5 rounded px-2 py-1 text-xs outline-none w-40" />}
+        {scope === 'home' && <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('common.search')} className="bg-black/20 border border-line rounded-full px-3 py-1 text-xs outline-none w-44 focus:border-white/30 transition-colors" />}
         {loadingHistory && <span className="text-zinc-600">{t('chat.loading')}</span>}
       </div>
-      {history.length === 0 && !loadingHistory && <div className="text-xs text-zinc-600">{t('chat.noSessions')}</div>}
+      {history.length === 0 && !loadingHistory && <div className="px-1 text-xs text-zinc-500">{t('chat.noSessions')}</div>}
       <div className="space-y-1">
         {shown.map((h) => (
-          <div key={h.agent + h.sessionId} className="w-full text-left rounded-lg border border-white/10 hover:bg-white/5 px-3 py-2 cursor-pointer flex items-center gap-3"
+          <div key={h.agent + h.sessionId} className="w-full text-left rounded-xl hover:bg-fill-2 px-3 py-2 cursor-pointer flex items-center gap-3 transition-colors duration-150"
             onClick={() => onStart(h.cwd ?? cwd, opts({ resume: h.sessionId, agent: h.agent, title: h.customTitle || h.summary || undefined }))}
             onContextMenu={(e) => menu.open(e, [
               { label: t('common.resume'), onClick: () => onStart(h.cwd ?? cwd, opts({ resume: h.sessionId, agent: h.agent, title: h.customTitle || h.summary || undefined })) },
@@ -341,6 +346,8 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
           </div>
         ))}
       </div>
+    </section>
+    </div>
     </div>
   );
 }
@@ -537,10 +544,10 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
           <Icon name="sparkle" size={13} /><span className="@max-[600px]:hidden">{t('review.short')}</span>
         </button>}
         {onVerify && session.cwd && <VerifyButton cwd={session.worktree?.origin ?? session.cwd} running={running} onRun={onVerify} />}
-        <button onClick={() => (picked ? setPicked(null) : startExport())} className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-md hover:bg-white/5 ${picked ? 'text-sky-300 bg-white/10' : 'text-zinc-500 hover:text-zinc-200'}`} title={t('export.button')}><Icon name="download" size={14} /></button>
+        <button onClick={() => (picked ? setPicked(null) : startExport())} className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/5 ${picked ? 'text-sky-300 bg-white/10' : 'text-zinc-500 hover:text-zinc-200'} transition-colors`} title={t('export.button')}><Icon name="download" size={14} /></button>
         {session.agentSessionId && <button className="text-zinc-600 hover:text-zinc-300" title={t('chat.copySessionIdTitle', { id: session.agentSessionId })} onClick={() => navigator.clipboard.writeText(session.agentSessionId!)}>id</button>}
         {session.agent === 'claude' && <span className="text-zinc-500 @max-[440px]:hidden">${session.totalCostUsd.toFixed(3)}</span>}
-        <button className="w-7 h-7 -mr-2 shrink-0 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={close} title={t('chat.closeSession')}><Icon name="close" /></button>
+        <button className="w-7 h-7 -mr-2 shrink-0 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" onClick={close} title={t('chat.closeSession')}><Icon name="close" /></button>
       </div>
       {picked && (
         <div className="shrink-0 border-b border-sky-400/20 bg-sky-500/[0.06] px-4 py-2 text-xs text-zinc-300 space-y-1">
@@ -554,7 +561,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
             <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={withThinking} onChange={(e) => setWithThinking(e.target.checked)} />{t('export.thinking')}</label>
             <span className="flex-1" />
             <button disabled={!picked.size || exporting} onClick={runExport} className="rounded-md bg-sky-500/30 hover:bg-sky-500/40 disabled:opacity-40 px-2.5 py-1 text-sky-50">{t('export.save')}</button>
-            <button onClick={() => setPicked(null)} className="rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1">{t('export.cancel')}</button>
+            <button onClick={() => setPicked(null)} className="rounded-full bg-fill-2 hover:bg-fill-3 transition-colors px-2.5 py-1">{t('export.cancel')}</button>
           </div>
           <div className="text-zinc-500 whitespace-normal">{t('export.hint')}</div>
         </div>

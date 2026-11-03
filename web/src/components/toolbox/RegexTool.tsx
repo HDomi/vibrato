@@ -40,7 +40,7 @@ export default function RegexTool() {
         <span className="text-zinc-500 font-mono">/{flags}</span>
         <div className="flex items-center gap-0.5">
           {REGEX_FLAGS.filter((f) => f !== 'd').map((f) => (
-            <button key={f} title={FLAG_HINT[f]} onClick={() => toggle(f)} className={`w-6 h-6 rounded font-mono text-[11px] ${flags.includes(f) ? 'bg-blue-500/30 text-blue-200' : 'text-zinc-500 hover:bg-white/10'}`}>{f}</button>
+            <button key={f} title={FLAG_HINT[f]} onClick={() => toggle(f)} className={`w-6 h-6 rounded-full font-mono text-[11px] ${flags.includes(f) ? 'bg-blue-500/30 text-blue-200' : 'text-zinc-500 hover:bg-white/10'} transition-colors`}>{f}</button>
           ))}
         </div>
         <select className={select} value="" onChange={(e) => { const p = REGEX_PRESETS[Number(e.target.value)]; if (p) { setPattern(p.source); setFlags(p.flags); if (!text) setText(SAMPLE); } }}>

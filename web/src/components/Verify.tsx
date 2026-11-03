@@ -56,9 +56,9 @@ export function VerifyItem({ item, latest, onRerun }: { item: VerifyItemData; la
         <code className="truncate min-w-0 text-zinc-400 font-mono text-[11px]">{item.command}</code>
         <span className="text-zinc-500 tabular-nums shrink-0">exit {item.exitCode} · {seconds(item.durationMs)}</span>
         <div className="flex-1" />
-        <button className="shrink-0 flex items-center gap-1 rounded-md bg-red-400/15 hover:bg-red-400/25 text-red-100 px-2 py-0.5 text-[11px]"
+        <button className="shrink-0 flex items-center gap-1 rounded-full bg-red-400/15 hover:bg-red-400/25 text-red-100 px-2 py-0.5 text-[11px]"
           onClick={(e) => { e.stopPropagation(); sendFailure(); }} title={t('verify.sendHint')}><Icon name="send" size={11} /><span className="whitespace-nowrap">{t('verify.send')}</span></button>
-        {onRerun && <button className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10"
+        {onRerun && <button className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
           onClick={(e) => { e.stopPropagation(); onRerun(); }} title={t('verify.rerun')}><Icon name="reload" size={12} /></button>}
       </div>
       {open && item.output && (
@@ -105,11 +105,11 @@ export function VerifyButton({ cwd, running, onRun }: { cwd: string; running: bo
 
   return (
     <div ref={root} className="relative">
-      <button className={`flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 ${active ? (saved?.auto ? 'text-sky-300 hover:bg-sky-400/10' : 'text-zinc-300 hover:bg-white/10') : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+      <button className={`flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-1 ${active ? (saved?.auto ? 'text-sky-300 hover:bg-sky-400/10' : 'text-zinc-300 hover:bg-white/10') : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
         onClick={() => setOpen((v) => !v)} title={active ? `${t('verify.title')}: ${saved?.command}` : t('verify.title')}>
         <Icon name="shieldCheck" size={14} />
         <span className="@max-[520px]:hidden">{t('verify.short')}</span>
-        {saved?.auto && <span className="text-[9px] uppercase tracking-wide rounded bg-sky-400/15 px-1">auto</span>}
+        {saved?.auto && <span className="text-[9px] uppercase tracking-wide rounded-full bg-sky-400/15 px-1">auto</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1.5 z-30 w-[380px] glass-pop pop-in rounded-xl p-3 space-y-3 text-[12px]">
@@ -123,7 +123,7 @@ export function VerifyButton({ cwd, running, onRun }: { cwd: string; running: bo
           {suggestions.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {suggestions.map((s) => (
-                <button key={s} onClick={() => setCommand(s)} className={`rounded px-1.5 py-0.5 font-mono text-[10.5px] ${command === s ? 'bg-sky-400/20 text-sky-200' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'}`}>{s}</button>
+                <button key={s} onClick={() => setCommand(s)} className={`rounded-full px-1.5 py-0.5 font-mono text-[10.5px] ${command === s ? 'bg-sky-400/20 text-sky-200' : 'bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200'}`}>{s}</button>
               ))}
             </div>
           )}
@@ -133,11 +133,11 @@ export function VerifyButton({ cwd, running, onRun }: { cwd: string; running: bo
           </label>
           {error && <div className="text-red-300 text-[11px]">{error}</div>}
           <div className="flex items-center gap-2">
-            <button disabled={!dirty} onClick={() => void save()} className="rounded-md bg-sky-500/25 hover:bg-sky-500/35 disabled:opacity-40 px-2.5 py-1 text-sky-100">{t('common.save')}</button>
+            <button disabled={!dirty} onClick={() => void save()} className="rounded-full bg-sky-500/25 hover:bg-sky-500/35 disabled:opacity-40 px-2.5 py-1 text-sky-100">{t('common.save')}</button>
             <div className="flex-1" />
             <button disabled={!command.trim() || running}
               onClick={async () => { const r = dirty ? await save() : saved; if (r?.command) { onRun(); setOpen(false); } }}
-              className="flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 px-2.5 py-1 text-zinc-200" title={running ? t('verify.busy') : undefined}>
+              className="flex items-center gap-1 rounded-full bg-fill-2 hover:bg-fill-3 transition-colors disabled:opacity-40 px-2.5 py-1 text-zinc-200" title={running ? t('verify.busy') : undefined}>
               <Icon name="play" size={11} filled />{t('verify.runNow')}
             </button>
           </div>

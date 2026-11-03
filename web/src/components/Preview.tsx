@@ -23,7 +23,7 @@ function CodeView({ content, name, ext }: { content: string; name: string; ext: 
     <div className="h-full flex flex-col">
       <div className="h-8 shrink-0 flex items-center gap-2 px-3 border-b border-white/5 text-[11px] text-zinc-500">
         <span>{t('preview.language')}</span>
-        <select value={lang} onChange={(e) => { setLang(e.target.value); rememberLanguage(name, ext, e.target.value); }} className="bg-white/5 rounded px-1.5 py-0.5 outline-none text-zinc-300">
+        <select value={lang} onChange={(e) => { setLang(e.target.value); rememberLanguage(name, ext, e.target.value); }} className="bg-black/20 border border-line rounded px-1.5 py-0.5 outline-none text-zinc-300">
           {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
         </select>
         <span className="text-zinc-600">{lines.length} {t('preview.lines')}</span>
@@ -104,7 +104,7 @@ function TextView({ path, markdown, name, ext, reload }: { path: string; markdow
           </div>
           {conflict && <>
             <span className="text-amber-400">{t('preview.table.conflict')}</span>
-            <button className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/15 text-zinc-200" onClick={() => setTick((n) => n + 1)}>{t('preview.table.reload')}</button>
+            <button className="px-2 py-0.5 rounded-full bg-fill-2 hover:bg-fill-3 transition-colors text-zinc-200" onClick={() => setTick((n) => n + 1)}>{t('preview.table.reload')}</button>
           </>}
         </div>
       )}
@@ -174,7 +174,7 @@ export default function Preview({ entry, onClose }: Props) {
         )}
         {entry.kind === 'markdown' && <CopySourceButton path={entry.path} />}
         <button className="text-xs text-zinc-400 hover:text-white" onClick={() => navigator.clipboard.writeText(entry.path)} title={entry.path}>{t('preview.copyPath')}</button>
-        {onClose && <button className="-mr-2 w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={onClose} title="Esc"><Icon name="close" /></button>}
+        {onClose && <button className="-mr-2 w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" onClick={onClose} title="Esc"><Icon name="close" /></button>}
       </div>
       {converting && (
         <ImageConvertDialog entry={entry} onClose={() => setConverting(false)}

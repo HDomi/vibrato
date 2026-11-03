@@ -117,7 +117,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
             const on = runningNames.has(s.name);
             return (
               <button key={s.name} onClick={() => void start(s.name, s.command)} title={s.command}
-                className={`group flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] ${on ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}>
+                className={`group flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[11px] ${on ? 'bg-emerald-400/10 text-emerald-200' : 'bg-white/5 text-zinc-300 hover:bg-white/10'}`}>
                 <Icon name={on ? 'reload' : 'play'} size={10} filled={!on} className={on ? '' : 'text-zinc-500 group-hover:text-emerald-300'} />{s.name}
               </button>
             );
@@ -128,7 +128,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
                 className="w-52 rounded-md bg-black/40 border border-white/10 focus:border-sky-400/50 px-2 py-1 font-mono text-[11px] outline-none" />
             </form>
           ) : (
-            <button onClick={() => setAdding(true)} className="flex items-center gap-1 rounded-md px-2 py-1 text-zinc-500 hover:text-zinc-200 hover:bg-white/5"><Icon name="plus" size={11} />{t('run.custom')}</button>
+            <button onClick={() => setAdding(true)} className="flex items-center gap-1 rounded-full px-2 py-1 text-zinc-500 hover:text-zinc-200 hover:bg-white/5"><Icon name="plus" size={11} />{t('run.custom')}</button>
           )}
           {!scripts.length && !adding && <span className="text-zinc-600 px-1">{t('run.noScripts')}</span>}
         </div>
@@ -137,11 +137,11 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
         <div className="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-white/10 overflow-x-auto">
           {runs.map((r) => (
             <div key={r.id} onClick={() => setSelected(r.id)}
-              className={`group shrink-0 flex items-center gap-1.5 rounded-md pl-2 pr-1 py-1 cursor-pointer whitespace-nowrap ${r.id === selected ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5'}`}>
+              className={`group shrink-0 flex items-center gap-1.5 rounded-full pl-2 pr-1 py-1 cursor-pointer whitespace-nowrap ${r.id === selected ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${r.status === 'running' ? 'bg-emerald-400' : r.exitCode === 0 ? 'bg-zinc-500' : 'bg-red-400'}`} />
               <span className="font-mono text-[11px]">{r.name}</span>
               <button onClick={(e) => { e.stopPropagation(); if (r.status === 'running') void stop(r.id); else void remove(r.id); }}
-                className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/15 opacity-60 group-hover:opacity-100" title={r.status === 'running' ? t('run.stop') : t('run.remove')}>
+                className="w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/15 opacity-60 group-hover:opacity-100 transition-colors" title={r.status === 'running' ? t('run.stop') : t('run.remove')}>
                 <Icon name={r.status === 'running' ? 'stop' : 'close'} size={r.status === 'running' ? 10 : 11} filled={r.status === 'running'} />
               </button>
             </div>
@@ -157,10 +157,10 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
             <code className="truncate min-w-0 text-zinc-500">{info.command}</code>
             <div className="flex-1" />
             {info.url && (
-              <button onClick={() => window.open(info.url!, '_blank')} className="shrink-0 flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-sky-300 hover:bg-sky-400/10" title={t('run.openExternal')}>{info.url.replace(/^https?:\/\//, '')} ↗</button>
+              <button onClick={() => window.open(info.url!, '_blank')} className="shrink-0 flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-sky-300 hover:bg-sky-400/10" title={t('run.openExternal')}>{info.url.replace(/^https?:\/\//, '')} ↗</button>
             )}
-            <button onClick={() => void start(info.name, info.command)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/10" title={t('run.restart')}><Icon name="reload" size={12} /></button>
-            {info.status === 'running' && <button onClick={() => void stop(info.id)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-red-300 hover:bg-white/10" title={t('run.stop')}><Icon name="stop" size={11} filled /></button>}
+            <button onClick={() => void start(info.name, info.command)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" title={t('run.restart')}><Icon name="reload" size={12} /></button>
+            {info.status === 'running' && <button onClick={() => void stop(info.id)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-300 hover:bg-white/10 transition-colors" title={t('run.stop')}><Icon name="stop" size={11} filled /></button>}
           </div>
           {errors.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-red-500/20 bg-red-500/[0.07] text-[11px]">
@@ -168,7 +168,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
               <span className="text-red-200 whitespace-nowrap">{t('run.errors', { n: errors.length })}</span>
               <span className="truncate min-w-0 font-mono text-zinc-400">{errors[errors.length - 1].lines[0].text.trim()}</span>
               <div className="flex-1" />
-              <button onClick={sendErrors} className="shrink-0 flex items-center gap-1 rounded-md bg-red-400/15 hover:bg-red-400/25 text-red-100 px-2 py-0.5"><Icon name="send" size={10} />{t('run.sendErrors')}</button>
+              <button onClick={sendErrors} className="shrink-0 flex items-center gap-1 rounded-full bg-red-400/15 hover:bg-red-400/25 text-red-100 px-2 py-0.5"><Icon name="send" size={10} />{t('run.sendErrors')}</button>
               <button onClick={() => selected && setDismissed((d) => ({ ...d, [selected]: lines[lines.length - 1]?.n ?? -1 }))} className="shrink-0 text-zinc-500 hover:text-zinc-200" title={t('run.dismiss')}><Icon name="close" size={11} /></button>
             </div>
           )}

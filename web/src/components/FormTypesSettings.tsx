@@ -3,7 +3,7 @@ import { saveFormTypes, useFormTypes } from '../lib/formTypes';
 import { t, useLang } from '../lib/i18n';
 import { APPROACHES, FORM_FIELDS, type FormType } from '../lib/promptForm';
 
-const box = 'w-full rounded-md bg-white/5 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:bg-white/[0.07]';
+const box = 'w-full rounded-md bg-black/20 border border-line px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:bg-white/[0.07]';
 const toLines = (v: string[]) => v.join('\n');
 const fromLines = (v: string) => v.split('\n').map((x) => x.trim()).filter(Boolean);
 
@@ -48,7 +48,7 @@ export default function FormTypesSettings({ focus }: { focus?: boolean }) {
   };
 
   return (
-    <div ref={ref} className="rounded-lg border border-white/10 p-4 space-y-3 text-sm">
+    <div ref={ref} className="rounded-2xl border border-line bg-black/15 p-5 space-y-3 text-sm">
       <div>
         <div className="font-medium">{t('form.settings.title')}</div>
         <div className="text-xs text-zinc-500 leading-relaxed">{t('form.settings.note')}</div>
@@ -89,7 +89,7 @@ export default function FormTypesSettings({ focus }: { focus?: boolean }) {
         <div className="flex items-center gap-4 text-xs">
           <label className="flex items-center gap-1.5 text-zinc-300 cursor-pointer"><input type="checkbox" checked={cur.verify} onChange={(e) => patch({ verify: e.target.checked })} />{t('form.settings.verify')}</label>
           <label className="flex items-center gap-1.5 text-zinc-400">{t('form.f.approach')}
-            <select className="bg-white/5 rounded-md px-1.5 py-0.5 outline-none text-zinc-200" value={cur.approach} onChange={(e) => patch({ approach: e.target.value as FormType['approach'] })}>
+            <select className="bg-black/20 border border-line rounded-md px-1.5 py-0.5 outline-none text-zinc-200" value={cur.approach} onChange={(e) => patch({ approach: e.target.value as FormType['approach'] })}>
               {APPROACHES.map((a) => <option key={a} value={a}>{t(`form.approach.${a}`)}</option>)}
             </select>
           </label>

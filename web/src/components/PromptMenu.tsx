@@ -65,7 +65,7 @@ export default function PromptMenu({ draft, onInsert, disabled }: { draft: strin
             ) : (
               <form className="flex items-center gap-2 py-1" onSubmit={(e) => { e.preventDefault(); save(); }}>
                 <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} placeholder={t('prompts.namePlaceholder')} aria-label={t('prompts.namePlaceholder')}
-                  className="flex-1 min-w-0 rounded bg-white/5 px-2 py-1 text-xs outline-none" />
+                  className="flex-1 min-w-0 rounded bg-black/20 border border-line px-2 py-1 text-xs outline-none" />
                 <button className="text-xs text-sky-300">{t('prompts.save')}</button>
               </form>
             )}

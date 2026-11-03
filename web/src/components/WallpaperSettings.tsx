@@ -33,7 +33,7 @@ export default function WallpaperSettings() {
   if (!w) return null;
   const kind = w.kind;
   return (
-    <div className="rounded-lg border border-white/10 p-4 space-y-4">
+    <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-4">
       <div className="font-medium">{t('wall.title')}</div>
       <div className="flex items-center gap-1 rounded-full bg-white/5 p-1 w-fit text-xs">
         {(['color', 'image'] as const).map((k) => (
@@ -56,11 +56,11 @@ export default function WallpaperSettings() {
         <div className="flex items-center gap-3">
           <div className="w-40 h-24 rounded-xl border border-white/15 bg-cover bg-center shrink-0"
             style={{ backgroundImage: `url("${api.wallpaperUrl('original', w.version)}")` }} />
-          <button disabled={busy} onClick={() => file.current?.click()} className="rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-xs text-zinc-200 disabled:opacity-40">{t('wall.change')}</button>
+          <button disabled={busy} onClick={() => file.current?.click()} className="rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 transition-colors text-xs text-zinc-200 disabled:opacity-40">{t('wall.change')}</button>
         </div>
       )}
       {kind === 'color' && w.hasImage === false && (
-        <button disabled={busy} onClick={() => file.current?.click()} className="rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-xs text-zinc-200 disabled:opacity-40">{t('wall.pick')}</button>
+        <button disabled={busy} onClick={() => file.current?.click()} className="rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 transition-colors text-xs text-zinc-200 disabled:opacity-40">{t('wall.pick')}</button>
       )}
       <input ref={file} type="file" accept="image/*" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void run(() => setWallpaperImage(f, blur)); }} />

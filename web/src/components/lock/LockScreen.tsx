@@ -181,7 +181,7 @@ function Password({ initialWait }: { initialWait: number }) {
           placeholder={t('lock.password')}
           className="flex-1 min-w-0 bg-transparent outline-none text-[15px] tracking-wider text-zinc-100 placeholder:text-zinc-500 placeholder:tracking-normal disabled:opacity-50" />
         <button type="submit" disabled={!value || wait > 0 || busy} aria-label={t('lock.unlock')}
-          className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 disabled:opacity-30 flex items-center justify-center text-zinc-200">
+          className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 disabled:opacity-30 flex items-center justify-center text-zinc-200 transition-colors">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
         </button>
       </div>

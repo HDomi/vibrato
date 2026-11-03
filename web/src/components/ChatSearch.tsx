@@ -96,9 +96,9 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
         }}
         className="w-52 bg-transparent outline-none px-1 py-0.5 text-[13px]" />
       <span className="tabular-nums text-zinc-500 min-w-12 text-right">{query.trim() ? `${ranges.length ? index + 1 : 0}/${ranges.length}` : ''}</span>
-      <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-zinc-400 disabled:opacity-30" disabled={!ranges.length} onClick={() => jump(index - 1)} title={t('chat.searchPrev')}><Icon name="up" size={14} /></button>
-      <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-zinc-400 disabled:opacity-30" disabled={!ranges.length} onClick={() => jump(index + 1)} title={t('chat.searchNext')}><Icon name="up" size={14} className="rotate-180" /></button>
-      <button className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 text-zinc-400" onClick={onClose} title="Esc"><Icon name="close" size={14} /></button>
+      <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/10 text-zinc-400 disabled:opacity-30 transition-colors" disabled={!ranges.length} onClick={() => jump(index - 1)} title={t('chat.searchPrev')}><Icon name="up" size={14} /></button>
+      <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/10 text-zinc-400 disabled:opacity-30 transition-colors" disabled={!ranges.length} onClick={() => jump(index + 1)} title={t('chat.searchNext')}><Icon name="up" size={14} className="rotate-180" /></button>
+      <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/10 text-zinc-400 transition-colors" onClick={onClose} title="Esc"><Icon name="close" size={14} /></button>
     </div>
   );
 }

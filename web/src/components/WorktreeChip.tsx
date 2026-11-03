@@ -62,7 +62,7 @@ export default function WorktreeChip({ info, running, onFinished, commitTitle, p
 
   return (
     <div ref={root} className="relative shrink-0">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 rounded-md bg-violet-400/10 hover:bg-violet-400/20 px-1.5 py-0.5 text-violet-200 max-w-40" title={info.path}>
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 rounded-full bg-violet-400/10 hover:bg-violet-400/20 px-1.5 py-0.5 text-violet-200 max-w-40" title={info.path}>
         <Icon name="branch" size={12} /><span className="truncate font-mono text-[11px]">{info.branch}</span>
       </button>
       {open && (
@@ -84,11 +84,11 @@ export default function WorktreeChip({ info, running, onFinished, commitTitle, p
               <span className="text-violet-200">{t('pair.partner', { agent: partner.agent === 'claude' ? 'Claude' : 'Codex' })}</span>
               <span className="font-mono text-zinc-500 truncate min-w-0">{partner.worktree.branch}</span>
               <div className="flex-1" />
-              <button onClick={() => { setOpen(false); onFocusPartner?.(partner.id); }} className="shrink-0 rounded px-1.5 py-0.5 text-zinc-300 hover:bg-white/10">{t('pair.show')}</button>
+              <button onClick={() => { setOpen(false); onFocusPartner?.(partner.id); }} className="shrink-0 rounded-full px-1.5 py-0.5 text-zinc-300 hover:bg-white/10">{t('pair.show')}</button>
             </div>
           )}
           {message && (
-            <div className={`rounded-md px-2 py-1.5 text-[11px] leading-relaxed ${message.error ? 'bg-red-500/10 text-red-200' : 'bg-white/5 text-zinc-300'}`}>
+            <div className={`rounded-full px-2 py-1.5 text-[11px] leading-relaxed ${message.error ? 'bg-red-500/10 text-red-200' : 'bg-white/5 text-zinc-300'}`}>
               {message.text}
               {message.list?.length ? <div className="mt-1 font-mono text-zinc-400">{message.list.slice(0, 8).map((f) => <div key={f} className="truncate">{f}</div>)}</div> : null}
             </div>
@@ -98,12 +98,12 @@ export default function WorktreeChip({ info, running, onFinished, commitTitle, p
           <div className="flex items-center gap-2 pt-0.5">
             {partner
               ? <button disabled={busy || running || partner.running || othersUsing > 0 || !st?.exists} onClick={() => void merge(true, true)} title={t('pair.adoptHint')}
-                  className="rounded-md bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-40 px-2.5 py-1 text-violet-100">{t('pair.adopt')}</button>
+                  className="rounded-full bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-40 px-2.5 py-1 text-violet-100">{t('pair.adopt')}</button>
               : <button disabled={busy || running || othersUsing > 0 || !st?.exists} onClick={() => void merge(dirtyBlock)} title={running ? t('verify.busy') : t('worktree.mergeHint')}
-                  className="rounded-md bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-40 px-2.5 py-1 text-violet-100">{dirtyBlock ? t('worktree.commitMerge') : t('worktree.merge')}</button>}
-            <button onClick={() => void api.open(info.path, 'finder').catch(() => {})} className="rounded-md px-2 py-1 text-zinc-400 hover:text-white hover:bg-white/5">Finder</button>
+                  className="rounded-full bg-violet-500/25 hover:bg-violet-500/35 disabled:opacity-40 px-2.5 py-1 text-violet-100">{dirtyBlock ? t('worktree.commitMerge') : t('worktree.merge')}</button>}
+            <button onClick={() => void api.open(info.path, 'finder').catch(() => {})} className="rounded-full px-2 py-1 text-zinc-400 hover:text-white hover:bg-white/5">Finder</button>
             <div className="flex-1" />
-            <button disabled={busy || running || othersUsing > 0} onClick={() => void discard()} className="rounded-md px-2 py-1 text-zinc-500 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-40">{t('worktree.discard')}</button>
+            <button disabled={busy || running || othersUsing > 0} onClick={() => void discard()} className="rounded-full px-2 py-1 text-zinc-500 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-40">{t('worktree.discard')}</button>
           </div>
           </>}
         </div>

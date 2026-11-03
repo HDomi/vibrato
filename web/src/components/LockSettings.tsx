@@ -102,15 +102,15 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
     if (!r.ok || !r.recoveryCode) { setMsg({ text: errorText(r), ok: false }); return; }
     setCurrent(''); setMsg(null); setHasRecovery(true); setShownCode(r.recoveryCode);
   };
-  const field = 'bg-white/5 rounded-md text-xs px-2 py-1.5 outline-none w-44 placeholder:text-zinc-600';
+  const field = 'bg-black/20 border border-line rounded-md text-xs px-2 py-1.5 outline-none w-44 placeholder:text-zinc-600';
 
   return (
-    <div ref={ref} id="lock-settings" className="rounded-lg border border-white/10 p-4 space-y-4 scroll-mt-4">
+    <div ref={ref} id="lock-settings" className="rounded-2xl border border-line bg-black/15 p-5 space-y-4 scroll-mt-4">
       <div className="flex items-center">
         <div className="font-medium">{t('lockSettings.title')}</div>
         <div className="flex-1" />
         <button disabled={!hasPassword} onClick={() => lock.now()}
-          className="text-xs rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-zinc-200 disabled:opacity-40">{t('lockSettings.lockNow')}</button>
+          className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 transition-colors text-zinc-200 disabled:opacity-40">{t('lockSettings.lockNow')}</button>
       </div>
       <div className="text-xs text-zinc-500 leading-relaxed">{t('lockSettings.note')}</div>
 
@@ -123,7 +123,7 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
           {hasPassword && <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder={t('lockSettings.current')} className={field} autoComplete="off" />}
           <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder={t('lockSettings.new')} className={field} autoComplete="new-password" />
           <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={t('lockSettings.confirm')} className={field} autoComplete="new-password" />
-          <button type="submit" disabled={!next} className="text-xs rounded-md bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 px-3 py-1.5 disabled:opacity-40">{t('lockSettings.save')}</button>
+          <button type="submit" disabled={!next} className="text-xs rounded-full bg-selected hover:bg-white text-on-selected font-medium px-3.5 py-1.5 transition-colors disabled:opacity-40">{t('lockSettings.save')}</button>
           {hasPassword && <button type="button" disabled={!current} onClick={() => void removePassword()} className="text-xs text-zinc-400 hover:text-red-300 disabled:opacity-40 px-1">{t('lockSettings.remove')}</button>}
         </form>
         {msg && <div className={`text-xs pl-[124px] ${msg.ok ? 'text-emerald-300' : 'text-red-300'}`}>{msg.text}</div>}
@@ -135,7 +135,7 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
             <span className="w-28 text-zinc-400">{t('lockSettings.recovery')}</span>
             <span className={`text-xs ${hasRecovery ? 'text-emerald-300' : 'text-amber-300'}`}>{hasRecovery ? t('lockSettings.recoverySet') : t('lockSettings.recoveryNone')}</span>
             <div className="flex-1" />
-            <button onClick={() => void newRecovery()} className="text-xs rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-zinc-200">{t('lockSettings.recoveryNew')}</button>
+            <button onClick={() => void newRecovery()} className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 px-3.5 py-1.5 transition-colors text-zinc-200">{t('lockSettings.recoveryNew')}</button>
           </div>
           {shownCode && (
             <div className="ml-[124px] rounded-md border border-amber-400/30 bg-amber-400/[0.06] p-3 space-y-2">
@@ -143,7 +143,7 @@ export default function LockSettings({ focus }: { focus?: boolean }) {
                 <code className="font-mono text-base tracking-wider text-zinc-100 select-all">{shownCode}</code>
                 <div className="flex-1" />
                 <button className="text-xs text-zinc-400 hover:text-white" onClick={() => void navigator.clipboard.writeText(shownCode)}>{t('common.copy')}</button>
-                <button className="text-xs rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1 text-zinc-200" onClick={() => setShownCode(null)}>{t('lockSettings.recoveryDone')}</button>
+                <button className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 transition-colors px-2.5 py-1 text-zinc-200" onClick={() => setShownCode(null)}>{t('lockSettings.recoveryDone')}</button>
               </div>
               <div className="text-xs text-amber-200/80 leading-relaxed">{t('lockSettings.recoveryShow')}</div>
             </div>

@@ -104,11 +104,11 @@ export function TurnChangesItem({ item, onReview, reviewer }: { item: ChangesIte
         <span className="text-emerald-300/90 tabular-nums">+{adds}</span>
         <span className="text-red-300/90 tabular-nums">−{dels}</span>
         <div className="flex-1" />
-        {onReview && <button onClick={onReview} className="flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] text-zinc-400 hover:text-sky-200 hover:bg-white/5" title={t('review.cardHint', { agent: reviewer ?? '' })}>
+        {onReview && <button onClick={onReview} className="flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] text-zinc-400 hover:text-sky-200 hover:bg-white/5" title={t('review.cardHint', { agent: reviewer ?? '' })}>
           <Icon name="sparkle" size={11} />{t('review.card', { agent: reviewer ?? '' })}
         </button>}
         {left.length > 0
-          ? <button disabled={busy} onClick={() => void revert()} className="flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] text-zinc-400 hover:text-amber-200 hover:bg-white/5 disabled:opacity-40" title={t('changes.revertAllHint')}>
+          ? <button disabled={busy} onClick={() => void revert()} className="flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] text-zinc-400 hover:text-amber-200 hover:bg-white/5 disabled:opacity-40" title={t('changes.revertAllHint')}>
               <Icon name="undo" size={11} />{t('changes.revertAll')}
             </button>
           : !left.length && <span className="text-[11px] text-zinc-500">{t('changes.allReverted')}</span>}
@@ -131,8 +131,8 @@ export function TurnChangesItem({ item, onReview, reviewer }: { item: ChangesIte
               <div className="flex-1" />
               {gone ? <span className="text-[10.5px] text-zinc-500">{t('changes.reverted')}</span> : (
                 <span className="flex items-center gap-0.5 opacity-0 group-hover/file:opacity-100">
-                  {f.status !== 'D' && <button onClick={(e) => { e.stopPropagation(); openFile(f.path); }} className="w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/10" title={t('changes.open')}><Icon name="file" size={12} /></button>}
-                  <button disabled={busy} onClick={(e) => { e.stopPropagation(); void revert([f.path]); }} className="w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-amber-200 hover:bg-white/10 disabled:opacity-40" title={t('changes.revertFile')}><Icon name="undo" size={12} /></button>
+                  {f.status !== 'D' && <button onClick={(e) => { e.stopPropagation(); openFile(f.path); }} className="w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" title={t('changes.open')}><Icon name="file" size={12} /></button>}
+                  <button disabled={busy} onClick={(e) => { e.stopPropagation(); void revert([f.path]); }} className="w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-200 hover:bg-white/10 disabled:opacity-40 transition-colors" title={t('changes.revertFile')}><Icon name="undo" size={12} /></button>
                 </span>
               )}
             </div>

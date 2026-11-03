@@ -142,7 +142,7 @@ function TableCard({ n, draft, onChange, onDelete }: { n: number; draft: Draft; 
                 <th key={c} className="px-1 py-0.5 font-normal border-b border-white/5">
                   <div className="flex items-center justify-center gap-1">
                     <button title={t('preview.table.align')} className="w-6 h-5 rounded hover:bg-white/10" onClick={() => onChange((x) => ({ ...x, align: x.align.map((a, k) => (k === c ? ALIGN_NEXT[String(a)] : a)) }))}>{ALIGN_ICON[String(g.align[c])]}</button>
-                    <button title={t('preview.table.deleteCol')} disabled={cols <= 1} className="w-5 h-5 rounded hover:bg-white/10 hover:text-red-300 disabled:opacity-30" onClick={() => onChange((x) => ({ header: x.header.filter((_, k) => k !== c), align: x.align.filter((_, k) => k !== c), rows: x.rows.map((r) => r.filter((_, k) => k !== c)) }))}>×</button>
+                    <button title={t('preview.table.deleteCol')} disabled={cols <= 1} className="w-5 h-5 rounded-full hover:bg-white/10 hover:text-red-300 disabled:opacity-30 transition-colors" onClick={() => onChange((x) => ({ header: x.header.filter((_, k) => k !== c), align: x.align.filter((_, k) => k !== c), rows: x.rows.map((r) => r.filter((_, k) => k !== c)) }))}>×</button>
                   </div>
                 </th>
               ))}
@@ -154,7 +154,7 @@ function TableCard({ n, draft, onChange, onDelete }: { n: number; draft: Draft; 
             {g.rows.map((row, r) => (
               <tr key={r} className="group">
                 {row.map((v, c) => <td key={c} className="p-0 border border-white/10">{cell(r, c, v)}</td>)}
-                <td className="pl-1"><button title={t('preview.table.deleteRow')} className="w-5 h-5 rounded text-zinc-600 hover:text-red-300 hover:bg-white/10 opacity-0 group-hover:opacity-100" onClick={() => onChange((x) => ({ ...x, rows: x.rows.filter((_, i) => i !== r) }))}>×</button></td>
+                <td className="pl-1"><button title={t('preview.table.deleteRow')} className="w-5 h-5 rounded-full text-zinc-600 hover:text-red-300 hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-colors" onClick={() => onChange((x) => ({ ...x, rows: x.rows.filter((_, i) => i !== r) }))}>×</button></td>
               </tr>
             ))}
           </tbody>

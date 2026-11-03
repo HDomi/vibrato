@@ -227,7 +227,7 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
         <span className="text-[12px] font-semibold text-zinc-200">{t('sidebar.recentSessions')}</span>
         {sessions && <span className="text-[10px] text-zinc-400 rounded-full bg-white/10 px-1.5">{sessions.length}</span>}
         <div className="flex-1" />
-        <button className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/10" onClick={() => void reload()} title={t('common.refresh')}><Icon name="reload" size={13} /></button>
+        <button className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/10 transition-colors" onClick={() => void reload()} title={t('common.refresh')}><Icon name="reload" size={13} /></button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5">
         {sessions === null && <div className="px-2.5 py-2 text-xs text-zinc-500">…</div>}

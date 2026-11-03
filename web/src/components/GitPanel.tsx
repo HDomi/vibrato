@@ -205,7 +205,7 @@ export default function GitPanel({ cwd, visible }: Props) {
       <div className={`group flex items-center gap-2 px-3 py-1 text-xs cursor-pointer border-l-2 ${active ? 'bg-blue-500/15 border-blue-400' : 'border-transparent hover:bg-white/5'}`} onClick={() => setSel({ path: f.path, staged: isStaged })}>
         <span className={`w-9 text-center text-[9px] font-mono rounded px-1 py-px ${tone}`}>{CODE[code] ?? ''}</span>
         <span className="truncate flex-1 font-mono text-zinc-300" title={f.path}>{f.path}</span>
-        <button className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-white w-5 h-5 rounded hover:bg-white/10" title={isStaged ? t('git.unstage') : t('git.stage')} onClick={(e) => { e.stopPropagation(); stage([f], isStaged ? 'reset' : 'add'); }}>{isStaged ? '−' : '＋'}</button>
+        <button className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-white w-5 h-5 rounded-full hover:bg-white/10 transition-colors" title={isStaged ? t('git.unstage') : t('git.stage')} onClick={(e) => { e.stopPropagation(); stage([f], isStaged ? 'reset' : 'add'); }}>{isStaged ? '−' : '＋'}</button>
       </div>
     );
   };
@@ -214,7 +214,7 @@ export default function GitPanel({ cwd, visible }: Props) {
     <div className="h-full flex flex-col text-sm">
       <div className="h-9 shrink-0 flex items-center gap-2 px-2 border-b border-white/10 text-xs">
         <select value={st?.branch ?? ''} onChange={(e) => checkout(e.target.value)} disabled={busy || !!remoteBusy} title={t('git.switchBranch')}
-          className="bg-white/5 rounded-md px-1.5 py-1 outline-none max-w-[45%] font-medium text-zinc-200">
+          className="bg-black/20 border border-line rounded-md px-1.5 py-1 outline-none max-w-[45%] font-medium text-zinc-200">
           {st?.branch && !branches.some((b) => b.name === st.branch) && <option value={st.branch}>{st.branch}</option>}
           {branches.filter((b) => !b.remote).map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
           {branches.some((b) => b.remote) && <optgroup label={t('git.remote')}>{branches.filter((b) => b.remote).map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}</optgroup>}
@@ -226,10 +226,10 @@ export default function GitPanel({ cwd, visible }: Props) {
           <button key={op} disabled={!!remoteBusy || busy} onClick={() => remote(op)}
             className={`px-2 py-1 rounded hover:bg-white/10 disabled:opacity-40 ${remoteBusy === op ? 'text-amber-300 animate-pulse' : 'text-zinc-300'}`}>{op}</button>
         ))}
-        <button className="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={refresh} disabled={busy} title={t('common.refresh')}><Icon name="reload" /></button>
+        <button className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" onClick={refresh} disabled={busy} title={t('common.refresh')}><Icon name="reload" /></button>
       </div>
       {newBranch !== null && <form className="flex gap-2 px-2 py-2 border-b border-white/10" onSubmit={(e) => { e.preventDefault(); createBranch(); }}>
-        <input autoFocus aria-label={t('git.newBranch')} placeholder={t('git.newBranchPrompt')} value={newBranch} onChange={(e) => setNewBranch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setNewBranch(null); }} className="min-w-0 flex-1 rounded bg-white/5 px-2 text-xs outline-none" />
+        <input autoFocus aria-label={t('git.newBranch')} placeholder={t('git.newBranchPrompt')} value={newBranch} onChange={(e) => setNewBranch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setNewBranch(null); }} className="min-w-0 flex-1 rounded bg-black/20 border border-line px-2 text-xs outline-none" />
         <button disabled={busy || !!remoteBusy || !newBranch.trim()} className="text-xs text-sky-200 disabled:opacity-40">{t('git.newBranch')}</button>
         <button type="button" onClick={() => setNewBranch(null)} className="text-xs">✕</button>
       </form>}
@@ -286,7 +286,7 @@ export default function GitPanel({ cwd, visible }: Props) {
             {st?.branch && <span className="font-mono text-[10px] text-zinc-500 truncate">· {st.branch}</span>}
             <div className="flex-1" />
             <button disabled={suggesting || !staged.length} onClick={suggest} title={staged.length ? t('git.suggestHint') : t('git.suggestNothing')}
-              className="shrink-0 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10.5px] text-zinc-400 hover:text-sky-200 hover:bg-white/5 disabled:opacity-40">
+              className="shrink-0 flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10.5px] text-zinc-400 hover:text-sky-200 hover:bg-white/5 disabled:opacity-40">
               {suggesting ? <span className="inline-block w-2.5 h-2.5 rounded-full border-[1.5px] border-sky-300/70 border-t-transparent animate-spin" /> : <Icon name="sparkle" size={11} />}
               {suggesting ? t('git.suggesting') : t('git.suggest')}
             </button>
@@ -296,8 +296,8 @@ export default function GitPanel({ cwd, visible }: Props) {
               onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); commit(); } }}
               className="w-full bg-black/30 rounded-lg border border-white/10 focus:border-sky-400/40 px-2 py-1.5 text-xs outline-none resize-none font-mono" />
             <div className="flex items-center gap-2">
-              <button disabled={busy || !msg.trim() || !staged.length} className="rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs px-3 py-1.5 disabled:opacity-40" onClick={() => commit()}>{t('git.commit', { n: staged.length })}</button>
-              <button disabled={busy || !msg.trim() || !staged.length || !!remoteBusy} className="rounded bg-white/5 hover:bg-white/10 text-xs px-3 py-1.5 disabled:opacity-40"
+              <button disabled={busy || !msg.trim() || !staged.length} className="rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs px-3 py-1.5 disabled:opacity-40" onClick={() => commit()}>{t('git.commit', { n: staged.length })}</button>
+              <button disabled={busy || !msg.trim() || !staged.length || !!remoteBusy} className="rounded-full bg-fill hover:bg-fill-2 transition-colors text-xs px-3 py-1.5 disabled:opacity-40"
                 onClick={() => commit(true)}>{t('git.commitPush')}</button>
               <span className="ml-auto text-[10px] text-zinc-600">⌘↩</span>
             </div>

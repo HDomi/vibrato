@@ -84,7 +84,7 @@ export function UserItem({ item, onRewind }: { item: Extract<ChatItem, { kind: '
           className="mt-2 shrink-0 opacity-0 group-hover/user:opacity-100 rounded-md px-2 py-1 text-[11px] text-zinc-400 hover:text-amber-200 hover:bg-white/5">⟲ {t('rewind.button')}</button>
       )}
       <div ref={bubble} onContextMenu={(e) => { const sel = selectionIn(bubble.current); menu.open(e, transferMenu(sel ? { text: sel, attachments: [] } : { text: item.text, attachments: item.attachments }, sel || item.text)); }}
-        className={`max-w-[80%] rounded-2xl rounded-br-md bg-blue-500/20 px-4 py-2.5 text-[14px] whitespace-pre-wrap ${item.pending ? 'opacity-60' : ''}`}>
+        className={`max-w-[80%] rounded-[20px] rounded-br-md bg-sky-400/[0.18] border border-sky-200/15 shadow-[0_6px_20px_rgb(0_0_0/.18)] px-4 py-2.5 text-[14px] whitespace-pre-wrap ${item.pending ? 'opacity-60' : ''}`}>
         {item.attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
             {item.attachments.map((a) => a.kind === 'image'
@@ -108,7 +108,7 @@ export const AssistantItem = memo(function AssistantItem({ item, baseDir }: { it
       onContextMenu={item.text && !item.streaming ? (e) => { const sel = selectionIn(root.current); menu.open(e, transferMenu({ text: sel || item.text, attachments: [] }, sel || item.text)); } : undefined}>
       {item.text && !item.streaming && (
         <div className="absolute -top-2 right-0 z-[1] flex items-center gap-1 opacity-0 group-hover/msg:opacity-100">
-          <TransferGrip payload={() => ({ text: item.text, attachments: [] })} className="bg-[#0b0d12]" />
+          <TransferGrip payload={() => ({ text: item.text, attachments: [] })} className="bg-black/40" />
           <CopyButton text={item.text} />
         </div>
       )}
@@ -290,7 +290,7 @@ export function QuestionItem({ item, onAnswer }: { item: Extract<ChatItem, { kin
         </div>
       ))}
       {!item.resolved && (
-        <button disabled={!complete} className="rounded bg-blue-500/30 hover:bg-blue-500/40 px-3 py-1 disabled:opacity-40" onClick={submit}>{t('items.sendAnswers')}</button>
+        <button disabled={!complete} className="rounded-full bg-selected hover:bg-white text-on-selected font-medium px-3.5 py-1 transition-colors disabled:opacity-40" onClick={submit}>{t('items.sendAnswers')}</button>
       )}
     </div>
   );

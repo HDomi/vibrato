@@ -85,7 +85,7 @@ export default function AgentContextDialog({ cwd, onClose, onOpenFile }: { cwd: 
           </div>
           <div className="flex-1" />
           <button className="text-xs text-zinc-400 hover:text-white" onClick={() => void load()}>{t('context.reload')}</button>
-          <button className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10" onClick={onClose} title="Esc"><Icon name="close" /></button>
+          <button className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" onClick={onClose} title="Esc"><Icon name="close" /></button>
         </div>
         {error && <div className="p-4 text-sm text-red-300">{error}</div>}
         {!ctx && !error && <div className="p-6 text-sm text-zinc-500">{t('common.loading')}</div>}

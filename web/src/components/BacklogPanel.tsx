@@ -54,7 +54,7 @@ export default function BacklogPanel({ backlog, onChange, onFocusSession, compac
         <div className="flex-1" />
         {finished && <button onClick={clearDone} className="text-[11px] text-zinc-500 hover:text-zinc-200">{t('backlog.clearDone')}</button>}
         <button disabled={!todo && !backlog.auto} onClick={() => onChange((b) => ({ ...b, auto: !b.auto }))}
-          className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] disabled:opacity-40 ${backlog.auto ? 'bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/25'}`}>
+          className={`flex items-center gap-1 rounded-full px-2 py-1 text-[11px] disabled:opacity-40 ${backlog.auto ? 'bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'bg-emerald-400/15 text-emerald-200 hover:bg-emerald-400/25'}`}>
           <Icon name={backlog.auto ? 'stop' : 'play'} size={10} filled />{backlog.auto ? t('backlog.pause') : t('backlog.run')}
         </button>
       </div>
@@ -64,7 +64,7 @@ export default function BacklogPanel({ backlog, onChange, onFocusSession, compac
             <button key={a} onClick={() => onChange((b) => ({ ...b, agent: a }))} className={`px-2 py-0.5 rounded ${backlog.agent === a ? 'bg-white/15 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>{a === 'claude' ? 'Claude' : 'Codex'}</button>
           ))}
         </div>
-        <select value={backlog.mode} onChange={(e) => onChange((b) => ({ ...b, mode: e.target.value }))} className="bg-white/5 rounded-md px-1.5 py-0.5 outline-none">
+        <select value={backlog.mode} onChange={(e) => onChange((b) => ({ ...b, mode: e.target.value }))} className="bg-black/20 border border-line rounded-md px-1.5 py-0.5 outline-none">
           {MODES.filter((m) => m.id !== 'auto' || backlog.agent === 'claude').map((m) => <option key={m.id} value={m.id}>{t(m.key)}</option>)}
         </select>
         <label className="flex items-center gap-1 cursor-pointer text-zinc-400"><input type="checkbox" checked={backlog.worktree} onChange={(e) => onChange((b) => ({ ...b, worktree: e.target.checked }))} />{t('backlog.worktree')}</label>
@@ -89,11 +89,11 @@ export default function BacklogPanel({ backlog, onChange, onFocusSession, compac
             )}
             <div className="shrink-0 flex items-center opacity-0 group-hover:opacity-100">
               {it.status === 'todo' && <>
-                <button disabled={n === 0} onClick={() => move(it.id, -1)} className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/10 disabled:opacity-30">↑</button>
-                <button disabled={n === backlog.items.length - 1} onClick={() => move(it.id, 1)} className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/10 disabled:opacity-30">↓</button>
+                <button disabled={n === 0} onClick={() => move(it.id, -1)} className="w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/10 disabled:opacity-30 transition-colors">↑</button>
+                <button disabled={n === backlog.items.length - 1} onClick={() => move(it.id, 1)} className="w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/10 disabled:opacity-30 transition-colors">↓</button>
               </>}
-              {(it.status === 'failed' || it.status === 'stopped') && <button onClick={() => patch(it.id, { status: 'todo', sessionId: undefined })} className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/10" title={t('backlog.retry')}><Icon name="reload" size={10} /></button>}
-              {it.status !== 'running' && <button onClick={() => remove(it.id)} className="w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-red-300 hover:bg-white/10" title={t('backlog.remove')}><Icon name="close" size={10} /></button>}
+              {(it.status === 'failed' || it.status === 'stopped') && <button onClick={() => patch(it.id, { status: 'todo', sessionId: undefined })} className="w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/10 transition-colors" title={t('backlog.retry')}><Icon name="reload" size={10} /></button>}
+              {it.status !== 'running' && <button onClick={() => remove(it.id)} className="w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-red-300 hover:bg-white/10 transition-colors" title={t('backlog.remove')}><Icon name="close" size={10} /></button>}
             </div>
           </div>
         ))}

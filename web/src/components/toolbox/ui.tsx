@@ -30,10 +30,10 @@ export function usePersisted<T>(key: string, initial: T): [T, (v: T | ((p: T) =>
   return [v, setV];
 }
 
-export const btn = 'shrink-0 px-2 py-1 rounded-md text-[11px] bg-white/10 hover:bg-white/15 text-zinc-200 disabled:opacity-40 disabled:hover:bg-white/10 disabled:cursor-default';
-export const btnPrimary = 'shrink-0 px-2.5 py-1 rounded-md text-[11px] font-medium bg-blue-500/80 hover:bg-blue-500 text-white disabled:opacity-40 disabled:hover:bg-blue-500/80 disabled:cursor-default';
-export const input = 'min-w-0 bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] text-zinc-200 outline-none focus:border-blue-400/50 font-mono placeholder:text-zinc-600';
-export const select = 'bg-white/5 border border-white/10 rounded-md px-1.5 py-1 text-[11px] text-zinc-200 outline-none';
+export const btn = 'shrink-0 px-2.5 py-1 rounded-full text-[11px] bg-fill-2 hover:bg-fill-3 text-zinc-200 transition-colors disabled:opacity-40 disabled:hover:bg-fill-2 disabled:cursor-default';
+export const btnPrimary = 'shrink-0 px-3 py-1 rounded-full text-[11px] font-medium bg-selected hover:bg-white text-on-selected transition-colors disabled:opacity-40 disabled:hover:bg-selected disabled:cursor-default';
+export const input = 'min-w-0 bg-black/20 border border-line rounded-lg px-2.5 py-1 text-[12px] text-zinc-200 outline-none transition-colors focus:border-white/30 font-mono placeholder:text-zinc-600';
+export const select = 'bg-black/20 border border-line rounded-lg px-2 py-1 text-[11px] text-zinc-200 outline-none';
 export const mono = 'font-mono text-[12.5px] leading-relaxed';
 
 export function CopyButton({ text, label, className = '' }: { text: string; label?: string; className?: string }) {
@@ -64,7 +64,7 @@ export function Area({ label, value, onChange, placeholder, readOnly, error, act
       )}
       <textarea spellCheck={spell} value={value} onChange={(e) => onChange?.(e.target.value)} readOnly={readOnly} placeholder={placeholder} autoFocus={autoFocus}
         style={{ minHeight: `${minRows * 1.5 + 1.2}em` }}
-        className={`flex-1 w-full resize-none rounded-md border px-2.5 py-2 ${mono} outline-none bg-white/[.03] text-zinc-200 placeholder:text-zinc-600 ${readOnly ? 'text-zinc-300' : ''} ${error ? 'border-red-500/50' : 'border-white/10 focus:border-blue-400/50'}`} />
+        className={`flex-1 w-full resize-none rounded-2xl border px-3 py-2.5 ${mono} outline-none bg-black/20 text-zinc-200 transition-colors placeholder:text-zinc-600 ${readOnly ? 'text-zinc-300' : ''} ${error ? 'border-red-500/50' : 'border-line focus:border-white/30'}`} />
       {error && <div className="mt-1 shrink-0 text-[11px] text-red-400 whitespace-pre-wrap break-all">{error}</div>}
     </div>
   );
@@ -72,10 +72,10 @@ export function Area({ label, value, onChange, placeholder, readOnly, error, act
 
 export function Seg<T extends string>({ value, onChange, options, className = '' }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; className?: string }) {
   return (
-    <div className={`inline-flex items-center rounded-md bg-white/5 p-0.5 ${className}`}>
+    <div className={`inline-flex items-center rounded-full bg-black/20 border border-line p-0.5 ${className}`}>
       {options.map((o) => (
         <button key={o.value} onClick={() => onChange(o.value)}
-          className={`px-2 py-0.5 rounded text-[11px] whitespace-nowrap ${value === o.value ? 'bg-white/15 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>{o.label}</button>
+          className={`px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap transition-colors duration-150 ${value === o.value ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-zinc-200'}`}>{o.label}</button>
       ))}
     </div>
   );
@@ -102,7 +102,7 @@ export function Check({ label, checked, onChange }: { label: ReactNode; checked:
 /** Key/value rows with a copy button per value. */
 export function Rows({ rows }: { rows: { label: ReactNode; value: string; hint?: ReactNode }[] }) {
   return (
-    <div className="rounded-md border border-white/10 divide-y divide-white/5">
+    <div className="rounded-2xl border border-line bg-black/15 divide-y divide-white/5 overflow-hidden">
       {rows.map((r, i) => (
         <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 text-[12px]">
           <span className="w-28 shrink-0 text-zinc-500 text-[11px]">{r.label}</span>
@@ -140,7 +140,7 @@ export function Code({ code, lang, label, actions, className = '', error, wrap }
         {actions}
         <CopyButton text={code} />
       </div>
-      <pre className={`hljs flex-1 min-h-[3em] overflow-auto rounded-md border px-2.5 py-2 ${mono} !bg-white/[.03] ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'} ${error ? 'border-red-500/50' : 'border-white/10'}`}>
+      <pre className={`hljs flex-1 min-h-[3em] overflow-auto rounded-2xl border px-3 py-2.5 ${mono} !bg-black/20 ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'} ${error ? 'border-red-500/50' : 'border-line'}`}>
         {error ? <span className="text-red-400 whitespace-pre-wrap">{error}</span> : <code dangerouslySetInnerHTML={{ __html: html }} />}
       </pre>
     </div>
@@ -188,7 +188,7 @@ export function DropZone({ accept, onFile, children, className = '' }: { accept?
   return (
     <div onClick={() => ref.current?.click()} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
-      className={`cursor-pointer rounded-md border border-dashed flex items-center justify-center text-center text-[12px] text-zinc-500 ${over ? 'border-blue-400 bg-blue-500/10' : 'border-white/15 hover:border-white/30 hover:bg-white/[.02]'} ${className}`}>
+      className={`cursor-pointer rounded-2xl border border-dashed transition-colors flex items-center justify-center text-center text-[12px] text-zinc-500 ${over ? 'border-blue-400 bg-blue-500/10' : 'border-white/15 hover:border-white/30 hover:bg-white/[.02]'} ${className}`}>
       <input ref={ref} type="file" accept={accept} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
       {children}
     </div>

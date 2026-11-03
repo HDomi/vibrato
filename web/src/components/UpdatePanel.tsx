@@ -85,7 +85,7 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
           <button className="text-xs text-zinc-400 hover:text-white mr-3 flex items-center gap-1 disabled:opacity-60" onClick={onRefresh} disabled={checking || locked}>
             <span className={`inline-block ${checking ? 'animate-spin' : ''}`}>↻</span>{checking ? t('update.checking') : t('update.checkAgain')}
           </button>
-          <button className="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed" onClick={close} disabled={locked} title={locked ? t('update.locked') : undefined}><Icon name="close" /></button>
+          <button className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" onClick={close} disabled={locked} title={locked ? t('update.locked') : undefined}><Icon name="close" /></button>
         </div>
         <div className="p-5 space-y-3 overflow-y-auto text-sm">
           {!status && !checking && <div className="text-zinc-500">{t('update.checking')}</div>}
@@ -111,12 +111,12 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
               {t('update.apply')}
             </button>
             <button disabled={phase === 'running' || phase === 'restarting' || !status || !!status.error}
-              className="rounded bg-white/5 hover:bg-white/10 text-zinc-200 px-3 py-1.5 disabled:opacity-40"
+              className="rounded-full bg-fill hover:bg-fill-2 transition-colors text-zinc-200 px-3 py-1.5 disabled:opacity-40"
               title={t(release ? 'update.reinstallReleaseHint' : 'update.reinstallHint')}
               onClick={() => { if (window.confirm(t(release ? 'update.reinstallReleaseConfirm' : 'update.reinstallConfirm', { v: status?.remote?.version ?? '' }))) apply(false); }}>
               {t('update.reinstall')}
             </button>
-            {phase === 'failed' && <button className="rounded bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs" onClick={() => apply(true, lastVersion)}>{t('update.force')}</button>}
+            {phase === 'failed' && <button className="rounded-full bg-fill hover:bg-fill-2 transition-colors px-3 py-1.5 text-xs" onClick={() => apply(true, lastVersion)}>{t('update.force')}</button>}
           </div>
           {release && !!status?.releases?.length && (
             <RecentReleases releases={status.releases} installed={status.installed.version} disabled={locked}
