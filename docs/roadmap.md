@@ -55,11 +55,6 @@
 - Electron 은 서버 자식이 죽으면 1.5초→30초 지수 백오프로 재시작한다. 다른 인스턴스가 포트를 쓰고 있으면 재시작 대신 그 서버에 붙는다.
 - 부모가 강제 종료(SIGKILL)돼도 Claude CLI 는 stdin 종료로, Codex app-server(stdio) 는 연결 종료로, PTY 셸은 SIGHUP 으로 스스로 끝난다.
 
-## 브라우저 탭 (v0.3.42 네이티브 뷰, v0.3.44 임시 브라우저로 정리)
+## 브라우저 탭 (v0.3.42 추가, v3.6.1 제거)
 
-- 브라우저 탭은 잠깐 페이지를 확인하고 캡처해 채팅에 붙이는 임시 브라우저다. 에이전트 세션을 이 탭으로 유도하지 않는다. 실측은 앱 밖에서와 똑같이 `debugweb`(9222) Chrome 을 쓴다.
-- 데스크톱 앱에서는 Electron `WebContentsView` 다(`electron/browserView.cts`). 패널 자리의 빈 상자 위에 진짜 Chromium 뷰를 겹쳐 띄운다. 렌더링 · 커서 · 한글 IME · `<select>` · `alert` 이 일반 브라우저처럼 동작한다.
-- 뷰는 DOM 위에 따로 그려지는 층이라, 렌더러가 150ms 마다 상자의 위치를 따라가게 하고 상자 위를 앱 요소(메뉴 · 대화상자 · 라이트박스)가 덮거나 다른 탭으로 바뀌면 뷰를 숨긴다.
-- 쿠키 · 로그인은 `persist:vibrato-browser` 파티션에 남는다. User-Agent 에서 Electron · 앱 토큰을 뺀다. `window.open` 팝업(OAuth 등)은 opener 가 살아 있는 별도 창으로, 새 탭 링크는 같은 뷰로 연다. http · https · about:blank 만 연다. 배율(⌘- ⌘= ⌘0)로 패널보다 넓은 레이아웃을 볼 수 있다.
-- 앱을 일반 브라우저 탭으로 열면 네이티브 뷰가 없어서 headless Chrome(9324, `VIBRATO_BROWSER_FALLBACK_PORT`)을 CDP screencast 로 보여 준다.
-- 경과: v0.3.40 은 앱 안 세션이 "실측" 요청을 받으면 이 탭의 페이지를 쓰도록 system prompt 에 안내했다. v0.3.42 는 이를 위해 Electron CDP 포트(9323)를 열었다. 강제되면 오히려 불편해서 v0.3.44 에서 안내 · 정보 엔드포인트 · CDP 포트를 모두 뺐다. 시작할 때 9323 에 남은 예전 headless Chrome 은 한 번 종료한다.
+- 오른쪽 패널의 브라우저 탭(Electron `WebContentsView` · 일반 브라우저 모드의 headless Chrome CDP 대체)은 쓰이지 않아 제거했다. 실행 패널의 개발 서버 주소는 기본 브라우저로 연다. 실측은 전과 같이 앱 밖 `debugweb`(9222) Chrome 을 쓴다.

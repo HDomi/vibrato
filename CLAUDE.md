@@ -7,7 +7,7 @@ Claude 는 Agent SDK 에 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를
 ## 구조
 
 ```
-electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts) · 브라우저 패널
+electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts)
 server/     Hono 서버 · 에이전트 어댑터 · PTY · git · 업데이트(updater.ts, releaseUpdate.ts) · 잠금 감시(lockWatch.ts)
             예약 실행(scheduler.ts, schedule.ts, schedulePower.ts: caffeinate · pmset 깨우기 helper)
 web/        React 앱. 잠금화면 cover 는 `/?lock=main|sub` 로 같은 번들을 따로 로드(main.tsx)

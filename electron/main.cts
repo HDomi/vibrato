@@ -4,7 +4,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
-import { registerBrowserIpc, stopOldHeadlessChrome } from './browserView.cjs';
 import { blocksQuit, initLockScreen, isLocked, isLockShortcut, lockNow, openLockSettings, rememberLockForRelaunch } from './lockScreen.cjs';
 
 /*
@@ -65,7 +64,6 @@ const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) {
   app.quit();
 } else {
-  stopOldHeadlessChrome();
   app.on('second-instance', () => {
     if (isLocked()) return; // the lock cover keeps focus; never surface the app window under it
     const w = BrowserWindow.getAllWindows()[0];
@@ -259,8 +257,6 @@ async function createWindow() {
   await win.loadURL(DEV ? URL_DEV : URL_PROD);
 }
 
-registerBrowserIpc(fromApp);
-
 ipcMain.handle('pick-folder', async (e) => {
   if (!fromApp(e)) return null;
   const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
@@ -375,7 +371,7 @@ function buildMenu() {
   const lockMenu: Electron.MenuItemConstructorOptions = {
     label: ko ? '잠금화면' : 'Lock Screen',
     submenu: [
-      // registerAccelerator false: Option+L is caught in before-input-event (works inside text fields and the browser panel).
+      // registerAccelerator false: Option+L is caught in before-input-event (works inside text fields).
       { label: ko ? '지금 잠그기' : 'Lock Now', accelerator: 'Alt+L', registerAccelerator: false, click: () => lockNow() },
       { type: 'separator' },
       { label: ko ? '잠금화면 설정…' : 'Lock Screen Settings…', click: () => openLockSettings() },

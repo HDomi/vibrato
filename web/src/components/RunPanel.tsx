@@ -103,7 +103,6 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
     const text = fencedTerminalText(last.lines.map((l) => l.text).join('\n'), t('run.errorPrompt', { name: info.name, command: info.command }));
     setNote(sendToChat(text) ? t('run.sent') : t('run.noComposer'));
   };
-  const openUrl = (url: string) => window.dispatchEvent(new CustomEvent('vibe:browser-open', { detail: { url } }));
 
   if (!cwd) return <div className="h-full flex items-center justify-center text-sm text-zinc-600">{t('run.noProject')}</div>;
   const runningNames = new Set(runs.filter((r) => r.status === 'running').map((r) => r.name));
@@ -158,10 +157,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
             <code className="truncate min-w-0 text-zinc-500">{info.command}</code>
             <div className="flex-1" />
             {info.url && (
-              <>
-                <button onClick={() => openUrl(info.url!)} className="shrink-0 flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-sky-300 hover:bg-sky-400/10" title={t('run.openInPanel')}>{info.url.replace(/^https?:\/\//, '')}</button>
-                <button onClick={() => window.open(info.url!, '_blank')} className="shrink-0 rounded px-1.5 py-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-white/5" title={t('run.openExternal')}>↗</button>
-              </>
+              <button onClick={() => window.open(info.url!, '_blank')} className="shrink-0 flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-sky-300 hover:bg-sky-400/10" title={t('run.openExternal')}>{info.url.replace(/^https?:\/\//, '')} ↗</button>
             )}
             <button onClick={() => void start(info.name, info.command)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-white/10" title={t('run.restart')}><Icon name="reload" size={12} /></button>
             {info.status === 'running' && <button onClick={() => void stop(info.id)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-zinc-400 hover:text-red-300 hover:bg-white/10" title={t('run.stop')}><Icon name="stop" size={11} filled /></button>}

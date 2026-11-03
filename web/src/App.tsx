@@ -16,7 +16,6 @@ import { useScheduleWatch } from './lib/scheduleWatch';
 import ChatPanel, { type PairOptions, type StartOptions } from './components/ChatPanel';
 import type { BackgroundSession } from './components/Composer';
 import TerminalPanel from './components/TerminalPanel';
-import BrowserPanel from './components/BrowserPanel';
 import GitPanel from './components/GitPanel';
 import RunPanel from './components/RunPanel';
 import Splitter, { usePaneWidth } from './components/Splitter';
@@ -73,7 +72,7 @@ function AppInner() {
   const [selected, setSelected] = useState<Entry | null>(null);
   const [showTools, setShowTools] = useState(false);
   const [toolsFocusLock, setToolsFocusLock] = useState(false);
-  const [rightTab, setRightTab] = useState<'files' | 'preview' | 'browser' | 'terminal' | 'git' | 'run'>('files');
+  const [rightTab, setRightTab] = useState<'files' | 'preview' | 'terminal' | 'git' | 'run'>('files');
   const [runStatus, setRunStatus] = useState({ running: 0, errors: false });
   // Remembered so an update/relaunch comes back to the tab that was on screen, not the new-session view.
   const [activeSession, setActiveSession] = useState<string | 'new' | null>(() => { try { return localStorage.getItem(LS_ACTIVE_SESSION); } catch { return null; } });
@@ -318,15 +317,8 @@ function AppInner() {
     if (!session && project) setActiveSession(null);
   };
 
-  const rightTabs = [['files', t('app.tab.files')], ['preview', t('app.tab.preview')], ['browser', t('app.tab.browser')], ['terminal', t('app.tab.terminal')], ['git', t('app.tab.git')], ['run', t('app.tab.run')]] as const;
-  const TAB_KEYS = ['1', '2', '3', '4', '5', '6'];
-  // "Open in the Browser tab" (Run panel URLs): bring the tab up; BrowserPanel navigates.
-  useEffect(() => {
-    const h = () => { setRightTab('browser'); setRightCollapsed(false); };
-    window.addEventListener('vibe:browser-open', h);
-    return () => window.removeEventListener('vibe:browser-open', h);
-  }, []);
-
+  const rightTabs = [['files', t('app.tab.files')], ['preview', t('app.tab.preview')], ['terminal', t('app.tab.terminal')], ['git', t('app.tab.git')], ['run', t('app.tab.run')]] as const;
+  const TAB_KEYS = ['1', '2', '3', '4', '5'];
   // Global keyboard shortcuts.
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -501,7 +493,6 @@ function AppInner() {
                     onOpenInIde={(e) => { editor.open(e.path, { kind: e.kind }); setView('ide'); }} />
                 </div>
                 <div className={`absolute inset-0 ${rightTab === 'preview' ? '' : 'invisible'}`}><Preview entry={selected} /></div>
-                <div className={`absolute inset-0 ${rightTab === 'browser' ? '' : 'invisible'}`}><BrowserPanel visible={rightTab === 'browser' && !rightCollapsed} onCapture={(a) => setPendingAttachments((prev) => [...prev, a])} /></div>
                 <div className={`absolute inset-0 ${rightTab === 'terminal' ? '' : 'invisible'}`}><TerminalPanel cwd={panelRoot} visible={rightTab === 'terminal'} /></div>
                 <div className={`absolute inset-0 ${rightTab === 'git' ? '' : 'invisible'}`}><GitPanel cwd={panelRoot} visible={rightTab === 'git'} /></div>
                 <div className={`absolute inset-0 ${rightTab === 'run' ? '' : 'invisible'}`}><RunPanel cwd={panelRoot} visible={rightTab === 'run' && !rightCollapsed} onStatus={setRunStatus} /></div>
