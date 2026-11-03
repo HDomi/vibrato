@@ -151,14 +151,14 @@ select option { background: #1a1c22; color: #e6e8ee; }
 ::highlight(chat-search) { background-color: rgba(250, 204, 21, 0.3); }
 ::highlight(chat-search-active) { background-color: #f59e0b; color: #000; }
 
+/* Dock favorites: a new one springs in, a removed one shrinks to its centre while the others close the gap. */
+@keyframes dock-in { 0% { transform: scale(0); opacity: 0; height: 0; } 45% { height: 40px; } 70% { transform: scale(1.18); opacity: 1; } 85% { transform: scale(.94); } 100% { transform: scale(1); height: 40px; } }
+@keyframes dock-out { 0% { transform: scale(1); opacity: 1; height: 40px; } 60% { transform: scale(0); opacity: 0; height: 40px; } 100% { transform: scale(0); opacity: 0; height: 0; margin-top: -6px; } }
+.dock-in { animation: dock-in .5s cubic-bezier(.3, .7, .4, 1) both; }
+.dock-out { animation: dock-out .32s cubic-bezier(.4, 0, .6, 1) both; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .dock-in, .dock-out { animation-duration: 1ms; } }
+
 /* Lock screen (components/lock/LockScreen.tsx) */
-.lock-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }
-.lock-dot-waiting { background: #fbbf24; color: #fbbf24; animation: lock-breathe 2.6s ease-in-out infinite; }
-.lock-dot-idle { background: #52525b; }
-.lock-shake { animation: lock-shake .42s cubic-bezier(.36,.07,.19,.97); }
-@keyframes lock-breathe { 0%, 100% { opacity: 1; box-shadow: 0 0 10px 1px currentColor; } 50% { opacity: .22; box-shadow: 0 0 0 0 currentColor; } }
-@keyframes lock-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-8px); } 40%, 60% { transform: translateX(8px); } }
 .lock-card {
   border-radius: 34px;
   background: rgb(18 20 26 / .42);
@@ -194,3 +194,10 @@ select option { background: #1a1c22; color: #e6e8ee; }
 }
 @keyframes pin-flow { to { --pin-angle: 360deg; } }
 @keyframes pin-flow-in { to { opacity: 1; } }
+.lock-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }
+.lock-dot-waiting { background: #fbbf24; color: #fbbf24; animation: lock-breathe 2.6s ease-in-out infinite; }
+.lock-dot-idle { background: #52525b; }
+.lock-shake { animation: lock-shake .42s cubic-bezier(.36,.07,.19,.97); }
+@keyframes lock-breathe { 0%, 100% { opacity: 1; box-shadow: 0 0 10px 1px currentColor; } 50% { opacity: .22; box-shadow: 0 0 0 0 currentColor; } }
+@keyframes lock-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-8px); } 40%, 60% { transform: translateX(8px); } }

@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+
+/** How long a removed favorite stays on screen for its shrink animation (.dock-out). */
+const LEAVE_MS = 330;
 import { api, type Favorite, type FavoriteGroup, type Favorites, type RecentSession } from '../lib/api';
 import { useContextMenu, type MenuItem } from './ContextMenu';
 import { t, useLang } from '../lib/i18n';
@@ -67,6 +70,23 @@ export default function Dock(p: Props) {
   const [tip, setTip] = useState<{ text: string; sub?: string; x: number; y: number } | null>(null);
   const [prompt, setPrompt] = useState<{ kind: 'newGroup' | 'renameGroup' | 'renameFav'; id?: string; value: string; y: number } | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  // Favorites that just appeared spring in; removed ones stay a moment (at their old place) to shrink away.
+  const prevFavs = useRef<Favorite[] | null>(null);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [leaving, setLeaving] = useState<{ fav: Favorite; index: number }[]>([]);
+  useEffect(() => {
+    const prev = prevFavs.current;
+    prevFavs.current = p.favorites.favorites;
+    if (!prev) return;
+    const now = p.favorites.favorites;
+    const added = now.filter((f) => !prev.some((x) => x.path === f.path)).map((f) => f.path);
+    const gone = prev.flatMap((f, index) => (now.some((x) => x.path === f.path) ? [] : [{ fav: f, index }]));
+    if (added.length) setFresh(new Set(added));
+    if (!gone.length) return;
+    setLeaving((l) => [...l.filter((x) => !gone.some((g) => g.fav.path === x.fav.path)), ...gone]);
+    // Not cleared on the next change: a second edit within LEAVE_MS must not leave these stuck on screen.
+    window.setTimeout(() => setLeaving((l) => l.filter((x) => !gone.some((g) => g.fav.path === x.fav.path))), LEAVE_MS);
+  }, [p.favorites.favorites]);
   const [recentOpen, setRecentOpen] = useState(false);
   const { favorites, groups } = p.favorites;
   const apply = (pr: Promise<Favorites>) => pr.then(p.onFavoritesChange).catch(() => {});
@@ -117,18 +137,23 @@ export default function Dock(p: Props) {
     },
   });
 
+  const leavingPaths = new Set(leaving.map((x) => x.fav.path));
   const icon = (f: Favorite) => {
     const active = p.project === f.path;
+    const anim = leavingPaths.has(f.path) ? 'dock-out' : fresh.has(f.path) ? 'dock-in' : '';
     return (
-      <button key={f.path} draggable onDragStart={(e) => { setTip(null); e.dataTransfer.setData(DRAG_FAV, f.path); e.dataTransfer.effectAllowed = 'move'; }}
+      <button key={f.path} draggable={!anim} onAnimationEnd={() => { if (anim === 'dock-in') setFresh((s) => { const n = new Set(s); n.delete(f.path); return n; }); }} onDragStart={(e) => { setTip(null); e.dataTransfer.setData(DRAG_FAV, f.path); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => p.onNavigate(f.path)} onContextMenu={(e) => { setTip(null); menu.open(e, favMenu(f, e)); }}
         onMouseEnter={(e) => showTip(e, f.name)} onMouseLeave={() => setTip(null)} aria-label={f.name} aria-current={active || undefined}
-        className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
+        className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${anim} ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
         <ProjectIcon path={f.path} name={f.name} size={22} />
       </button>
     );
   };
-  const topLevel = favorites.filter((f) => !f.group || !groups.some((g) => g.id === f.group));
+  // Removed favorites are put back at their old index until their animation ends.
+  const shown = favorites.slice();
+  for (const l of [...leaving].sort((a, b) => a.index - b.index)) if (!shown.some((f) => f.path === l.fav.path)) shown.splice(Math.min(l.index, shown.length), 0, l.fav);
+  const topLevel = shown.filter((f) => !f.group || !groups.some((g) => g.id === f.group));
   const current = p.project && !favorites.some((f) => f.path === p.project) ? p.project : null;
 
   return (
@@ -146,7 +171,7 @@ export default function Dock(p: Props) {
       )}
       <div className="min-h-0 overflow-y-auto no-scrollbar flex flex-col items-center gap-1.5 py-1 w-full">
         {groups.map((g) => {
-          const items = favorites.filter((f) => f.group === g.id);
+          const items = shown.filter((f) => f.group === g.id);
           return (
             <Fragment key={g.id}>
               <div {...dropTarget(g.id)} className={`w-full flex flex-col items-center gap-1.5 rounded-2xl transition-colors ${dragOver === g.id ? 'bg-sky-400/15' : ''}`}>
