@@ -48,7 +48,8 @@ test('tab title prefers the CLI session title over the first prompt', () => {
   const base: ChatSession = { id: 's', agent: 'claude', cwd: '/p', permissionMode: 'default', status: 'idle', totalCostUsd: 0, lastSeq: 0,
     items: [{ kind: 'user', id: 'u1', text: '커밋은 일단 나눠서 해봐', attachments: [] } as never] };
   assert.equal(displayTitle(base), '커밋은 일단 나눠서 해봐');
-  assert.equal(displayTitle({ ...base, title: '어드민 백엔드 변경사항 프론트 반영 확인' }, 12), '어드민 백엔드 변경사항');
+  assert.equal(displayTitle({ ...base, title: '어드민 백엔드 변경사항 프론트 반영 확인' }, 12), '어드민 백엔드 변경사…');
+  assert.equal(displayTitle({ ...base, title: '짧은 제목' }, 12), '짧은 제목');
   assert.equal(displayTitle({ ...base, title: '   ' }), '커밋은 일단 나눠서 해봐');
 });
 

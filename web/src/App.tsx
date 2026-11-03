@@ -406,7 +406,7 @@ function AppInner() {
                       <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
-                      <span className="text-zinc-500">{displayTitle(s, 18) ?? t('common.new')}</span>
+                      <span className="text-zinc-500" title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
                       {s.worktree && <span className="flex items-center gap-0.5 rounded bg-violet-400/10 px-1 text-[10px] text-violet-200 max-w-28" title={`${s.worktree.branch} · ${s.worktree.path}`}><Icon name="branch" size={10} /><span className="truncate">{s.worktree.branch}</span></span>}
                       <AttentionBadge s={s} />
                       <button className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-500 hover:text-white hover:bg-white/15 opacity-0 group-hover:opacity-100" title={t('app.closeSession')}

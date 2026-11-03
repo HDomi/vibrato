@@ -47,9 +47,14 @@ export function injectedSummary(kind: InjectedKind, text: string): string {
 export function isInjected(it: Extract<ChatItem, { kind: 'user' }>): boolean { return !!(it.compact || it.injected); }
 
 /** Tab / sidebar title: the first real user prompt, skipping compaction summaries. */
+/** First `max` characters, with an ellipsis when something was cut. */
+export function cut(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…` : text;
+}
+
 export function sessionTitle(items: ChatItem[], max = 40): string | null {
   for (const it of items) {
-    if (it.kind === 'user' && !isInjected(it) && it.text.trim()) return it.text.trim().split('\n')[0].slice(0, max);
+    if (it.kind === 'user' && !isInjected(it) && it.text.trim()) return cut(it.text.trim().split('\n')[0], max);
   }
   return null;
 }
@@ -57,7 +62,7 @@ export function sessionTitle(items: ChatItem[], max = 40): string | null {
 /** What a tab or notification calls the session: the CLI title when known, else the first prompt. */
 export function displayTitle(s: ChatSession, max = 40): string | null {
   const title = s.title?.trim();
-  return title ? title.slice(0, max) : sessionTitle(s.items, max);
+  return title ? cut(title, max) : sessionTitle(s.items, max);
 }
 
 /**
