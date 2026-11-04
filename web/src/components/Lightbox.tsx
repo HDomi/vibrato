@@ -30,8 +30,10 @@ export default function Lightbox() {
   }, [img]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!img) return null;
+  // no-drag: the title bar's drag region covers the top 100px and Electron hands clicks there to the window
+  // regardless of z-index, so the close button (and the backdrop up there) would start a window drag instead.
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={close}>
+    <div className={`titlebar-nodrag fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm transition-opacity duration-200 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={close}>
       <figure className={`max-w-[92vw] max-h-[92vh] flex flex-col items-center gap-2 transition-transform duration-200 ease-out ${shown ? 'scale-100' : 'scale-90'}`} onClick={(e) => e.stopPropagation()}>
         <img src={img.src} alt={img.caption ?? ''} className="max-w-[92vw] max-h-[85vh] object-contain rounded-lg shadow-2xl" />
         {img.caption && <figcaption className="text-xs text-zinc-400 truncate max-w-[80vw]" title={img.caption}>{img.caption}</figcaption>}
