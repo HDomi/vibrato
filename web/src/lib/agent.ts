@@ -73,6 +73,10 @@ export interface TaskInfo {
 
 export interface RewindResult { canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }
 
+export type McpAction = 'status' | 'reconnect' | 'enable' | 'disable' | 'authenticate' | 'clearAuth';
+export interface McpServerInfo { name: string; status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'; scope?: string; type?: string; target?: string; error?: string; tools: string[] }
+export interface McpResult { servers: McpServerInfo[]; authUrl?: string; error?: string }
+
 export type ServerMessage =
   | { sessionId: string; seq: number; ts: number; event: AgentEvent }
   | { type: 'session.started'; sessionId: string; requestCwd: string; requestId?: string; agent: AgentId }
@@ -81,6 +85,7 @@ export type ServerMessage =
   /** The server still has this session; buffered events (if any) follow. */
   | { type: 'session.attached'; sessionId: string }
   | { type: 'session.rewindResult'; sessionId: string; requestId: string; result: RewindResult }
+  | { type: 'session.mcpResult'; sessionId: string; requestId: string; result: McpResult }
   | { type: 'pong' }
   /** Synthetic, client-side: the socket reconnected after a drop; subscriptions must be re-established. */
   | { type: 'reconnected' };
@@ -92,6 +97,7 @@ export type ClientCommand =
   | { type: 'session.send'; sessionId: string; text: string; attachments?: Attachment[]; messageId?: string }
   /** Restore files the agent changed to how they were before user message `messageId` (Claude only). */
   | { type: 'session.rewind'; sessionId: string; requestId: string; messageId: string; dryRun?: boolean }
+  | { type: 'session.mcp'; sessionId: string; requestId: string; action: McpAction; server?: string }
   | { type: 'session.approve'; sessionId: string; requestId: string; decision: 'allow' | 'allow_always' | 'deny'; message?: string }
   | { type: 'session.answer'; sessionId: string; requestId: string; answers: Record<string, string>; response?: string }
   | { type: 'session.interrupt'; sessionId: string }
@@ -183,3 +189,16 @@ export class AgentClient {
 }
 
 export const agentClient = new AgentClient();
+
+/** List a Claude session's MCP servers, or act on one and get the fresh list (the in-app /mcp manager). */
+export function mcpRequest(sessionId: string, action: McpAction, server?: string, timeoutMs = 30000): Promise<McpResult> {
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => { off(); resolve({ servers: [], error: 'timeout' }); }, timeoutMs);
+    const off = agentClient.on((m) => {
+      if (!('type' in m) || m.type !== 'session.mcpResult' || m.requestId !== requestId) return;
+      window.clearTimeout(timer); off(); resolve(m.result);
+    });
+    agentClient.send({ type: 'session.mcp', sessionId, requestId, action, server });
+  });
+}

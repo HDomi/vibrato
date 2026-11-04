@@ -300,6 +300,14 @@ async function handle(cmd: ClientCommand, ws: WebSocket, registry: SessionRegist
       safeSend(ws, { type: 'session.rewindResult', sessionId: cmd.sessionId, requestId: cmd.requestId, result });
       return;
     }
+    case 'session.mcp': {
+      const s = must(registry, cmd.sessionId);
+      const result = s.mcp
+        ? await s.mcp(cmd.action, cmd.server).catch(async (err) => ({ servers: await s.mcp!('status').then((r) => r.servers).catch(() => []), error: (err as Error).message ?? String(err) }))
+        : { servers: [], error: 'This agent has no MCP manager.' };
+      safeSend(ws, { type: 'session.mcpResult', sessionId: cmd.sessionId, requestId: cmd.requestId, result });
+      return;
+    }
     case 'session.approve':
       must(registry, cmd.sessionId).approve(cmd.requestId, cmd.decision, cmd.message);
       return;

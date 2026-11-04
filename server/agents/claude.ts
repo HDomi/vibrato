@@ -6,7 +6,7 @@ import { saveToolImage } from '../attachments.js';
 import { planGap } from '../planGuard.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
 import { tokenSum, turnCost } from './turnCost.js';
-import type { AgentEvent, AgentSession, AssistantBlock, Attachment, PermissionModeId, Question, RewindResult, TaskInfo } from './types.js';
+import type { AgentEvent, AgentSession, AssistantBlock, Attachment, McpAction, McpResult, McpServerInfo, PermissionModeId, Question, RewindResult, TaskInfo } from './types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { mimeOf } from '../mime.js';
@@ -428,6 +428,41 @@ export class ClaudeSession implements AgentSession {
     if (!this.q || this.closed) return { canRewind: false, error: 'Session closed' };
     const r = await this.q.rewindFiles(messageId, { dryRun });
     return { canRewind: r.canRewind, error: r.error, filesChanged: r.filesChanged, insertions: r.insertions, deletions: r.deletions };
+  }
+
+  /**
+   * The in-app /mcp manager: the CLI's own /mcp is a terminal dialog, which over the SDK only prints a one-line summary.
+   * `mcpAuthenticate` / `mcpClearAuth` exist on the query object but are not in the SDK's public types yet.
+   */
+  async mcp(action: McpAction, server?: string): Promise<McpResult> {
+    await this.relaunching;
+    if (!this.q || this.closed) throw new Error('Session closed');
+    const q = this.q as Query & {
+      mcpAuthenticate?: (name: string, redirectUri?: string) => Promise<{ authUrl?: string } | undefined>;
+      mcpClearAuth?: (name: string) => Promise<unknown>;
+    };
+    let authUrl: string | undefined;
+    if (action !== 'status') {
+      if (!server) throw new Error('No server named');
+      if (action === 'reconnect') await q.reconnectMcpServer(server);
+      else if (action === 'enable' || action === 'disable') await q.toggleMcpServer(server, action === 'enable');
+      else if (action === 'authenticate') {
+        if (!q.mcpAuthenticate) throw new Error('This Claude Code version cannot sign in to MCP servers from the app.');
+        authUrl = (await q.mcpAuthenticate(server))?.authUrl;
+      } else if (action === 'clearAuth') {
+        if (!q.mcpClearAuth) throw new Error('This Claude Code version cannot sign out of MCP servers from the app.');
+        await q.mcpClearAuth(server);
+      }
+    }
+    const servers: McpServerInfo[] = (await q.mcpServerStatus()).map((s) => {
+      const cfg = s.config as { type?: string; url?: string; command?: string; args?: string[] } | undefined;
+      return {
+        name: s.name, status: s.status, scope: s.scope ?? s.source, type: cfg?.type ?? (cfg?.command ? 'stdio' : undefined),
+        target: cfg?.url ?? (cfg?.command ? [cfg.command, ...(cfg.args ?? [])].join(' ') : undefined),
+        error: s.error, tools: (s.tools ?? []).map((t) => t.name),
+      };
+    });
+    return { servers, ...(authUrl ? { authUrl } : {}) };
   }
 
   async interrupt() {

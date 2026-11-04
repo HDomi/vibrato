@@ -89,6 +89,8 @@ export type ClientCommand =
   | { type: 'session.send'; sessionId: string; text: string; attachments?: Attachment[]; messageId?: string }
   /** Restore files the agent changed to how they were before user message `messageId` (Claude only). */
   | { type: 'session.rewind'; sessionId: string; requestId: string; messageId: string; dryRun?: boolean }
+  /** In-app /mcp manager (Claude only): list the session's MCP servers or act on one. */
+  | { type: 'session.mcp'; sessionId: string; requestId: string; action: McpAction; server?: string }
   | { type: 'session.approve'; sessionId: string; requestId: string; decision: 'allow' | 'allow_always' | 'deny'; message?: string }
   | { type: 'session.answer'; sessionId: string; requestId: string; answers: Record<string, string>; response?: string }
   | { type: 'session.interrupt'; sessionId: string }
@@ -102,6 +104,23 @@ export type ClientCommand =
 
 export interface RewindResult { canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }
 
+/** What the in-app /mcp manager can do; every action answers with the fresh server list. */
+export type McpAction = 'status' | 'reconnect' | 'enable' | 'disable' | 'authenticate' | 'clearAuth';
+export interface McpServerInfo {
+  name: string;
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+  /** Config scope: user, project, local, claudeai, plugin, ... */
+  scope?: string;
+  /** Transport: stdio, http, sse, claudeai-proxy, ... */
+  type?: string;
+  /** URL of a remote server or the command of a local one. */
+  target?: string;
+  error?: string;
+  tools: string[];
+}
+/** `authUrl`: a sign-in page to open in the browser (authenticate). */
+export interface McpResult { servers: McpServerInfo[]; authUrl?: string; error?: string }
+
 export interface AgentSession {
   readonly id: string;
   readonly agent: AgentId;
@@ -111,6 +130,8 @@ export interface AgentSession {
   send(text: string, attachments: Attachment[], messageId?: string): Promise<void>;
   /** Claude only: file checkpoints per user message. */
   rewindFiles?(messageId: string, dryRun: boolean): Promise<RewindResult>;
+  /** Claude only: MCP server status and actions for the in-app /mcp manager. */
+  mcp?(action: McpAction, server?: string): Promise<McpResult>;
   approve(requestId: string, decision: 'allow' | 'allow_always' | 'deny', message?: string): void;
   answer(requestId: string, answers: Record<string, string>, response?: string): void;
   interrupt(): Promise<void>;

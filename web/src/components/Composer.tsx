@@ -100,7 +100,12 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
 
   // Slash-command autocomplete: active while the text is a single "/token" with no space.
   const cmdQuery = useMemo(() => { const m = text.match(/^\/([\w.:-]*)$/); return m ? m[1].toLowerCase() : null; }, [text]);
-  const cmdHits = useMemo(() => (cmdQuery === null ? [] : commands.filter((c) => c.toLowerCase().includes(cmdQuery)).slice(0, 12)), [cmdQuery, commands]);
+  // Exact match first, then prefix matches, so Enter on a typed "/plugin" runs it instead of completing "/plugin-authoring".
+  const cmdHits = useMemo(() => {
+    if (cmdQuery === null) return [];
+    const rank = (c: string) => { const n = c.toLowerCase().slice(1); return n === cmdQuery ? 0 : n.startsWith(cmdQuery) ? 1 : 2; };
+    return commands.filter((c) => c.toLowerCase().includes(cmdQuery)).sort((a, b) => rank(a) - rank(b)).slice(0, 12);
+  }, [cmdQuery, commands]);
   useEffect(() => setCmdIdx(0), [cmdQuery]);
 
   useEffect(() => {

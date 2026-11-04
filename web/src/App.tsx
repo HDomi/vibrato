@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo,
 import { backgroundState, displayTitle, inProject, pendingRequests, sortSessions, type ChatSession } from './lib/chatStore';
 import { api, ApiError, type Entry, type Favorites, type HomeInfo, type Listing, type RecentSession, type ScheduleRun } from './lib/api';
 import { agentClient, type Attachment } from './lib/agent';
-import { reconnectTerminals, terminalsBusy } from './lib/terminals';
+import { openTerminal, reconnectTerminals, terminalsBusy } from './lib/terminals';
 import { keepAwakeEnabled, workInProgress } from './lib/power';
 import { lockSummary } from './lib/lockScreen';
 import { requestNotificationPermission, useSessions, setOnScreenSession } from './lib/useSessions';
@@ -286,6 +286,18 @@ function AppInner() {
     if (key !== lastLockSummary.current) { lastLockSummary.current = key; window.vibe.lock.reportSessions(list); }
   }, [S.sessions]);
   useEffect(() => window.vibe?.lock?.onOpenSettings(() => { setToolsFocusLock(true); setShowTools(true); }), []);
+  // A built-in Claude command the SDK cannot show (/plugin, /hooks, ...) runs in a terminal tab of the right panel.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent<{ cwd: string; cmd: string; title: string; handled: boolean }>).detail;
+      openTerminal(d.cwd, d.cmd, d.title);
+      // The Agent view has no right panel: the terminal lives in the project view.
+      setView('vibe'); setRightTab('terminal'); setRightCollapsed(false);
+      d.handled = true;
+    };
+    window.addEventListener('vibe:run-in-terminal', h);
+    return () => window.removeEventListener('vibe:run-in-terminal', h);
+  }, [setView]);
   const [toolsFocusForms, setToolsFocusForms] = useState(false);
   // The prompt form's "Edit types" opens Settings at the form type editor.
   useEffect(() => {

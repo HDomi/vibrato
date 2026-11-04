@@ -25,6 +25,8 @@ import { sessionBrief } from '../lib/brief';
 import { exportFileName, exportMarkdown } from '../lib/exportMarkdown';
 import { toast } from './Toast';
 import { useAgentDefaults } from '../lib/agentDefaults';
+import { claudeShellLine, EFFORT_LEVELS, routeSlash, withAppCommands, type SlashRoute } from '../lib/slashCommands';
+import { ChoiceDialog, McpManagerDialog } from './SlashDialogs';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -101,6 +103,20 @@ export function ModelSelect({ agent, value, onChange, compact }: { agent: AgentI
       {models.map((m) => <option key={m.id} value={m.id}>{m.name}{m.isDefault ? t('chat.defaultSuffix') : ''}</option>)}
     </select>
   );
+}
+
+/** In-app /model picker; the list is the one the header select shows. */
+function ModelChoiceDialog({ value, onPick, onClose }: { value: string | null; onPick: (m: string | null) => void; onClose: () => void }) {
+  const models = useModels('claude');
+  const choices = models.length ? [{ value: '', label: t('chat.defaultModel'), current: !value }, ...models.map((m) => ({ value: m.id, label: m.name + (m.isDefault ? t('chat.defaultSuffix') : ''), description: m.description, current: value === m.id }))] : [];
+  return <ChoiceDialog title={t('slash.modelTitle')} choices={choices} onPick={(v) => { onPick(v || null); onClose(); }} onClose={onClose} />;
+}
+
+/** Open the terminal CLI straight into a built-in command in the right-hand terminal tab; false when no window can show it. */
+function runInTerminal(cwd: string, command: string): boolean {
+  const detail = { cwd, cmd: claudeShellLine(command), title: `claude ${command}`, handled: false };
+  window.dispatchEvent(new CustomEvent('vibe:run-in-terminal', { detail }));
+  return detail.handled;
 }
 
 type SessionView = 'chat' | 'plan';
@@ -397,6 +413,19 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const [withThinking, setWithThinking] = useState(false);
   const [exporting, setExporting] = useState(false);
   useEffect(() => { setPicked(null); }, [session?.id]);
+  // Built-in commands whose terminal dialog the SDK cannot show: handled in the app instead of sent (see slashCommands.ts).
+  const [slash, setSlash] = useState<SlashRoute | null>(null);
+  useEffect(() => { setSlash(null); }, [session?.id]);
+  const openTerminal = (command: string) => {
+    if (!session) return;
+    if (runInTerminal(session.cwd, command)) toast(t('slash.inTerminal', { cmd: command }));
+    else toast(t('slash.noTerminal'), 'error');
+  };
+  const runSlash = (route: SlashRoute) => {
+    if (route.kind === 'terminal') openTerminal(route.command);
+    else if (route.kind === 'model' && route.model) { onModel(route.model); toast(t('slash.modelSet', { model: route.model })); }
+    else setSlash(route);
+  };
   const viewActive = useViewActiveRef();
   useEffect(() => {
     if (!picked) return;
@@ -664,11 +693,21 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
       )}
       {onHandoff && <LimitBanner agent={session.agent} sessionId={session.id} onHandoff={onHandoff} />}
       <TodoPanel todos={currentTodos(session)} running={running} />
-      <Composer key={session.id} draftKey={session.id} cwd={session.cwd} agent={session.agent} disabled={session.status === 'closed'} running={running} mode={session.permissionMode} commands={session.commands}
-        onSend={(text, atts) => { stick.current = true; setAtBottom(true); onSend(text, atts); requestAnimationFrame(scrollToBottom); }}
+      <Composer key={session.id} draftKey={session.id} cwd={session.cwd} agent={session.agent} disabled={session.status === 'closed'} running={running} mode={session.permissionMode} commands={session.agent === 'claude' ? withAppCommands(session.commands) : session.commands}
+        onSend={(text, atts) => {
+          const route = session.agent === 'claude' && !atts.length ? routeSlash(text) : null;
+          if (route) { runSlash(route); return; }
+          stick.current = true; setAtBottom(true); onSend(text, atts); requestAnimationFrame(scrollToBottom);
+        }}
         onStop={onInterrupt} onMode={onMode} pendingAttachments={pendingAttachments} onConsumeAttachments={onConsumeAttachments}
         background={background} onFocusSession={onFocusSession}
         tasks={session.tasks} taskRootLabel={displayTitle(session, 24) ?? (session.agent === 'codex' ? 'Codex' : 'Claude')} taskRootSub={session.agentSessionId?.slice(0, 8)} onShowTaskCard={showToolCard} onStopTask={session.agent === 'claude' ? onStopTask : undefined} />
+      {slash?.kind === 'mcp' && <McpManagerDialog sessionId={session.id} onClose={() => setSlash(null)} onOpenTerminal={() => { setSlash(null); openTerminal('/mcp'); }} />}
+      {slash?.kind === 'model' && <ModelChoiceDialog value={session.model ?? null} onPick={onModel} onClose={() => setSlash(null)} />}
+      {slash?.kind === 'effort' && (
+        <ChoiceDialog title={t('slash.effortTitle')} choices={EFFORT_LEVELS.map((v) => ({ value: v, label: t(`slash.effort.${v}`), description: t(`slash.effortDesc.${v}`) }))}
+          onPick={(v) => { setSlash(null); stick.current = true; onSend(`/effort ${v}`, []); }} onClose={() => setSlash(null)} />
+      )}
     </div>
   );
 }
