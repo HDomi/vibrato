@@ -113,6 +113,8 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   const turns: PlanTurn[] = [];
   let turn: PlanTurn | null = null;
   let active: PlanStep | null = null;
+  // The step closed last: what the agent says right after closing it (before the next starts) is its summary.
+  let justDone: PlanStep | null = null;
   // TaskCreate / TaskUpdate: the session's task list, and the step each task has in the current turn.
   const tasks = new Map<string, TaskState>();
   let autoId = 0;
@@ -127,6 +129,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [] };
     turns.push(turn);
     active = null;
+    justDone = null;
     return turn;
   };
   for (const it of items) {
@@ -148,7 +151,9 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
         step.status = todo.status;
         step.activeForm = todo.activeForm;
       }
+      const was = active;
       active = t.steps.find((s) => s.status === 'in_progress') ?? null;
+      justDone = was && was !== active && was.status === 'completed' ? was : active ? null : justDone;
       continue;
     }
     if (it.kind === 'tool' && (it.name === 'TaskCreate' || it.name === 'TaskUpdate')) {
@@ -174,8 +179,8 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
         }
         if (i.status === 'pending' || i.status === 'in_progress' || i.status === 'completed') task.status = i.status;
         const step = taskStep(t, task);
-        if (task.status === 'in_progress') active = step;
-        else if (active === step) active = null;
+        if (task.status === 'in_progress') { active = step; justDone = null; }
+        else if (active === step) { active = null; if (task.status === 'completed') justDone = step; }
       }
       continue;
     }
@@ -184,6 +189,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (it.kind === 'changes') { t.changes.push(it); continue; }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
+    if (!active && justDone && !justDone.note && it.kind === 'assistant' && it.text.trim()) justDone.note = it.text.trim();
     // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
     const started = t.steps.some((x) => x.status !== 'pending');
     file(active ?? (started ? t.after : t.before), it);
@@ -194,11 +200,18 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
 /** First sentence-ish of a note, for the one-line summary under a step. */
 export function noteLine(note: string | null, max = 160): string | null {
   if (!note) return null;
-  const plain = note.replace(/```[\s\S]*?```/g, ' ').replace(/[#>*_`]/g, '').replace(/\s+/g, ' ').trim();
+  // The opening paragraph only: lists and details that follow are not the summary.
+  const head = note.replace(/```[\s\S]*?```/g, ' ').split(/\n\s*\n|\n\s*(?:[-*•]|\d+\.)\s/)[0];
+  const plain = head.replace(/[#>*_`]/g, '').replace(/\s+/g, ' ').trim();
   if (!plain) return null;
-  const end = plain.search(/(?<=[.!?。])\s|(?<=다\.)\s/);
-  const first = end > 0 && end < max ? plain.slice(0, end) : plain;
-  return first.length > max ? `${first.slice(0, max - 1)}…` : first;
+  // Sentence by sentence until it says something: "Done." alone is not a summary.
+  const sentences = plain.split(/(?<=[.!?。])\s+/);
+  let out = '';
+  for (const sentence of sentences) {
+    out = out ? `${out} ${sentence}` : sentence;
+    if (out.length >= 16) break;
+  }
+  return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 }
 
 /** Whether a step group has anything worth a card. */
