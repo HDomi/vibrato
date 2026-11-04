@@ -220,3 +220,28 @@ test('a checked step marks the skipped written steps before it as done', () => {
   assert.deepEqual(turn.steps.map((s) => [s.status, s.note]), [
     ['completed', null], ['completed', null], ['completed', null], ['completed', '웹 끝'], ['pending', null]]);
 });
+
+test('a written plan gets its work filed per step, with stats, time, skipped steps, commits and pushes', () => {
+  const bash = (id: string, command: string, output: string, at: number, extra = {}) => tool(id, 'Bash', { command }, { output, at, ...extra });
+  const [turn] = buildPlan([
+    user('u1', 'ship it'),
+    { kind: 'assistant', id: 'a1', text: '진행 계획\n1. 확인\n2. 고치기\n3. 문서\n4. 커밋', thinking: '', parent: null, streaming: false, at: 1000 },
+    tool('r1', 'Read', { file_path: '/p/a.ts' }, { at: 2000 }),
+    bash('b1', 'npm test', 'fail', 3000, { isError: true }),
+    { kind: 'assistant', id: 'a2', text: '✓ 1. 원인 찾음', thinking: '', parent: null, streaming: false, at: 5000 },
+    tool('e1', 'Edit', { file_path: '/p/a.ts' }, { at: 6000 }),
+    { kind: 'approval', id: 'ap', toolName: 'Bash', input: {}, canAlwaysAllow: false, decision: 'deny' },
+    { kind: 'assistant', id: 'a3', text: '✓ 2. 고침\n✓ 3. Not done: 문서는 필요 없음', thinking: '', parent: null, streaming: false, at: 9000 },
+    bash('b2', 'git add a.ts && git commit -m "fix: x"', '[main 854020d] fix: x\n 1 file changed', 10000),
+    bash('b3', 'git push origin main', 'To github.com:x/y.git', 11000),
+    { kind: 'assistant', id: 'a4', text: '✓ 4. 커밋 · push\n\n결과: 끝', thinking: '', parent: null, streaming: false, at: 12000 },
+  ]);
+  assert.deepEqual(turn.steps.map((s) => s.items.map((i) => i.id)), [['r1', 'b1', 'a2'], ['e1', 'ap', 'a3'], [], ['b2', 'b3', 'a4']]);
+  assert.deepEqual(turn.steps[0].stats, { commands: 1, failed: 1, files: [], reads: 1, subagents: 0, toolSeconds: 0, denied: 0, errors: 0 });
+  assert.equal(turn.steps[1].stats.denied, 1);
+  assert.deepEqual([turn.steps[0].startedAt, turn.steps[0].endedAt], [2000, 5000]);
+  assert.deepEqual(turn.steps.map((s) => [s.status, !!s.skipped, s.note]), [
+    ['completed', false, '원인 찾음'], ['completed', false, '고침'], ['completed', true, '문서는 필요 없음'], ['completed', false, '커밋 · push']]);
+  assert.deepEqual(turn.commits, ['854020d']);
+  assert.equal(turn.pushed, true);
+});

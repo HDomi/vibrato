@@ -5,7 +5,7 @@ export type ChatItem =
   | { kind: 'user'; id: string; text: string; attachments: Attachment[]; pending?: boolean; /** Sent while the agent was still working on the previous message. */ followUp?: boolean; /** Compaction summary injected by the CLI, not typed by the user. */ compact?: boolean;
       /** Other user-role turns the CLI wrote itself: background task notices, slash commands run in the terminal. */ injected?: InjectedKind }
   | { kind: 'assistant'; id: string; text: string; thinking: string; parent: string | null; streaming: boolean; /** When the block finished (server ms); absent for blocks loaded from saved history. */ at?: number }
-  | { kind: 'tool'; id: string; name: string; input: unknown; output: string | null; isError: boolean; parent: string | null; elapsed: number; done: boolean; /** Images the tool returned: absolute paths, or data: URIs from saved history. */ images?: string[] }
+  | { kind: 'tool'; id: string; name: string; input: unknown; output: string | null; isError: boolean; parent: string | null; elapsed: number; done: boolean; /** Images the tool returned: absolute paths, or data: URIs from saved history. */ images?: string[]; /** When it started (server ms); absent for tools loaded from saved history. */ at?: number }
   | { kind: 'approval'; id: string; toolName: string; input: unknown; canAlwaysAllow: boolean; decision: string | null }
   | { kind: 'question'; id: string; questions: Question[]; resolved: boolean }
   | { kind: 'result'; id: string; ok: boolean; text: string; costUsd: number; turnCostUsd?: number; numTurns: number; durationMs: number; at?: number }
@@ -258,7 +258,7 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       return next;
     case 'tool.start':
       if (e.name === 'TodoWrite') { const todos = todosFromInput(e.input); if (todos) next.todos = todos; }
-      items.push({ kind: 'tool', id: e.toolUseId, name: e.name, input: e.input, output: null, isError: false, parent: e.parent, elapsed: 0, done: false });
+      items.push({ kind: 'tool', id: e.toolUseId, name: e.name, input: e.input, output: null, isError: false, parent: e.parent, elapsed: 0, done: false, at: ts });
       return next;
     case 'tool.result': {
       const i = items.findIndex((it) => it.kind === 'tool' && it.id === e.toolUseId);

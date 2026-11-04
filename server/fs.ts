@@ -13,6 +13,8 @@ export interface Entry {
   mtime: number;
   /** When the file was created (stat only). */
   birthtime?: number;
+  /** The path with symlinks resolved (stat only): /tmp/x is /private/tmp/x on macOS. */
+  real?: string;
   ext: string;
   hidden: boolean;
   kind: PreviewKind;
@@ -83,8 +85,9 @@ export async function statPath(p: string): Promise<Entry> {
     const name = path.basename(abs);
     const isDir = st.isDirectory();
     const ext = isDir ? '' : path.extname(name);
+    const real = await fs.realpath(abs).catch(() => abs);
     return {
-      name, path: abs, isDir, size: st.size, mtime: st.mtimeMs, birthtime: st.birthtimeMs, ext,
+      name, path: abs, isDir, size: st.size, mtime: st.mtimeMs, birthtime: st.birthtimeMs, real, ext,
       hidden: name.startsWith('.'),
       kind: isDir ? 'binary' : previewKind(ext, name),
     };

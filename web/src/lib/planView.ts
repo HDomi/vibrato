@@ -25,6 +25,10 @@ export interface StepStats {
   subagents: number;
   /** Seconds spent in tools that reported progress (long commands, subagents). */
   toolSeconds: number;
+  /** Tool calls the user turned down. */
+  denied: number;
+  /** Errors the agent hit (not tool failures, which are counted in `failed`). */
+  errors: number;
 }
 
 export interface PlanStep {
@@ -38,6 +42,11 @@ export interface PlanStep {
   stats: StepStats;
   /** The last thing the agent said while on this step: usually what it did or found. */
   note: string | null;
+  /** Closed without being done ("✓ n. Not done: why"); `note` holds the why. */
+  skipped?: boolean;
+  /** First and last timed item filed under it (server ms). */
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface PlanTurn {
@@ -55,6 +64,9 @@ export interface PlanTurn {
   hasPlan: boolean;
   result: Item<'result'> | null;
   changes: Item<'changes'>[];
+  /** Commits the turn made (short hashes), and whether it pushed. */
+  commits: string[];
+  pushed: boolean;
   /** Absolute paths of the files this turn created, in order. */
   created: string[];
   /**
@@ -107,7 +119,7 @@ export function taskTitles(items: ChatItem[]): Map<string, string> {
   return out;
 }
 
-const emptyStats = (): StepStats => ({ commands: 0, failed: 0, files: [], reads: 0, subagents: 0, toolSeconds: 0 });
+const emptyStats = (): StepStats => ({ commands: 0, failed: 0, files: [], reads: 0, subagents: 0, toolSeconds: 0, denied: 0, errors: 0 });
 const group = (key: string, content: string): PlanStep => ({ key, content, status: 'pending', items: [], stats: emptyStats(), note: null });
 
 function editedFiles(it: Item<'tool'>): string[] {
@@ -151,15 +163,27 @@ export function pathsWritten(command: string): string[] {
   return [...command.matchAll(SHELL_OUT)].map((m) => m[2]).filter((p) => p !== '/dev/null' && !p.startsWith('&') && /[\w-]\.[A-Za-z][\w]{0,9}$/.test(p));
 }
 
+/** A shell command that commits / pushes, and the "[main 854020d] subject" line git commit prints. */
+const GIT_COMMIT = /\bgit\b[^\n|;&]*\bcommit\b/;
+const GIT_PUSH = /\bgit\b[^\n|;&]*\bpush\b/;
+const COMMIT_OUT = /^\[[^\]\n]*?\s([0-9a-f]{7,40})\]/m;
+
 const addMentioned = (t: PlanTurn, paths: string[]) => { for (const p of paths) if (t.mentioned.length < MENTION_LIMIT && !t.mentioned.includes(p)) t.mentioned.push(p); };
 
 const addCreated = (t: PlanTurn, paths: string[]) => { for (const p of paths) if (!t.created.includes(p)) t.created.push(p); };
 
 function file(step: PlanStep, it: ChatItem) {
   step.items.push(it);
-  if (it.kind === 'assistant' && it.text.trim()) step.note = it.text.trim();
-  if (it.kind !== 'tool') return;
   const s = step.stats;
+  const at = 'at' in it ? it.at : undefined;
+  if (at) {
+    step.startedAt ??= at;
+    step.endedAt = Math.max(step.endedAt ?? 0, at + (it.kind === 'tool' ? (it.elapsed || 0) * 1000 : 0));
+  }
+  if (it.kind === 'assistant' && it.text.trim()) step.note = it.text.trim();
+  if (it.kind === 'approval' && it.decision === 'deny') s.denied++;
+  if (it.kind === 'error') s.errors++;
+  if (it.kind !== 'tool') return;
   if (it.name === 'Bash') { s.commands++; }
   if (it.isError) s.failed++;
   if (READ_TOOLS.has(it.name)) s.reads++;
@@ -186,7 +210,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, created: [], mentioned: [] };
+    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, commits: [], pushed: false, created: [], mentioned: [] };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -254,7 +278,14 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (it.kind === 'tool') {
       addCreated(t, createdFiles(it));
       const cmd = (it.input as { command?: unknown } | null)?.command;
-      if (it.name === 'Bash' && typeof cmd === 'string') addMentioned(t, pathsWritten(cmd));
+      if (it.name === 'Bash' && typeof cmd === 'string') {
+        addMentioned(t, pathsWritten(cmd));
+        if (it.done && !it.isError) {
+          const hash = GIT_COMMIT.test(cmd) ? it.output?.match(COMMIT_OUT)?.[1] : undefined;
+          if (hash && !t.commits.includes(hash.slice(0, 7))) t.commits.push(hash.slice(0, 7));
+          if (GIT_PUSH.test(cmd)) t.pushed = true;
+        }
+      }
     }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
@@ -268,6 +299,30 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   return turns;
 }
 
+/**
+ * A plan written as text is only known once the turn's words are read, so its work was filed as a whole under
+ * `before`. Spread it over the steps in order: up to the plan message it is preparation, then each item belongs
+ * to the step being worked, which moves on past every "✓ n." line.
+ */
+function fileTextSteps(t: PlanTurn) {
+  const pool = [...t.before.items, ...t.after.items];
+  t.before = group('before', '');
+  t.after = group('after', '');
+  const planAt = pool.findIndex((it) => it.kind === 'assistant' && textPlan([it.text]) !== null);
+  let k = 0;
+  pool.forEach((it, i) => {
+    if (i <= planAt) { file(t.before, it); return; }
+    // A message with "✓ n." lines belongs to the first step it closes (later ones may have been skipped over).
+    const done = it.kind === 'assistant' ? [...doneMarks([it.text]).keys()].filter((n) => n <= t.steps.length) : [];
+    if (done.length) k = Math.max(k, Math.min(...done) - 1);
+    file(k < t.steps.length ? t.steps[k] : t.after, it);
+    if (done.length) k = Math.max(...done);
+  });
+}
+
+/** "✓ n. Not done: why" (or 안 함 / 못 함 / 건너뜀): the step was closed without doing it. */
+const NOT_DONE = /^(?:not\s+done|skipped|안\s*함|못\s*함|건너뜀)\s*[:：-]?\s*/i;
+
 function applyTextPlan(t: PlanTurn) {
   const marks = doneMarks(t.texts);
   if (!t.hasPlan) {
@@ -275,12 +330,17 @@ function applyTextPlan(t: PlanTurn) {
     if (steps) {
       t.hasPlan = true;
       t.steps = steps.map((content, i) => ({ ...group(`text:${i}`, content), status: marks.has(i + 1) ? 'completed' as const : 'pending' as const }));
+      fileTextSteps(t);
     }
   }
   // A "✓ n." line is the step's account, whichever way the plan came.
   t.steps.forEach((step, i) => {
     const how = marks.get(i + 1);
-    if (how) { step.note = how; if (step.key.startsWith('text:')) step.status = 'completed'; }
+    if (!how) return;
+    const skipped = how.match(NOT_DONE);
+    step.note = skipped ? how.slice(skipped[0].length) || null : how;
+    step.skipped = !!skipped;
+    if (step.key.startsWith('text:')) step.status = 'completed';
   });
   // The steps are worked in order, so a written plan's step that has a later one checked is done too, even when
   // its own "✓" line was skipped. Steps from the task tools carry their own status.

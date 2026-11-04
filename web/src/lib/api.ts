@@ -10,6 +10,8 @@ export interface Entry {
   mtime: number;
   /** When the file was created (stat only). */
   birthtime?: number;
+  /** The path with symlinks resolved (stat only). */
+  real?: string;
   ext: string;
   hidden: boolean;
   kind: PreviewKind;
