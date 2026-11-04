@@ -206,7 +206,7 @@ export class Scheduler {
           else if (e.kind === 'approval.request' || e.kind === 'question.request') this.patch(run, { status: 'waiting' });
           else if ((e.kind === 'approval.resolved' || e.kind === 'question.resolved') && run.status === 'waiting') this.patch(run, { status: 'running' });
           else if (e.kind === 'result') {
-            finish(e.ok ? 'done' : 'failed', { costUsd: e.costUsd, agentSessionId: e.agentSessionId ?? run.agentSessionId, error: e.ok ? undefined : e.text.slice(0, 500) || 'The run ended with an error' });
+            finish(e.ok ? 'done' : 'failed', { costUsd: e.turnCostUsd, agentSessionId: e.agentSessionId ?? run.agentSessionId, error: e.ok ? undefined : e.text.slice(0, 500) || 'The run ended with an error' });
             off(); resolve();
           } else if (e.kind === 'status' && e.status === 'closed') {
             finish('failed', { error: 'The session closed before the run finished' });

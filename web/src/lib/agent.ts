@@ -24,7 +24,8 @@ export type AgentEvent =
   | { kind: 'question.request'; requestId: string; questions: Question[] }
   | { kind: 'question.resolved'; requestId: string }
   | { kind: 'status'; status: 'running' | 'idle' | 'compacting' | 'closed'; permissionMode?: string }
-  | { kind: 'result'; ok: boolean; text: string; costUsd: number; numTurns: number; durationMs: number; agentSessionId?: string }
+  /** `costUsd` is the session's running total (Claude); `turnCostUsd` this turn's share, when it can be told. */
+  | { kind: 'result'; ok: boolean; text: string; costUsd: number; turnCostUsd?: number; numTurns: number; durationMs: number; agentSessionId?: string }
   | { kind: 'error'; message: string; command?: string }
   /** The agent's own task checklist (Codex plan updates; Claude's TodoWrite is read from the tool call). */
   | { kind: 'todos'; items: TodoItem[] }

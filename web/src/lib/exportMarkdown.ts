@@ -121,7 +121,7 @@ export function exportMarkdown(items: ChatItem[], selected: Set<string>, opts: E
       }
       case 'approval': return `> Approval · ${it.toolName} · ${it.decision ?? 'pending'}`;
       case 'question': return it.questions.map((q) => `> ❓ ${q.header ? `**${q.header}** ` : ''}${q.question}${q.options.length ? `\n> ${q.options.map((o) => `· ${o.label}`).join(' ')}` : ''}`).join('\n>\n');
-      case 'result': return `_${it.ok ? 'Done' : 'Failed'} · ${(it.durationMs / 1000).toFixed(1)}s${it.costUsd ? ` · $${it.costUsd.toFixed(3)}` : ''}${it.ok || !it.text ? '' : ` · ${it.text.trim().split('\n')[0]}`}_`;
+      case 'result': return `_${it.ok ? 'Done' : 'Failed'} · ${(it.durationMs / 1000).toFixed(1)}s${it.turnCostUsd ? ` · $${it.turnCostUsd.toFixed(3)}` : ''}${it.ok || !it.text ? '' : ` · ${it.text.trim().split('\n')[0]}`}_`;
       case 'error': return `> ⚠️ ${it.message.trim().replace(/\n/g, '\n> ')}`;
       case 'system': return `_${it.text.trim()}_`;
       case 'changes': return it.files.length ? `**Changed files**\n\n${it.files.map((f) => `- ${f.status} \`${f.path}\`${f.binary ? '' : ` (+${f.additions} −${f.deletions})`}`).join('\n')}` : null;

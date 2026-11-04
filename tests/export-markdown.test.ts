@@ -9,7 +9,7 @@ const items: ChatItem[] = [
   { kind: 'assistant', id: 'a-sub', text: 'sub result', thinking: '', parent: 't1', streaming: false },
   { kind: 'assistant', id: 'a1', text: 'Done.\n\n## Notes\n- one', thinking: 'secret', parent: null, streaming: false },
   { kind: 'assistant', id: 'a2', text: '', thinking: '', parent: null, streaming: true },
-  { kind: 'result', id: 'r1', ok: true, text: '', costUsd: 0.0123, numTurns: 2, durationMs: 4200 },
+  { kind: 'result', id: 'r1', ok: true, text: '', costUsd: 0.5, turnCostUsd: 0.0123, numTurns: 2, durationMs: 4200 },
   { kind: 'changes', id: 'c1', root: '/p', from: 'x', to: 'y', files: [{ path: 'a.ts', status: 'M', additions: 3, deletions: 1, binary: false }] },
 ];
 

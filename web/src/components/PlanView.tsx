@@ -111,7 +111,7 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
         <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-zinc-400">
           {files.size > 0 && <button className="rounded-full bg-fill px-2.5 py-1 hover:bg-fill-2 hover:text-white transition-colors" onClick={() => onJump(turn.changes[0].id)}>{t('plan.changes', { n: files.size })}</button>}
           {verify && <span className={`rounded-full px-2.5 py-1 ${verify.status === 'passed' ? 'bg-emerald-400/10 text-emerald-200' : verify.status === 'failed' ? 'bg-red-500/15 text-red-200' : 'bg-fill'}`}>{t(`verify.${verify.status}`)}</span>}
-          {turn.result && <span className="ml-auto tabular-nums">{Math.round(turn.result.durationMs / 1000)}s{turn.result.costUsd ? ` · $${turn.result.costUsd.toFixed(3)}` : ''}</span>}
+          {turn.result && <span className="ml-auto tabular-nums">{Math.round(turn.result.durationMs / 1000)}s{turn.result.turnCostUsd ? ` · $${turn.result.turnCostUsd.toFixed(3)}` : ''}</span>}
         </div>
       )}
     </section>

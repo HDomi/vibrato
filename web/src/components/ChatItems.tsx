@@ -359,7 +359,7 @@ export function ResultItem({ item }: { item: Extract<ChatItem, { kind: 'result' 
       <span>{item.ok ? t('items.done') : t('items.error')}{item.at ? ` · ${clockTime(item.at)}` : ''}</span>
       <span>{(item.durationMs / 1000).toFixed(1)}s</span>
       <span>{t('items.turns', { n: item.numTurns })}</span>
-      <span>${item.costUsd.toFixed(3)}</span>
+      {item.turnCostUsd !== undefined && <span>${item.turnCostUsd.toFixed(3)}</span>}
     </div>
   );
 }

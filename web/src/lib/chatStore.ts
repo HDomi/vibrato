@@ -8,7 +8,7 @@ export type ChatItem =
   | { kind: 'tool'; id: string; name: string; input: unknown; output: string | null; isError: boolean; parent: string | null; elapsed: number; done: boolean; /** Images the tool returned: absolute paths, or data: URIs from saved history. */ images?: string[] }
   | { kind: 'approval'; id: string; toolName: string; input: unknown; canAlwaysAllow: boolean; decision: string | null }
   | { kind: 'question'; id: string; questions: Question[]; resolved: boolean }
-  | { kind: 'result'; id: string; ok: boolean; text: string; costUsd: number; numTurns: number; durationMs: number; at?: number }
+  | { kind: 'result'; id: string; ok: boolean; text: string; costUsd: number; turnCostUsd?: number; numTurns: number; durationMs: number; at?: number }
   | { kind: 'error'; id: string; message: string }
   | { kind: 'system'; id: string; text: string }
   | { kind: 'changes'; id: string; root: string; from: string; to: string; files: TurnFile[] }
@@ -311,7 +311,7 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       return next;
     case 'result':
       for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.kind === 'assistant' && it.streaming) items[i] = { ...it, streaming: false, at: it.at ?? ts }; }
-      items.push({ kind: 'result', id: uid(), ok: e.ok, text: e.text, costUsd: e.costUsd, numTurns: e.numTurns, durationMs: e.durationMs, at: ts });
+      items.push({ kind: 'result', id: uid(), ok: e.ok, text: e.text, costUsd: e.costUsd, turnCostUsd: e.turnCostUsd, numTurns: e.numTurns, durationMs: e.durationMs, at: ts });
       next.totalCostUsd = e.costUsd;
       next.agentSessionId = e.agentSessionId ?? s.agentSessionId;
       next.status = 'idle';

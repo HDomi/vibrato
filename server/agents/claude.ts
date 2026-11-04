@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { query, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { saveToolImage } from '../attachments.js';
+import { tokenSum, turnCost } from './turnCost.js';
 import type { AgentEvent, AgentSession, AssistantBlock, Attachment, PermissionModeId, Question, RewindResult, TaskInfo } from './types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,10 +74,13 @@ export class ClaudeSession implements AgentSession {
   private relaunching: Promise<void> | null = null;
   /** Subagents and background tasks of the current CLI process, by task id. */
   private tasks = new Map<string, TaskInfo>();
+  /** `total_cost_usd` after the last turn, to tell each turn's share; unknown for a resumed session until its first turn. */
+  private lastTotalCost: number | null;
 
   constructor(private opts: ClaudeSessionOptions) {
     this.cwd = opts.cwd;
     this.agentSessionId = opts.resume;
+    this.lastTotalCost = opts.resume ? null : 0;
   }
 
   onEvent(listener: (e: AgentEvent) => void) {
@@ -233,10 +237,13 @@ export class ClaudeSession implements AgentSession {
       case 'result': {
         this.agentSessionId = m.session_id;
         const ok = m.subtype === 'success';
+        const turnCostUsd = turnCost(m.total_cost_usd, this.lastTotalCost, tokenSum(m.usage),
+          Object.values(m.modelUsage ?? {}).reduce((sum, u) => sum + tokenSum(u), 0));
+        this.lastTotalCost = m.total_cost_usd;
         this.emit({
           kind: 'result', ok,
           text: ok ? (m as { result: string }).result : (m as { errors?: string[] }).errors?.join('\n') ?? m.subtype,
-          costUsd: m.total_cost_usd, numTurns: m.num_turns, durationMs: m.duration_ms, agentSessionId: m.session_id,
+          costUsd: m.total_cost_usd, turnCostUsd, numTurns: m.num_turns, durationMs: m.duration_ms, agentSessionId: m.session_id,
         });
         this.running = false;
         this.emit({ kind: 'status', status: 'idle' });
