@@ -47,6 +47,8 @@ export interface PlanTurn {
   hasPlan: boolean;
   result: Item<'result'> | null;
   changes: Item<'changes'>[];
+  /** Absolute paths of the files this turn created, in order. */
+  created: string[];
   verify: Item<'verify'>[];
   /** Approvals and questions still waiting for the user. */
   pending: (Item<'approval'> | Item<'question'>)[];
@@ -101,6 +103,20 @@ function editedFiles(it: Item<'tool'>): string[] {
   return [];
 }
 
+/** Files a tool call created: Claude's Write onto a new path, Codex's "add" file changes. */
+function createdFiles(it: Item<'tool'>): string[] {
+  if (!it.done || it.isError) return [];
+  const i = (it.input ?? {}) as Record<string, unknown>;
+  if (it.name === 'Write') return typeof i.file_path === 'string' && /^File created successfully/.test(it.output ?? '') ? [i.file_path] : [];
+  if (it.name === 'FileChange') {
+    return ((i.changes as { path?: unknown; kind?: { type?: unknown } }[] | undefined) ?? [])
+      .flatMap((c) => (typeof c.path === 'string' && c.path.startsWith('/') && c.kind?.type === 'add' ? [c.path] : []));
+  }
+  return [];
+}
+
+const addCreated = (t: PlanTurn, paths: string[]) => { for (const p of paths) if (!t.created.includes(p)) t.created.push(p); };
+
 function file(step: PlanStep, it: ChatItem) {
   step.items.push(it);
   if (it.kind === 'assistant' && it.text.trim()) step.note = it.text.trim();
@@ -132,7 +148,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false };
+    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, created: [] };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -192,7 +208,8 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     }
     if (it.kind === 'tool' && (TASK_TOOLS.has(it.name) || SILENT_TOOLS.has(it.name))) continue;
     if (it.kind === 'result') { t.result = it; continue; }
-    if (it.kind === 'changes') { t.changes.push(it); continue; }
+    if (it.kind === 'changes') { t.changes.push(it); addCreated(t, it.files.filter((f) => f.status === 'A').map((f) => `${it.root}/${f.path}`)); continue; }
+    if (it.kind === 'tool') addCreated(t, createdFiles(it));
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
     if (it.kind === 'assistant' && it.text.trim()) t.texts.push(it.text);
@@ -251,14 +268,18 @@ export function doneMarks(texts: string[]): Map<number, string> {
   return out;
 }
 
-function resultLine(texts: string[]): string | null {
+/** What follows the last "Result:" marker: its line, or with more lines under it, all of it (markdown). */
+function resultOf(texts: string[]): { text: string; full: boolean } | null {
   for (let i = texts.length - 1; i >= 0; i--) {
     const lines = texts[i].split('\n');
     for (let j = lines.length - 1; j >= 0; j--) {
       const m = lines[j].match(RESULT_LINE);
       if (!m) continue;
-      const rest = plainLine(m[1]) || plainLine(lines.slice(j + 1).find((l) => l.trim()) ?? '');
-      if (rest) return rest;
+      const head = m[1].replace(/^(?:\*\*|__)\s*/, '').trim();
+      const body = lines.slice(j + 1).join('\n').trim();
+      if (body && (!head || body.includes('\n'))) return { text: head ? `${head}\n\n${body}` : body, full: true };
+      const rest = plainLine(head) || plainLine(body);
+      if (rest) return { text: rest, full: false };
     }
   }
   return null;
@@ -279,10 +300,10 @@ function applyTextPlan(t: PlanTurn) {
     if (how) { step.note = how; if (step.key.startsWith('text:')) step.status = 'completed'; }
   });
   const last = t.texts[t.texts.length - 1];
-  const result = resultLine(t.texts);
+  const result = resultOf(t.texts);
   // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.
-  t.answerFull = !result && !t.hasPlan && !!last?.trim();
-  t.answer = result ?? (t.answerFull ? last.trim() : noteLine(last ?? null, 240));
+  t.answerFull = result ? result.full : !t.hasPlan && !!last?.trim();
+  t.answer = result ? result.text : t.answerFull ? last.trim() : noteLine(last ?? null, 240);
 }
 
 /** First sentence-ish of a note, for the one-line summary under a step. */

@@ -130,6 +130,14 @@ test('a plan written in the reply becomes the checklist, "✓ n." lines clear it
 
   assert.equal(done.answerFull, false);
 
+  // A "결과:" heading with the answer under it: all of it, as markdown.
+  const report = buildPlan([user('u1', 'x'), say('a1', '진행 계획\n1. 정리\n\n✓ 1. 정리함\n\n**결과:**\n## 백엔드\n- 하나\n- 둘')])[0];
+  assert.equal(report.answer, '## 백엔드\n- 하나\n- 둘');
+  assert.equal(report.answerFull, true);
+  const lead = buildPlan([user('u1', 'x'), say('a1', '결과: 정리했어.\n\n- 하나\n- 둘')])[0];
+  assert.equal(lead.answer, '정리했어.\n\n- 하나\n- 둘');
+  assert.equal(lead.answerFull, true);
+
   // No plan, no "Result:" line: the reply is the answer, all of it.
   const reply = 'Hello there, nice to meet you.\n\n## Backend\n- one\n- two';
   const plain = buildPlan([user('u1', 'hi'), say('a1', reply)])[0];
@@ -151,4 +159,19 @@ test('done marks add the account to steps from the task tools', () => {
     say('a1', '✓ 1. Did it with a one-liner'),
   ]);
   assert.equal(turn.steps[0].note, 'Did it with a one-liner');
+});
+
+test('created files come from new files in the turn changes and from writes onto new paths', () => {
+  const [turn] = buildPlan([
+    user('u1', 'Write it down'),
+    tool('w1', 'Write', { file_path: '/p/REPORT.md' }, { output: 'File created successfully at: /p/REPORT.md (file state is current)' }),
+    tool('w2', 'Write', { file_path: '/p/old.md' }, { output: 'The file /p/old.md has been updated successfully.' }),
+    tool('w3', 'Write', { file_path: '/p/fail.md' }, { output: 'File created successfully at: /p/fail.md', isError: true }),
+    tool('c1', 'FileChange', { changes: [{ path: '/p/new.ts', kind: { type: 'add' } }, { path: '/p/edit.ts', kind: { type: 'update' } }] }),
+    { kind: 'changes', id: 'ch', root: '/p', from: 'a', to: 'b', files: [
+      { path: 'REPORT.md', status: 'A', additions: 3, deletions: 0, binary: false },
+      { path: 'src/x.ts', status: 'M', additions: 1, deletions: 1, binary: false },
+      { path: 'img/out.png', status: 'A', additions: 0, deletions: 0, binary: true }] },
+  ]);
+  assert.deepEqual(turn.created, ['/p/REPORT.md', '/p/new.ts', '/p/img/out.png']);
 });

@@ -1,8 +1,11 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../lib/api';
 import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
 import { buildPlan, noteLine, type PlanStep, type PlanTurn } from '../lib/planView';
 import { ApprovalItem, QuestionItem } from './ChatItems';
+import FileIcon from './FileIcon';
+import Icon from './Icon';
 import MarkdownView from './MarkdownView';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
@@ -51,6 +54,43 @@ function StepRow({ step, index, current, live, onJump }: { step: PlanStep; index
   );
 }
 
+const CREATED_SHOWN = 6;
+
+/** Files the turn created: click to preview, or download a copy. */
+function CreatedFiles({ paths }: { paths: string[] }) {
+  useLang();
+  const [all, setAll] = useState(false);
+  const shown = all ? paths : paths.slice(0, CREATED_SHOWN);
+  const open = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path } }));
+  return (
+    <div className="rounded-xl bg-black/15 border border-line px-2 py-2">
+      <div className="px-1.5 mb-1 flex items-baseline gap-2 text-[11.5px] font-medium text-zinc-400">{t('plan.created')}<span className="tabular-nums text-zinc-500">{paths.length}</span></div>
+      {shown.map((p) => {
+        const slash = p.lastIndexOf('/');
+        const name = p.slice(slash + 1);
+        return (
+          <div key={p} className="group flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-fill transition-colors">
+            <button type="button" onClick={() => open(p)} title={p} className="min-w-0 flex-1 flex items-center gap-2.5 text-left">
+              <FileIcon name={name} isDir={false} className="w-4 h-4 shrink-0" />
+              <span className="shrink-0 max-w-[60%] truncate text-[13px] text-zinc-100">{name}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-zinc-500">{p.slice(0, slash)}</span>
+            </button>
+            <button type="button" onClick={() => open(p)} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
+              <Icon name="file" size={11} />{t('plan.preview')}
+            </button>
+            <a href={api.rawUrl(p)} download={name} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
+              <Icon name="download" size={11} />{t('plan.download')}
+            </a>
+          </div>
+        );
+      })}
+      {!all && paths.length > CREATED_SHOWN && (
+        <button type="button" onClick={() => setAll(true)} className="mt-0.5 px-1.5 text-[11px] text-zinc-500 hover:text-zinc-200">{t('plan.createdMore', { n: paths.length - CREATED_SHOWN })}</button>
+      )}
+    </div>
+  );
+}
+
 /**
  * One request as the user asked for it: title, the plan ("진행 계획") as a numbered list where each finished
  * step gains an "a." line on how it was done, then the result. No tool calls here; the chat view has those.
@@ -66,7 +106,9 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
   const lines = (turn.user?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
   const files = new Set(turn.changes.flatMap((c) => c.files.map((f) => f.path)));
   const verify = turn.verify[turn.verify.length - 1];
-  const showAnswer = turn.answer && (!live || !total || done === total);
+  // The result only once the turn has ended: until then the latest message is progress, not the outcome.
+  const showAnswer = turn.answer && !live;
+  const latest = live && !total ? noteLine(turn.texts[turn.texts.length - 1] ?? null, 200) : null;
   return (
     <section data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
       <div className="flex items-start gap-3">
@@ -91,9 +133,13 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
           </div>
           <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} onJump={onJump} />)}</div>
         </div>
-      ) : live && !turn.answer ? (
-        <div className="flex items-center gap-3 px-1 py-1 text-[13px] text-zinc-400">
-          <span className="w-5 h-5 shrink-0 rounded-full border-2 border-amber-300 border-t-transparent animate-spin" />{t('plan.planning')}
+      ) : live ? (
+        <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-400">
+          <span className="w-5 h-5 shrink-0 rounded-full border-2 border-amber-300 border-t-transparent animate-spin" />
+          <div className="min-w-0 flex-1 leading-5">
+            {t('plan.planning')}
+            {latest && <div className="mt-0.5 text-[12.5px] leading-relaxed text-zinc-500 line-clamp-2">{latest}</div>}
+          </div>
         </div>
       ) : null}
       {showAnswer && (
@@ -104,6 +150,7 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
             : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}
         </div>
       )}
+      {turn.created.length > 0 && <CreatedFiles paths={turn.created} />}
       {turn.pending.map((p) => p.kind === 'approval'
         ? <ApprovalItem key={p.id} item={p as Item<'approval'>} onDecide={(d, m) => onApprove(p.id, d, m)} />
         : <QuestionItem key={p.id} item={p as Item<'question'>} onAnswer={(a) => onAnswer(p.id, a)} />)}
