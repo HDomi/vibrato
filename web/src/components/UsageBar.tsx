@@ -64,7 +64,7 @@ export function UsageChip({ agent, label, win, error, loading, empty }: {
     : win ? t('usage.used', { label, pct: win.usedPct, reset: resetLabel(win.resetsAt) }) : t(loading ? 'usage.loading' : 'usage.unavailable', { label, reason: '' });
   return (
     <button type="button" aria-label={title} data-agent={agent} onClick={() => loadUsage(true)} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      className={`titlebar-nodrag glass-ctl relative h-10 min-w-10 px-2 rounded-full flex flex-col items-center justify-center gap-[3px] ${agent === 'claude' ? 'glass-ctl-claude' : 'glass-ctl-codex'}`}>
+      className={`titlebar-nodrag glass-ctl relative h-[38px] min-w-[38px] px-2 rounded-full flex flex-col items-center justify-center gap-[3px] ${agent === 'claude' ? 'glass-ctl-claude' : 'glass-ctl-codex'}`}>
       <span className={`relative inline-flex items-center ${loading ? 'animate-pulse' : ''}`}>
         <span className="w-[19px] h-[9px] rounded-[2.5px] border border-zinc-300/60 p-px flex">
           <span className={`h-full rounded-[1px] transition-[width] duration-500 ease-glass ${remain === null ? 'bg-zinc-600' : color(remain)}`} style={{ width: `${remain ?? 0}%` }} />
@@ -86,11 +86,11 @@ export function UsageChip({ agent, label, win, error, loading, empty }: {
   );
 }
 
-/** Round glass icon button for the title bar. */
+/** Round glass icon button for the title bar; 38px like the view switch capsule (1px border, 4px padding, 28px tabs). */
 function CircleButton({ title, onClick, children }: { title: string; onClick?: () => void; children: React.ReactNode }) {
   return (
     <button type="button" title={title} aria-label={title} onClick={onClick}
-      className="titlebar-nodrag glass-ctl w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-zinc-200 hover:text-white">
+      className="titlebar-nodrag glass-ctl w-[38px] h-[38px] shrink-0 rounded-full flex items-center justify-center text-zinc-200 hover:text-white">
       {children}
     </button>
   );
@@ -135,7 +135,7 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
       {/* Left: room for the macOS window buttons, then the folder (VIBE only) and settings buttons. */}
       <div className={`min-w-0 flex items-center ${windowButtons ? 'pl-[84px]' : 'pl-[42px]'}`}>
         {/* Not overflow-hidden: that would clip the round button's shadow into a square. */}
-        <div className={`shrink-0 transition-[width,margin,opacity,scale] duration-300 ease-glass ${showFolder ? 'w-8 mr-2 opacity-100 scale-100' : 'w-0 mr-0 opacity-0 scale-75 pointer-events-none'}`} aria-hidden={!showFolder}>
+        <div className={`shrink-0 transition-[width,margin,opacity,scale] duration-300 ease-glass ${showFolder ? 'w-[38px] mr-2 opacity-100 scale-100' : 'w-0 mr-0 opacity-0 scale-75 pointer-events-none'}`} aria-hidden={!showFolder}>
           <CircleButton title={t('sidebar.openFolder')} onClick={onPickFolder}><Icon name="folderPlus" size={15} /></CircleButton>
         </div>
         {onOpenSettings && <CircleButton title={t('common.settings')} onClick={onOpenSettings}><Icon name="gear" size={15} /></CircleButton>}
