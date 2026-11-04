@@ -1,6 +1,6 @@
 import { memo, useRef, useState } from 'react';
 import MarkdownView, { CopyButton } from './MarkdownView';
-import { injectedSummary, type ChatItem } from '../lib/chatStore';
+import { todosFromInput, injectedSummary, type ChatItem } from '../lib/chatStore';
 import { imageSrc } from '../lib/api';
 import { openLightbox } from './Lightbox';
 import { t, useLang } from '../lib/i18n';
@@ -30,7 +30,7 @@ export function clockTime(ms: number): string {
 
 const fileAttachment = (path: string, kind: 'image' | 'file' = 'image'): Attachment => ({ path, name: path.split('/').pop() ?? path, kind });
 
-function summarizeInput(name: string, input: unknown): string {
+export function summarizeInput(name: string, input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>;
   switch (name) {
     case 'Bash': return String(i.command ?? '');
@@ -153,6 +153,41 @@ function ToolImages({ images }: { images: { src: string; label: string }[] }) {
           className="max-h-56 max-w-full rounded-md border border-white/10 bg-black/30 object-contain cursor-zoom-in hover:border-white/25 transition-colors"
           onClick={(e) => { e.stopPropagation(); openLightbox(im.src, im.label); }} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * A checklist update (TodoWrite, or a Codex plan update recorded the same way): one line with progress and the
+ * step in hand, the whole list on click. The plan view shows these as the steps themselves.
+ */
+export function PlanSnapshot({ item, onShowPlan }: { item: Extract<ChatItem, { kind: 'tool' }>; onShowPlan?: () => void }) {
+  useLang();
+  const [open, setOpen] = useState(false);
+  const todos = todosFromInput(item.input) ?? [];
+  const done = todos.filter((x) => x.status === 'completed').length;
+  const current = todos.find((x) => x.status === 'in_progress');
+  return (
+    <div className="rounded-xl border border-line bg-black/10 text-[12px]">
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <button className="flex-1 min-w-0 flex items-center gap-2 text-left" onClick={() => setOpen((v) => !v)}>
+          <span className="shrink-0 text-zinc-400">{t('plan.checklist')}</span>
+          <span className="shrink-0 tabular-nums text-zinc-500">{done}/{todos.length}</span>
+          {current && <span className="truncate text-amber-200">◐ {current.activeForm || current.content}</span>}
+          <span className="shrink-0 text-zinc-600">{open ? '▾' : '▸'}</span>
+        </button>
+        {onShowPlan && <button className="shrink-0 text-[11px] text-zinc-400 hover:text-white transition-colors" onClick={onShowPlan}>{t('plan.jumpPlan')} →</button>}
+      </div>
+      {open && (
+        <ul className="border-t border-line px-3 py-1.5 space-y-0.5">
+          {todos.map((x, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className={`shrink-0 w-3 text-center ${x.status === 'completed' ? 'text-emerald-300' : x.status === 'in_progress' ? 'text-amber-300' : 'text-zinc-500'}`}>{x.status === 'completed' ? '✓' : x.status === 'in_progress' ? '◐' : '○'}</span>
+              <span className={x.status === 'completed' ? 'text-zinc-400 line-through decoration-zinc-600' : x.status === 'in_progress' ? 'text-zinc-100' : 'text-zinc-300'}>{x.content}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

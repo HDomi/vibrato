@@ -239,9 +239,17 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       }
       return next;
     }
-    case 'todos':
+    case 'todos': {
       next.todos = e.items;
+      // Codex sends its plan as events, not as a tool call: record it in the timeline the way Claude's TodoWrite
+      // appears, so the plan view can tell which step each piece of work belongs to. Repeats are skipped.
+      let last: Extract<ChatItem, { kind: 'tool' }> | null = null;
+      for (let i = items.length - 1; i >= 0 && !last; i--) { const it = items[i]; if (it.kind === 'user') break; if (it.kind === 'tool' && it.name === 'TodoWrite') last = it; }
+      if (!last || JSON.stringify((last.input as { todos?: unknown })?.todos) !== JSON.stringify(e.items)) {
+        items.push({ kind: 'tool', id: uid(), name: 'TodoWrite', input: { todos: e.items }, output: '', isError: false, parent: null, elapsed: 0, done: true });
+      }
       return next;
+    }
     case 'task':
       next.tasks = { ...s.tasks, [e.task.id]: e.task };
       return next;

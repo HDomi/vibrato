@@ -8,7 +8,9 @@ import BacklogPanel from './BacklogPanel';
 import Composer, { type BackgroundSession } from './Composer';
 import ChatSearch from './ChatSearch';
 import TodoPanel from './TodoPanel';
-import { ApprovalItem, AssistantItem, QuestionItem, ResultItem, ToolItem, UserItem } from './ChatItems';
+import { ApprovalItem, AssistantItem, PlanSnapshot, QuestionItem, ResultItem, ToolItem, UserItem } from './ChatItems';
+import PlanView from './PlanView';
+import { PLAN_TOOL } from '../lib/planView';
 import { useContextMenu } from './ContextMenu';
 import { t, useLang } from '../lib/i18n';
 import ProjectIcon from './ProjectIcon';
@@ -100,11 +102,22 @@ export function ModelSelect({ agent, value, onChange, compact }: { agent: AgentI
   );
 }
 
-function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: { approve: Props['onApprove']; answer: Props['onAnswer']; cwd: string; rewind?: (messageId: string) => void; latestVerify?: string; verify?: () => void; review?: (changes: Extract<ChatItem, { kind: 'changes' }>) => void; otherAgent?: string }): React.ReactNode {
+type SessionView = 'chat' | 'plan';
+const LS_VIEW = 'vibe.sessionView';
+/** This session's last view, else the default for new sessions (Settings > General). */
+function readSessionView(id: string): SessionView {
+  try {
+    const v = localStorage.getItem(`${LS_VIEW}.${id}`) ?? localStorage.getItem(LS_VIEW);
+    return v === 'plan' ? 'plan' : 'chat';
+  } catch { return 'chat'; }
+}
+
+function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: { showPlan?: (todoId: string) => void; approve: Props['onApprove']; answer: Props['onAnswer']; cwd: string; rewind?: (messageId: string) => void; latestVerify?: string; verify?: () => void; review?: (changes: Extract<ChatItem, { kind: 'changes' }>) => void; otherAgent?: string }): React.ReactNode {
   switch (it.kind) {
     case 'user': return <UserItem key={it.id} item={it} onRewind={actions.rewind && UUID_RE.test(it.id) && !isInjected(it) ? () => actions.rewind!(it.id) : undefined} />;
     case 'assistant': return <AssistantItem key={it.id} item={it} baseDir={actions.cwd} />;
     case 'tool': {
+      if (it.name === PLAN_TOOL && !it.parent) return <PlanSnapshot key={it.id} item={it} onShowPlan={actions.showPlan ? () => actions.showPlan!(it.id) : undefined} />;
       const kids = childrenOf.get(it.id);
       return <ToolItem key={it.id} item={it}>{kids?.map((k) => renderItem(k, childrenOf, actions))}</ToolItem>;
     }
@@ -362,6 +375,14 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const [atBottom, setAtBottom] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [searching, setSearching] = useState(false);
+  // Chat or plan view, remembered per session; new sessions follow Settings > General.
+  const [view, setView] = useState<SessionView>('chat');
+  const [focusTurn, setFocusTurn] = useState<string | null>(null);
+  useEffect(() => { if (session) { setView(readSessionView(session.id)); setFocusTurn(null); } }, [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const switchView = (v: SessionView) => {
+    setView(v);
+    if (session) try { localStorage.setItem(`${LS_VIEW}.${session.id}`, v); } catch { /* ignore */ }
+  };
   // Export mode: top-level blocks get a checkbox; the picked ones become one Markdown file (plus images, zipped).
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [withThinking, setWithThinking] = useState(false);
@@ -376,7 +397,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   }, [picked]);
   // ⌘F (dispatched by the app's shortcut handler) opens the in-chat search bar.
   useEffect(() => {
-    const open = () => { if (viewActive.current) setSearching(true); };
+    const open = () => { if (viewActive.current) { setView('chat'); setSearching(true); } };
     window.addEventListener('vibe:chat-search', open);
     return () => window.removeEventListener('vibe:chat-search', open);
   }, []);
@@ -444,7 +465,30 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   // Blocks worth picking by default: the conversation itself, not tool calls or status lines.
   const exportable = top.filter((it) => !(it.kind === 'assistant' && it.streaming && !it.text) && !(it.kind === 'user' && isInjected(it)));
   const chatOnly = () => new Set(exportable.filter((it) => it.kind === 'user' || it.kind === 'assistant').map((it) => it.id));
-  const startExport = () => { setSearching(false); setPicked(chatOnly()); };
+  const startExport = () => { setSearching(false); switchView('chat'); setPicked(chatOnly()); };
+  // Plan view -> the item in the chat, briefly outlined.
+  const showInChat = (id: string) => {
+    switchView('chat');
+    stick.current = false; setAtBottom(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = content.current?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('item-flash');
+      window.setTimeout(() => el.classList.remove('item-flash'), 1600);
+    }));
+  };
+  // A checklist in the chat -> its turn in the plan view.
+  const showInPlan = (todoId: string) => {
+    let turn: string | null = null;
+    for (const it of top) {
+      if (it.kind === 'user' && !isInjected(it)) turn = it.id;
+      else if (!turn) turn = `pre-${it.id}`;
+      if (it.id === todoId) break;
+    }
+    setFocusTurn(turn);
+    switchView('plan');
+  };
   const togglePick = (id: string) => setPicked((p) => { if (!p) return p; const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const runExport = async () => {
     if (!picked || !picked.size || exporting) return;
@@ -536,6 +580,14 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         <AgentIcon agent={session.agent} size={16} />
         <span className="font-medium text-zinc-200">{session.agent === 'codex' ? 'Codex' : 'Claude'}</span>
         <ModelSelect agent={session.agent} value={session.model ?? null} onChange={onModel} compact />
+        <div className="shrink-0 flex items-center rounded-full bg-black/20 border border-line p-0.5" title={t('plan.view.hint')}>
+          {(['chat', 'plan'] as const).map((v) => (
+            <button key={v} onClick={() => { setFocusTurn(null); switchView(v); }}
+              className={`h-6 px-2.5 rounded-full text-[11px] transition-colors duration-150 ${view === v ? 'bg-selected text-on-selected' : 'text-zinc-300 hover:text-white'}`}>
+              {t(`plan.view.${v}`)}
+            </button>
+          ))}
+        </div>
         <span className="text-zinc-500 truncate min-w-0 @max-[560px]:hidden" title={session.cwd}>{session.cwd.split('/').slice(-2).join('/')}</span>
         {session.worktree && <WorktreeChip info={session.worktree} running={running} othersUsing={worktreeUsers} onFinished={onClose} commitTitle={displayTitle(session, 60) ?? session.worktree.branch}
           partner={partner && partner.worktree ? { id: partner.id, agent: partner.agent, worktree: partner.worktree, running: partner.status === 'running' } : undefined}
@@ -569,15 +621,17 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         </div>
       )}
       <div className="flex-1 min-h-0 relative">
-        {searching && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
+        {view === 'plan' && <PlanView items={session.items} running={running} cwd={session.cwd} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
+        {searching && view === 'chat' && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
           onJump={() => { stick.current = false; setAtBottom(false); }} />}
-        <div ref={scroller} className="absolute inset-0 overflow-y-auto" onScroll={onScroll} onWheel={onWheel}>
+        {/* Kept mounted under the plan view so switching back keeps its place. */}
+        <div ref={scroller} className={`absolute inset-0 overflow-y-auto ${view === 'plan' ? 'invisible' : ''}`} onScroll={onScroll} onWheel={onWheel}>
           <div ref={content} className="px-5 py-4 space-y-3">
             {session.resumed && <ResumeBrief session={session} />}
             {top.length === 0 && <div className="text-center text-zinc-600 text-sm py-10">{session.restoring ? t('chat.restoring') : session.status === 'starting' ? t('chat.starting') : t('chat.firstMessage')}</div>}
             {top.map((it) => {
-              const node = renderItem(it, childrenOf, { approve: onApprove, answer: onAnswer, cwd: session.cwd, rewind: canRewind ? rewind : undefined, latestVerify, verify: running ? undefined : onVerify, review: onCrossReview, otherAgent: session.agent === 'claude' ? 'Codex' : 'Claude' });
-              if (!picked) return node;
+              const node = renderItem(it, childrenOf, { showPlan: picked ? undefined : showInPlan, approve: onApprove, answer: onAnswer, cwd: session.cwd, rewind: canRewind ? rewind : undefined, latestVerify, verify: running ? undefined : onVerify, review: onCrossReview, otherAgent: session.agent === 'claude' ? 'Codex' : 'Claude' });
+              if (!picked) return <div key={it.id} data-item-id={it.id}>{node}</div>;
               const on = picked.has(it.id);
               // In export mode a click anywhere on a block toggles it; the block's own buttons are inert meanwhile.
               return (
@@ -589,7 +643,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
             })}
           </div>
         </div>
-        {!atBottom && (
+        {!atBottom && view === 'chat' && (
           <button onClick={jump} className="absolute bottom-3 left-1/2 -translate-x-1/2 glass-pop pop-in !rounded-full px-3.5 py-1.5 text-xs text-zinc-200 hover:text-white">{t('chat.jumpLatest')}</button>
         )}
       </div>
