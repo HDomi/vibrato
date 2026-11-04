@@ -108,6 +108,18 @@ export interface ExtPlugin { id: string; name: string; description: string; enab
 export interface ExtensionsOff { skills?: string[]; plugins?: string[] }
 export interface AgentExtensions { skills: ExtSkill[]; plugins: ExtPlugin[]; error?: string; off: ExtensionsOff }
 
+/** Settings > Permissions snapshot (server/permissions.ts). */
+export type PermState = 'granted' | 'denied' | 'limited' | 'notDetermined' | 'restricted' | 'unknown';
+export interface TccRow { service: string; client: string; db: 'user' | 'system'; state: PermState; target: string | null; modified: number | null; stale: boolean }
+export interface ClaudeRuleFile { file: string; scope: 'user' | 'project'; project: string | null; allow: string[]; ask: string[]; deny: string[]; defaultMode: string | null; additionalDirectories: string[] }
+export interface CodexRule { file: string; line: number; text: string; pattern: string[]; decision: string }
+export interface PermissionsSnapshot {
+  bundleIds: string[]; fullDisk: boolean; tcc: TccRow[] | null;
+  folders: Record<'desktop' | 'documents' | 'downloads', PermState>; photos: PermState; wakeHelper: boolean;
+  claude: ClaudeRuleFile[];
+  codex: { file: string; approvalPolicy: string | null; sandboxMode: string | null; trusted: { path: string; level: string }[]; rules: CodexRule[] } | null;
+}
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) { super(message); }
 }
@@ -244,6 +256,11 @@ export const api = {
   scheduleDelete: (id: string) => req<ScheduleSnapshot>(`/api/schedules/${q(id)}`, { method: 'DELETE' }),
   scheduleRunNow: (id: string) => post<ScheduleSnapshot>(`/api/schedules/${q(id)}/run`, {}),
   scheduleClearRuns: () => req<ScheduleSnapshot>('/api/schedule-runs', { method: 'DELETE' }),
+  permissions: (bundlePath?: string | null) => req<PermissionsSnapshot>(`/api/permissions${bundlePath ? `?bundlePath=${q(bundlePath)}` : ''}`),
+  requestPermission: (id: string) => post<{ state: PermState }>('/api/permissions/request', { id }),
+  openPermissionPane: (pane: string) => post<{ ok: true }>('/api/permissions/open', { pane }),
+  removeClaudeRule: (file: string, list: 'allow' | 'ask' | 'deny' | 'additionalDirectories', rule: string) => post<{ ok: true }>('/api/permissions/claude-rule/remove', { file, list, rule }),
+  removeCodexRule: (file: string, text: string) => post<{ ok: true }>('/api/permissions/codex-rule/remove', { file, text }),
   scheduleWakeHelper: (install: boolean, prompt: string) => post<ScheduleSnapshot & { result: 'ok' | 'cancelled' }>('/api/schedules/wake-helper', { install, prompt }),
   backlogAll: () => req<{ cwd: string; backlog: Backlog }[]>('/api/backlog/all'),
   saveBacklog: (cwd: string, backlog: Backlog) => req<Backlog>('/api/backlog', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd, backlog }) }),

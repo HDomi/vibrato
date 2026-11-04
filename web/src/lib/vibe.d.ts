@@ -5,6 +5,13 @@ export interface LockSettings { mainDisplay: string | null }
 export interface LockDisplay { key: string; label: string; internal: boolean; primary: boolean; main: boolean; bounds: ViewBounds }
 export interface LockSessionSummary { agent: string; total: number; running: number; waiting: number }
 export interface LockInit { role: 'main' | 'sub'; sessions: LockSessionSummary[]; retryIn: number }
+/** Privacy states only the app process can read (electron/main.cts `permissions:info`). */
+export interface AppPermissionInfo {
+  bundlePath: string | null;
+  screen: string; camera: string; microphone: string;
+  accessibility: boolean;
+  loginItem: boolean;
+}
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
   set: (patch: Partial<LockSettings>) => Promise<LockSettings | null>;
@@ -47,6 +54,11 @@ declare global {
       onNotificationApproval?: (cb: (answer: { sessionId: string; requestId: string; decision: 'allow' | 'allow_always' | 'deny' }) => void) => void;
       closeNotification?: (requestId: string) => void;
       openNotificationSettings?: () => void;
+      /** Settings > Permissions (Electron, macOS). `info` is null elsewhere. */
+      permissions?: {
+        info: () => Promise<AppPermissionInfo | null>;
+        ask: (id: 'accessibility' | 'camera' | 'microphone') => Promise<boolean>;
+      };
       keepAwake?: (busy: boolean) => void;
       onPowerResume?: (cb: () => void) => void;
       onFullScreen?: (cb: (on: boolean) => void) => () => void;

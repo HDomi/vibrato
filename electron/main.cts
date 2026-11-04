@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, shell, systemPreferences } from 'electron';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -312,6 +312,26 @@ ipcMain.handle('login-item', (e, enable: boolean | null) => {
   if (!fromApp(e)) return false;
   if (typeof enable === 'boolean') app.setLoginItemSettings({ openAtLogin: enable });
   return app.getLoginItemSettings().openAtLogin;
+});
+
+// Settings > Permissions: the privacy states only the app process can read, plus which bundle it runs as
+// (the server checks TCC rows against that bundle's current signature).
+const appBundle = () => { const m = /^(.*?\.app)\/Contents\//.exec(process.execPath); return m ? m[1] : null; };
+ipcMain.handle('permissions:info', (e) => {
+  if (!fromApp(e) || process.platform !== 'darwin') return null;
+  const media = (k: 'screen' | 'camera' | 'microphone') => { try { return systemPreferences.getMediaAccessStatus(k); } catch { return 'unknown'; } };
+  return {
+    bundlePath: appBundle(),
+    screen: media('screen'), camera: media('camera'), microphone: media('microphone'),
+    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+    loginItem: app.getLoginItemSettings().openAtLogin,
+  };
+});
+ipcMain.handle('permissions:ask', async (e, id: unknown) => {
+  if (!fromApp(e) || process.platform !== 'darwin') return false;
+  if (id === 'accessibility') return systemPreferences.isTrustedAccessibilityClient(true);
+  if (id === 'camera' || id === 'microphone') return systemPreferences.askForMediaAccess(id);
+  return false;
 });
 
 // Native notifications (task finished, approval needed) so the user is reached while in another app.

@@ -18,6 +18,14 @@ $PB -c "Set :CFBundleDisplayName $NAME" "$PLIST" 2>/dev/null || $PB -c "Add :CFB
 $PB -c "Set :CFBundleIdentifier $BUNDLE_ID" "$PLIST"
 # Approval notifications carry buttons, so default to the "alert" style that stays on screen until dismissed.
 $PB -c "Set :NSUserNotificationAlertStyle alert" "$PLIST" 2>/dev/null || $PB -c "Add :NSUserNotificationAlertStyle string alert" "$PLIST"
+# Prompt texts for the privacy permissions agents may need (Settings > Permissions requests them).
+$PB -c "Set :NSPhotoLibraryUsageDescription Vibrato lets agents read photos you choose to work with." "$PLIST" 2>/dev/null || $PB -c "Add :NSPhotoLibraryUsageDescription string Vibrato lets agents read photos you choose to work with." "$PLIST"
+$PB -c "Set :NSDesktopFolderUsageDescription Vibrato and its agents work on projects in your Desktop folder." "$PLIST" 2>/dev/null || $PB -c "Add :NSDesktopFolderUsageDescription string Vibrato and its agents work on projects in your Desktop folder." "$PLIST"
+$PB -c "Set :NSDocumentsFolderUsageDescription Vibrato and its agents work on projects in your Documents folder." "$PLIST" 2>/dev/null || $PB -c "Add :NSDocumentsFolderUsageDescription string Vibrato and its agents work on projects in your Documents folder." "$PLIST"
+$PB -c "Set :NSDownloadsFolderUsageDescription Vibrato and its agents read files from your Downloads folder." "$PLIST" 2>/dev/null || $PB -c "Add :NSDownloadsFolderUsageDescription string Vibrato and its agents read files from your Downloads folder." "$PLIST"
+$PB -c "Set :NSRemovableVolumesUsageDescription Vibrato and its agents work on projects on removable drives." "$PLIST" 2>/dev/null || $PB -c "Add :NSRemovableVolumesUsageDescription string Vibrato and its agents work on projects on removable drives." "$PLIST"
+$PB -c "Set :NSNetworkVolumesUsageDescription Vibrato and its agents work on projects on network drives." "$PLIST" 2>/dev/null || $PB -c "Add :NSNetworkVolumesUsageDescription string Vibrato and its agents work on projects on network drives." "$PLIST"
+$PB -c "Set :NSAppleEventsUsageDescription Agents running in Vibrato can automate other apps when you allow it." "$PLIST" 2>/dev/null || $PB -c "Add :NSAppleEventsUsageDescription string Agents running in Vibrato can automate other apps when you allow it." "$PLIST"
 if [ -f "$ICON" ]; then
   cp "$ICON" "$APP/Contents/Resources/electron.icns"
 fi

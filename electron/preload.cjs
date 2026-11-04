@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('vibe', {
   closeNotification: (requestId) => ipcRenderer.send('notify-close', requestId),
   // System Settings > Notifications > Vibrato, for switching banners to alerts that stay on screen.
   openNotificationSettings: () => ipcRenderer.send('open-notification-settings'),
+  // Settings > Permissions: app-process privacy states and the prompts only the app can raise.
+  permissions: {
+    info: () => ipcRenderer.invoke('permissions:info'),
+    ask: (id) => ipcRenderer.invoke('permissions:ask', id),
+  },
   // Hold / release the "no idle sleep" assertion while agents or shells are busy; wake-up signal for reconnects.
   keepAwake: (busy) => ipcRenderer.send('keep-awake', busy),
   onPowerResume: (cb) => { ipcRenderer.on('power-resume', () => cb()); },

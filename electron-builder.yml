@@ -35,6 +35,14 @@ mac:
   extendInfo:
     # Approval notifications carry buttons, so default to the "alert" style that stays until dismissed.
     NSUserNotificationAlertStyle: alert
+    # Prompt texts for the privacy permissions agents may need (Settings > Permissions requests them).
+    NSPhotoLibraryUsageDescription: Vibrato lets agents read photos you choose to work with.
+    NSDesktopFolderUsageDescription: Vibrato and its agents work on projects in your Desktop folder.
+    NSDocumentsFolderUsageDescription: Vibrato and its agents work on projects in your Documents folder.
+    NSDownloadsFolderUsageDescription: Vibrato and its agents read files from your Downloads folder.
+    NSRemovableVolumesUsageDescription: Vibrato and its agents work on projects on removable drives.
+    NSNetworkVolumesUsageDescription: Vibrato and its agents work on projects on network drives.
+    NSAppleEventsUsageDescription: Agents running in Vibrato can automate other apps when you allow it.
 dmg:
   artifactName: Vibrato-${version}-${arch}.${ext}
 afterPack: scripts/after-pack.cjs

@@ -40,6 +40,7 @@ import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWork
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
 import { killProcess, listeningPorts, netInfo, proxyHttp, type ProxyRequest } from './net.js';
 import type { Scheduler } from './scheduler.js';
+import { openSettingsPane, PermissionsError, permissionsSnapshot, removeClaudeRule, removeCodexRule, requestPermission, type ClaudeList } from './permissions.js';
 import { ScheduleError } from './schedule.js';
 import { cleanFormTypes, FormTypeError } from '../web/src/lib/promptForm.js';
 
@@ -73,7 +74,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
 
   app.onError((err, c) => {
     if (err instanceof SyntaxError) return c.json({ error: 'Invalid JSON', code: 'BAD_REQUEST' }, 400);
-    if (err instanceof ScheduleError || err instanceof FormTypeError) return c.json({ error: err.message, code: 'BAD_REQUEST' }, 400);
+    if (err instanceof ScheduleError || err instanceof FormTypeError || err instanceof PermissionsError) return c.json({ error: err.message, code: 'BAD_REQUEST' }, 400);
     if (err instanceof FsError) {
       return c.json({ error: err.message, code: err.code }, err.status as 400);
     }
@@ -488,6 +489,24 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     const result = await sched().power.setHelper(b.install === true, typeof b.prompt === 'string' && b.prompt ? b.prompt.slice(0, 300) : 'Vibrato wants to wake this Mac for scheduled runs.');
     await sched().tick();
     return c.json({ result, ...(await sched().snapshot()) });
+  });
+
+  // Settings > Permissions (permissions.ts): macOS privacy grants, past and present, and the agents' rules.
+  app.get('/api/permissions', async (c) => c.json(await permissionsSnapshot({
+    bundlePath: c.req.query('bundlePath'),
+    wakeHelper: scheduler ? () => scheduler.power.helperInstalled(true) : undefined,
+  })));
+  app.post('/api/permissions/request', async (c) => c.json({ state: await requestPermission(String((await c.req.json<{ id?: unknown }>()).id ?? '')) }));
+  app.post('/api/permissions/open', async (c) => { await openSettingsPane(String((await c.req.json<{ pane?: unknown }>()).pane ?? '')); return c.json({ ok: true }); });
+  app.post('/api/permissions/claude-rule/remove', async (c) => {
+    const b = await c.req.json<{ file?: unknown; list?: unknown; rule?: unknown }>();
+    await removeClaudeRule(String(b.file ?? ''), String(b.list ?? '') as ClaudeList, String(b.rule ?? ''));
+    return c.json({ ok: true });
+  });
+  app.post('/api/permissions/codex-rule/remove', async (c) => {
+    const b = await c.req.json<{ file?: unknown; text?: unknown }>();
+    await removeCodexRule(String(b.file ?? ''), String(b.text ?? ''));
+    return c.json({ ok: true });
   });
 
   // Task backlog per project; the client runs it (see web/src/lib/backlog.ts).

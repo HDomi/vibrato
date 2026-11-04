@@ -7,12 +7,13 @@ import LockSettings from './LockSettings';
 import FormTypesSettings from './FormTypesSettings';
 import WallpaperSettings from './WallpaperSettings';
 import AgentDefaultsSettings from './AgentDefaultsSettings';
+import PermissionsSettings from './PermissionsSettings';
 import AgentExtensionsSettings from './AgentExtensionsSettings';
 import { UpdateBadge } from './UpdatePanel';
 
 interface Props { onClose: () => void; /** Open at the lock screen tab (from the menu bar). */ focusLock?: boolean; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
 
-type Tab = 'general' | 'agentDefaults' | 'wallpaper' | 'customPrompt' | 'formTypes' | 'lock' | 'agents';
+type Tab = 'general' | 'agentDefaults' | 'wallpaper' | 'customPrompt' | 'formTypes' | 'lock' | 'agents' | 'permissions';
 const TABS: { id: Tab; key: string }[] = [
   { id: 'general', key: 'settings.general' },
   { id: 'agentDefaults', key: 'settings.tab.agentDefaults' },
@@ -21,6 +22,7 @@ const TABS: { id: Tab; key: string }[] = [
   { id: 'formTypes', key: 'settings.tab.formTypes' },
   { id: 'lock', key: 'settings.tab.lock' },
   { id: 'agents', key: 'settings.tab.agents' },
+  { id: 'permissions', key: 'settings.tab.permissions' },
 ];
 
 function methodLabel(m: string): string {
@@ -188,6 +190,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
             <div className={tab === 'customPrompt' ? '' : 'hidden'}><CustomPromptSettings /></div>
             <div className={tab === 'formTypes' ? '' : 'hidden'}><FormTypesSettings focus={focusFormTypes} /></div>
             <div className={tab === 'lock' ? '' : 'hidden'}><LockSettings focus={focusLock} /></div>
+            <div className={tab === 'permissions' ? '' : 'hidden'}><PermissionsSettings active={tab === 'permissions'} /></div>
             <div className={tab === 'agents' ? 'space-y-4' : 'hidden'}>
               {!info && <div className="text-sm text-zinc-500">{t('settings.detecting')}</div>}
               {info?.tools.map((tool) => (
