@@ -9,6 +9,7 @@ import { rejectReason } from './guard.js';
 import { setShutdownHandler } from './lifecycle.js';
 import { stopAllRuns } from './runner.js';
 import { Scheduler } from './scheduler.js';
+import { warmHistorySearch } from './historySearch.js';
 
 export async function startServer(port = PORT): Promise<ServerType> {
   await syncLoginShellPath();
@@ -19,6 +20,7 @@ export async function startServer(port = PORT): Promise<ServerType> {
     const server = serve({ fetch: app.fetch, hostname: HOST, port }, (info) => {
       console.log(`[vibrato] http://${info.address}:${info.port}`);
       void scheduler.start().catch((err) => console.warn(`[vibrato] scheduler failed to start: ${(err as Error).message}`));
+      warmHistorySearch();
       resolve(server);
     });
     const http = server as import('node:http').Server;

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 
 /** How long a removed favorite stays on screen for its shrink animation (.dock-out). */
 const LEAVE_MS = 330;
-import { api, type Favorite, type FavoriteGroup, type Favorites, type RecentSession } from '../lib/api';
+import { api, type Favorite, type FavoriteGroup, type Favorites, type HistoryHit, type RecentSession } from '../lib/api';
 import { useContextMenu, type MenuItem } from './ContextMenu';
 import { t, useLang } from '../lib/i18n';
 import { pollWhileActive } from '../lib/poll';
@@ -222,6 +222,19 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
   const box = useRef<HTMLDivElement>(null);
   const [sessions, setSessions] = useState<RecentSession[] | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // Search through every saved conversation (both CLIs), by what was said in it.
+  const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<HistoryHit[] | null>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
+  const q = query.trim();
+  useEffect(() => {
+    if (q.length < 2) { setHits(null); return; }
+    let live = true;
+    setHits(null);
+    const timer = window.setTimeout(() => { api.historySearch(q).then((r) => { if (live) setHits(r); }).catch(() => { if (live) setHits([]); }); }, 250);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [q]);
+  useEffect(() => { searchBox.current?.focus(); }, []);
   const reload = () => api.historyAll().then(setSessions).catch(() => setSessions((s) => s ?? []));
   useEffect(() => {
     void reload();
@@ -235,7 +248,11 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
       if (box.current?.contains(target) || target.closest?.('[data-context-menu]') || anchor.current?.querySelector('[aria-expanded]')?.contains(target)) return;
       onClose();
     };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !renaming) onClose(); };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || renaming) return;
+      if (searchBox.current?.value) { setQuery(''); return; }
+      onClose();
+    };
     window.addEventListener('mousedown', away);
     window.addEventListener('keydown', esc);
     return () => { window.removeEventListener('mousedown', away); window.removeEventListener('keydown', esc); };
@@ -254,7 +271,7 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
     } },
   ];
   return (
-    <div ref={box} className="glass-pop pop-in fixed z-40 w-80 max-h-[min(560px,70vh)] flex flex-col overflow-hidden"
+    <div ref={box} className="glass-pop pop-in fixed z-40 w-[400px] max-h-[min(600px,72vh)] flex flex-col overflow-hidden"
       style={{ left: (r?.right ?? 72) + 12, bottom: Math.max(16, window.innerHeight - (r?.bottom ?? window.innerHeight - 16)) }}
       onContextMenu={(e) => e.stopPropagation()}>
       <div className="h-10 shrink-0 flex items-center gap-2 px-3.5 border-b border-white/10">
@@ -263,6 +280,32 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
         <div className="flex-1" />
         <button className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-white/10 transition-colors" onClick={() => void reload()} title={t('common.refresh')}><Icon name="reload" size={13} /></button>
       </div>
+      <div className="shrink-0 px-2.5 pt-2.5">
+        <div className="flex items-center gap-2 rounded-full bg-black/25 border border-white/10 px-3 focus-within:border-white/30 transition-colors">
+          <Icon name="search" size={13} className="text-zinc-400 shrink-0" />
+          <input ref={searchBox} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('search.placeholder')} spellCheck={false}
+            className="flex-1 min-w-0 bg-transparent py-1.5 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500" />
+          {query && <button className="shrink-0 text-zinc-500 hover:text-white" onClick={() => setQuery('')} aria-label={t('common.clear')}><Icon name="close" size={11} /></button>}
+        </div>
+      </div>
+      {q.length >= 2 ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-1.5">
+          {hits === null && <div className="px-2.5 py-2 text-xs text-zinc-500">{t('search.searching')}</div>}
+          {hits?.length === 0 && <div className="px-2.5 py-2 text-xs text-zinc-500">{t('search.none')}</div>}
+          {hits?.map((h) => (
+            <button key={h.agent + h.sessionId} title={h.cwd ?? h.sessionId}
+              onClick={() => onResume({ agent: h.agent, sessionId: h.sessionId, title: h.title, cwd: h.cwd, lastModified: h.lastModified })}
+              className="w-full rounded-lg px-2.5 py-2 text-left hover:bg-white/10 transition-colors">
+              <div className="flex items-center gap-2 text-[12.5px] text-zinc-100">
+                <AgentIcon agent={h.agent} size={14} />
+                <span className="truncate flex-1">{h.title}</span>
+                <span className="shrink-0 text-[10px] text-zinc-500">{h.cwd ? `${baseName(h.cwd)} · ` : ''}{new Date(h.lastModified).toLocaleDateString()}</span>
+              </div>
+              <div className="mt-1 pl-[22px] text-[11.5px] leading-relaxed text-zinc-400 line-clamp-2"><Marked text={h.snippet} query={q} /></div>
+            </button>
+          ))}
+        </div>
+      ) : (
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5">
         {sessions === null && <div className="px-2.5 py-2 text-xs text-zinc-500">…</div>}
         {sessions?.length === 0 && <div className="px-2.5 py-2 text-xs text-zinc-500">{t('sidebar.noSessions')}</div>}
@@ -280,6 +323,21 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
           </button>
         ))}
       </div>
+      )}
     </div>
   );
+}
+
+/** The snippet with each occurrence of the query highlighted. */
+function Marked({ text, query }: { text: string; query: string }) {
+  const lower = text.toLowerCase();
+  const q = query.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let from = 0;
+  for (let at = lower.indexOf(q); at >= 0 && q; at = lower.indexOf(q, at + q.length)) {
+    parts.push(text.slice(from, at), <mark key={at} className="rounded bg-amber-300/25 px-0.5 text-amber-100">{text.slice(at, at + q.length)}</mark>);
+    from = at + q.length;
+  }
+  parts.push(text.slice(from));
+  return <>{parts}</>;
 }

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Vibrato — Glass</title>
+  <defs>
+    <linearGradient id="body" x1="150" y1="64" x2="820" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#424B5B"/>
+      <stop offset=".4" stop-color="#202631"/>
+      <stop offset="1" stop-color="#101319"/>
+    </linearGradient>
+    <radialGradient id="blue" cx="0" cy="0" r="1" gradientTransform="translate(790 810) rotate(-135) scale(640 470)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7AA2F7" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#7AA2F7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(240 100) rotate(55) scale(800 660)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E5EDF9" stop-opacity=".24"/>
+      <stop offset=".6" stop-color="#E5EDF9" stop-opacity=".025"/>
+      <stop offset="1" stop-color="#E5EDF9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="160" y1="64" x2="824" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5F8FF" stop-opacity=".85"/>
+      <stop offset=".26" stop-color="#D7E5F5" stop-opacity=".25"/>
+      <stop offset=".48" stop-color="#B5C7E4" stop-opacity=".08"/>
+      <stop offset=".78" stop-color="#A3BDE8" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#EDF4FF" stop-opacity=".72"/>
+    </linearGradient>
+    <linearGradient id="lip" x1="512" y1="80" x2="512" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".25"/>
+      <stop offset=".25" stop-color="#FFFFFF" stop-opacity=".025"/>
+      <stop offset=".75" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#BFD6FF" stop-opacity=".17"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="260" y1="80" x2="590" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="crystal" x1="300" y1="335" x2="720" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FAFF" stop-opacity=".94"/>
+      <stop offset=".32" stop-color="#E0EBFB" stop-opacity=".8"/>
+      <stop offset=".57" stop-color="#A2B8D8" stop-opacity=".6"/>
+      <stop offset=".8" stop-color="#C8DBF7" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#F1F6FF" stop-opacity=".96"/>
+    </linearGradient>
+    <linearGradient id="pulse" x1="390" y1="402" x2="634" y2="622" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2F8FF"/>
+      <stop offset=".4" stop-color="#D7E5F5"/>
+      <stop offset="1" stop-color="#7AA2F7"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="310" y1="340" x2="650" y2="690" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".95"/>
+      <stop offset=".4" stop-color="#FFFFFF" stop-opacity=".25"/>
+      <stop offset=".66" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#EAF4FF" stop-opacity=".65"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity=".28"/>
+    </filter>
+    <filter id="mark-shadow" x="110" y="260" width="804" height="520" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="9" stdDeviation="8" flood-color="#000000" flood-opacity=".38"/>
+    </filter>
+    <filter id="bloom" x="240" y="270" width="544" height="480" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="204"/></clipPath>
+    <path id="brackets" d="M340 352 196 512 340 672M684 352 828 512 684 672"/>
+    <path id="wave" d="M390 524H432L478 402 546 622 592 500H634"/>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="204" fill="url(#body)" filter="url(#shadow)"/>
+  <g clip-path="url(#tile)">
+    <rect x="64" y="64" width="896" height="896" fill="url(#blue)"/>
+    <rect x="64" y="64" width="896" height="896" fill="url(#light)"/>
+    <path d="M64 64H960V268C710 251 407 383 64 620Z" fill="url(#sheen)"/>
+    <use href="#wave" stroke="#7AA2F7" stroke-opacity=".19" stroke-width="68" stroke-linecap="round" stroke-linejoin="round" filter="url(#bloom)"/>
+  </g>
+  <rect x="66" y="66" width="892" height="892" rx="202" stroke="url(#rim)" stroke-width="3"/>
+  <rect x="76" y="76" width="872" height="872" rx="193" stroke="url(#lip)" stroke-width="1.5"/>
+  <g stroke-linecap="round" stroke-linejoin="round" filter="url(#mark-shadow)">
+    <use href="#brackets" stroke="#0B0D12" stroke-opacity=".55" stroke-width="62"/>
+    <use href="#brackets" stroke="url(#crystal)" stroke-width="58"/>
+    <use href="#wave" stroke="#0B0D12" stroke-opacity=".5" stroke-width="52"/>
+    <use href="#wave" stroke="url(#pulse)" stroke-width="48"/>
+  </g>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <use href="#brackets" transform="translate(-7 -9)" stroke="url(#edge)" stroke-width="9"/>
+    <use href="#wave" transform="translate(-5 -7)" stroke="url(#edge)" stroke-width="6"/>
+  </g>
+</svg>

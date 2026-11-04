@@ -54,6 +54,7 @@ export interface GitCommitFile { path: string; status: string; oldPath?: string 
 export interface GitBranch { name: string; current: boolean; remote: boolean; upstream: string | null }
 export interface GitStatus { repo: boolean; root: string | null; branch: string | null; ahead: number; behind: number; files: GitFile[] }
 
+export interface HistoryHit { agent: 'claude' | 'codex'; sessionId: string; cwd: string | null; title: string; snippet: string; lastModified: number }
 export interface RecentSession { agent: 'claude' | 'codex'; sessionId: string; title: string; cwd: string | null; lastModified: number; pinned?: boolean }
 export interface ModelInfo { id: string; name: string; description?: string; isDefault?: boolean }
 
@@ -156,6 +157,7 @@ export const api = {
   fsWatchManyUrl: (deep: string[], flat: string[]) => `/api/fs/watch?${[...deep.map((p) => `rpath=${q(p)}`), ...flat.map((p) => `path=${q(p)}`)].join('&')}`,
   clipboardFiles: () => req<{ change: number; paths: string[] }>('/api/clipboard/files'),
   setClipboardFiles: (paths: string[]) => post<{ change: number }>('/api/clipboard/files', { paths }),
+  historySearch: (query: string) => req<HistoryHit[]>(`/api/history/search?q=${q(query)}`),
   historyAll: (limit = 20) => req<RecentSession[]>(`/api/history-all?limit=${limit}`),
   models: (agent: 'claude' | 'codex') => req<ModelInfo[]>(`/api/models?agent=${agent}`),
   recent: () => req<string[]>('/api/recent'),

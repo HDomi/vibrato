@@ -33,6 +33,7 @@ import { revertTurn, turnDiff } from './turns.js';
 import { agentContext } from './agentContext.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
+import { searchHistory } from './historySearch.js';
 import { loadWallpaper, saveWallpaperImages, updateWallpaper, WALL_MAX_BYTES, wallpaperPath, WallpaperError, type Wallpaper } from './wallpaper.js';
 import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.js';
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
@@ -396,6 +397,8 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return c.json({ ok: true });
   });
   // Pinned conversations ("agent:cliSessionId"); tabs and the history lists share this one list.
+  // Every saved conversation (both CLIs), by what was said in it. Before /api/history/:id, which would take it.
+  app.get('/api/history/search', async (c) => c.json(await searchHistory((c.req.query('q') ?? '').slice(0, 200), Math.max(1, Math.min(60, Number(c.req.query('limit')) || 30)))));
   app.get('/api/history/pins', async (c) => c.json((await loadConfig()).pinnedSessions));
   app.post('/api/history/pin', async (c) => {
     const b = await c.req.json<{ agent: 'claude' | 'codex'; id: string; pinned: boolean }>();
