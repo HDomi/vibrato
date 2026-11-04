@@ -28,21 +28,22 @@ function StatusIcon({ status, live }: { status: PlanStep['status']; live: boolea
   return <span key="todo" className="w-5 h-5 shrink-0 rounded-full border-2 border-white/25" />;
 }
 
-/** One checklist line: the step, and once it is under way or done, the agent's one-line account of it. */
-function StepRow({ step, live, onJump }: { step: PlanStep; live: boolean; onJump: (id: string) => void }) {
+/** One plan step: number and text, and once done, "a. how it was done" under it. */
+function StepRow({ step, index, current, live, onJump }: { step: PlanStep; index: number; current: boolean; live: boolean; onJump: (id: string) => void }) {
   useLang();
-  const current = step.status === 'in_progress';
   const done = step.status === 'completed';
   const title = current && step.activeForm ? step.activeForm : step.content;
-  const note = step.status !== 'pending' ? noteLine(step.note) : null;
+  const note = done || current ? noteLine(step.note, 200) : null;
   const target = step.items[0]?.id;
   return (
     <button type="button" disabled={!target} onClick={() => target && onJump(target)} title={target ? t('plan.jumpChat') : undefined}
       className={`group w-full flex items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 ${current && live ? 'bg-amber-300/[0.07]' : target ? 'hover:bg-fill' : ''}`}>
-      <StatusIcon status={step.status} live={live} />
+      <StatusIcon status={current ? 'in_progress' : step.status} live={live} />
       <div className="flex-1 min-w-0">
-        <div className={`text-[13.5px] leading-5 transition-colors duration-300 ${done ? 'text-zinc-400 line-through decoration-zinc-500/70' : current ? 'text-white font-medium' : 'text-zinc-300'}`}>{title}</div>
-        {note && <div className="mt-0.5 text-[12px] leading-relaxed text-zinc-500 line-clamp-2">{note}</div>}
+        <div className={`text-[13.5px] leading-5 transition-colors duration-300 ${done ? 'text-zinc-300' : current ? 'text-white font-medium' : 'text-zinc-400'}`}>
+          <span className="tabular-nums text-zinc-500 mr-1.5">{index + 1}.</span>{title}
+        </div>
+        {note && <div className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-400"><span className="shrink-0 text-zinc-500">a.</span><span className="line-clamp-2">{note}</span></div>}
       </div>
       {target && <span className="shrink-0 mt-0.5 text-[11px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">{t('plan.jumpChat')} →</span>}
     </button>
@@ -50,43 +51,56 @@ function StepRow({ step, live, onJump }: { step: PlanStep; live: boolean; onJump
 }
 
 /**
- * One request: what the user asked, then the plan as a checklist that clears step by step. No tool calls here;
- * the chat view has those. Without a plan the card says it is planning (live) or shows the answer's gist.
+ * One request as the user asked for it: title, the plan ("진행 계획") as a numbered list where each finished
+ * step gains an "a." line on how it was done, then the result. No tool calls here; the chat view has those.
  */
 function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean } & Pick<Props, 'onJump' | 'onApprove' | 'onAnswer'>) {
   useLang();
   const done = turn.steps.filter((s) => s.status === 'completed').length;
   const total = turn.steps.length;
   const state = turn.result ? (turn.result.ok ? 'done' : 'failed') : live ? 'running' : total && done < total ? 'stopped' : null;
-  const answer = noteLine(turn.after.note ?? (turn.hasPlan ? null : turn.before.note), 240);
+  // The step being worked on: the one marked in progress, else (a plan written as text) the first not yet done.
+  const marked = turn.steps.findIndex((s) => s.status === 'in_progress');
+  const current = live ? (marked >= 0 ? marked : turn.steps.findIndex((s) => s.status !== 'completed')) : -1;
+  const lines = (turn.user?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
   const files = new Set(turn.changes.flatMap((c) => c.files.map((f) => f.path)));
   const verify = turn.verify[turn.verify.length - 1];
+  const showAnswer = turn.answer && (!live || !total || done === total);
   return (
     <section data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
       <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0 text-[13.5px] leading-5 text-zinc-100 line-clamp-3 whitespace-pre-wrap">{turn.user?.text}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[14.5px] leading-6 font-semibold text-zinc-100 line-clamp-2">{lines[0]}</div>
+          {lines.length > 1 && <div className="mt-0.5 text-[12.5px] leading-relaxed text-zinc-400 line-clamp-2">{lines.slice(1).join(' · ')}</div>}
+        </div>
         {state && (
-          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' ? 'bg-amber-300/15 text-amber-200' : 'bg-fill-2 text-zinc-300'}`}>
+          <span className={`shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' ? 'bg-amber-300/15 text-amber-200' : 'bg-fill-2 text-zinc-300'}`}>
             {t(`plan.state.${state}`)}
           </span>
         )}
       </div>
-      {total > 0 && (
-        <div className="flex items-center gap-2.5">
-          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
-            <div className="h-full rounded-full bg-emerald-400/80 transition-[width] duration-500 ease-glass" style={{ width: `${(done / total) * 100}%` }} />
-          </div>
-          <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{t('plan.progress', { done, total })}</span>
-        </div>
-      )}
       {total > 0 ? (
-        <div className="-mx-1.5">{turn.steps.map((s) => <StepRow key={s.key} step={s} live={live} onJump={onJump} />)}</div>
-      ) : live && !answer ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5">
+            <span className="shrink-0 text-[11.5px] font-medium text-zinc-300">{t('plan.heading')}</span>
+            <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full bg-emerald-400/80 transition-[width] duration-500 ease-glass" style={{ width: `${(done / total) * 100}%` }} />
+            </div>
+            <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{done}/{total}</span>
+          </div>
+          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} onJump={onJump} />)}</div>
+        </div>
+      ) : live && !turn.answer ? (
         <div className="flex items-center gap-3 px-1 py-1 text-[13px] text-zinc-400">
           <span className="w-5 h-5 shrink-0 rounded-full border-2 border-amber-300 border-t-transparent animate-spin" />{t('plan.planning')}
         </div>
       ) : null}
-      {answer && (!live || !total) && <div className="text-[12.5px] leading-relaxed text-zinc-300">{answer}</div>}
+      {showAnswer && (
+        <div className="rounded-xl bg-black/15 border border-line px-3.5 py-2.5">
+          <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>
+          <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>
+        </div>
+      )}
       {turn.pending.map((p) => p.kind === 'approval'
         ? <ApprovalItem key={p.id} item={p as Item<'approval'>} onDecide={(d, m) => onApprove(p.id, d, m)} />
         : <QuestionItem key={p.id} item={p as Item<'question'>} onAnswer={(a) => onAnswer(p.id, a)} />)}

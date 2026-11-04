@@ -115,3 +115,31 @@ test('TaskCreate / TaskUpdate plans: numbered tasks, carried across turns, delet
   assert.deepEqual(turns[1].steps.map((s) => [s.content, s.status]), [['Run tests', 'completed']]);
   assert.deepEqual(turns[1].steps[0].items.map((i) => i.id), ['w2']);
 });
+
+test('a plan written in the reply becomes the checklist, "✓ n." lines clear its steps, "Result:" is the answer', () => {
+  const plan = '진행 계획\n1. 1부터 55까지 더하기\n2. 5로 나누기\n3. 나머지에 10 곱하기';
+  const live = buildPlan([user('u1', '계획 세워봐'), say('a1', `좋아.\n\n${plan}`), say('a2', '✓ 1. 55×56÷2 = 1540')])[0];
+  assert.equal(live.hasPlan, true);
+  assert.deepEqual(live.steps.map((s) => [s.content, s.status, s.note]), [
+    ['1부터 55까지 더하기', 'completed', '55×56÷2 = 1540'], ['5로 나누기', 'pending', null], ['나머지에 10 곱하기', 'pending', null]]);
+
+  // The same, written the way the previous reply did: bold headings and "1. ✓" marks in one message.
+  const done = buildPlan([user('u1', 'x'), say('a1', '**계획**\n1. 더하기\n2. 나누기\n3. 곱하기\n\n**실행**\n1. ✓ 합 = **1540**\n2. ✓ 몫 308, 나머지 0\n3. ✓ 0 × 10 = 0\n\n**결과: 0.** 몫이었다면 3080.')])[0];
+  assert.deepEqual(done.steps.map((s) => [s.content, s.status, s.note]), [['더하기', 'completed', '합 = 1540'], ['나누기', 'completed', '몫 308, 나머지 0'], ['곱하기', 'completed', '0 × 10 = 0']]);
+  assert.equal(done.answer, '0. 몫이었다면 3080.');
+
+  // No plan, no marks: the answer is the gist of the last message.
+  const plain = buildPlan([user('u1', 'hi'), say('a1', 'Hello there, nice to meet you. More.')])[0];
+  assert.equal(plain.hasPlan, false);
+  assert.equal(plain.answer, 'Hello there, nice to meet you.');
+});
+
+test('done marks add the account to steps from the task tools', () => {
+  const [turn] = buildPlan([
+    user('u1', 'go'),
+    tool('c1', 'TaskCreate', { subject: 'First' }, { output: 'Task #1 created successfully: First' }),
+    tool('s1', 'TaskUpdate', { taskId: '1', status: 'completed' }),
+    say('a1', '✓ 1. Did it with a one-liner'),
+  ]);
+  assert.equal(turn.steps[0].note, 'Did it with a one-liner');
+});

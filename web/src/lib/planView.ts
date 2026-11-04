@@ -50,6 +50,10 @@ export interface PlanTurn {
   verify: Item<'verify'>[];
   /** Approvals and questions still waiting for the user. */
   pending: (Item<'approval'> | Item<'question'>)[];
+  /** The agent's own words in this turn, in order (for the plan written as text and the result line). */
+  texts: string[];
+  /** The outcome: the reply's "Result:" line, else the gist of its last message. */
+  answer: string | null;
 }
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -126,7 +130,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [] };
+    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -189,12 +193,91 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (it.kind === 'changes') { t.changes.push(it); continue; }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
+    if (it.kind === 'assistant' && it.text.trim()) t.texts.push(it.text);
     if (!active && justDone && !justDone.note && it.kind === 'assistant' && it.text.trim()) justDone.note = it.text.trim();
     // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
     const started = t.steps.some((x) => x.status !== 'pending');
     file(active ?? (started ? t.after : t.before), it);
   }
+  for (const t of turns) applyTextPlan(t);
   return turns;
+}
+
+/*
+ * The plan as written in the reply (Settings > "Always plan" asks for it, and it is the only plan when an agent
+ * has no task-list tool): a "Plan" / "진행 계획" line followed by a numbered list, then "✓ 2. how it was done"
+ * as each step finishes, and a "Result:" / "결과:" line at the end.
+ */
+const PLAN_HEAD = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:진행\s*계획|계획|plan)\s*(?:\*\*|__)?\s*[:：]?\s*(?:\*\*)?\s*$/i;
+const PLAN_ITEM = /^\s*(\d{1,2})[.)]\s+(.+?)\s*$/;
+const DONE_MARK = /^\s*(?:[-*]\s+)?(?:✓|✔|✅|☑|\[x\])\s*(\d{1,2})\s*[.):]?\s*(.*)$/i;
+const DONE_AFTER = /^\s*(\d{1,2})[.)]\s*(?:✓|✔|✅)\s*(.*)$/;
+const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|result)\s*(?:\*\*|__)?\s*[:：]\s*(.*)$/i;
+const plainLine = (s: string) => s.replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
+
+/** The last numbered list under a plan heading in these messages. */
+export function textPlan(texts: string[]): string[] | null {
+  let found: string[] | null = null;
+  for (const text of texts) {
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!PLAN_HEAD.test(lines[i])) continue;
+      const steps: string[] = [];
+      for (let j = i + 1; j < lines.length; j++) {
+        const m = lines[j].match(PLAN_ITEM);
+        if (m && !DONE_AFTER.test(lines[j])) { steps[Number(m[1]) - 1] = plainLine(m[2]); continue; }
+        if (!lines[j].trim() && !steps.length) continue;
+        if (!lines[j].trim() || /^\s{2,}\S/.test(lines[j])) continue; // blank lines and indented details inside the list
+        break;
+      }
+      const list = steps.filter(Boolean);
+      if (list.length >= 2) found = list;
+    }
+  }
+  return found;
+}
+
+/** "✓ 2. how" lines: step number (1-based) -> how it was done. */
+export function doneMarks(texts: string[]): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const text of texts) {
+    for (const line of text.split('\n')) {
+      const m = line.match(DONE_MARK) ?? line.match(DONE_AFTER);
+      if (m) out.set(Number(m[1]), plainLine(m[2]));
+    }
+  }
+  return out;
+}
+
+function resultLine(texts: string[]): string | null {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const lines = texts[i].split('\n');
+    for (let j = lines.length - 1; j >= 0; j--) {
+      const m = lines[j].match(RESULT_LINE);
+      if (!m) continue;
+      const rest = plainLine(m[1]) || plainLine(lines.slice(j + 1).find((l) => l.trim()) ?? '');
+      if (rest) return rest;
+    }
+  }
+  return null;
+}
+
+function applyTextPlan(t: PlanTurn) {
+  const marks = doneMarks(t.texts);
+  if (!t.hasPlan) {
+    const steps = textPlan(t.texts);
+    if (steps) {
+      t.hasPlan = true;
+      t.steps = steps.map((content, i) => ({ ...group(`text:${i}`, content), status: marks.has(i + 1) ? 'completed' as const : 'pending' as const }));
+    }
+  }
+  // A "✓ n." line is the step's account, whichever way the plan came.
+  t.steps.forEach((step, i) => {
+    const how = marks.get(i + 1);
+    if (how) { step.note = how; if (step.key.startsWith('text:')) step.status = 'completed'; }
+  });
+  const last = t.texts[t.texts.length - 1];
+  t.answer = resultLine(t.texts) ?? noteLine(last ?? null, 240);
 }
 
 /** First sentence-ish of a note, for the one-line summary under a step. */
