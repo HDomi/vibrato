@@ -342,6 +342,10 @@ function applyTextPlan(t: PlanTurn) {
     const how = marks.get(i + 1);
     if (how) { step.note = how; if (step.key.startsWith('text:')) step.status = 'completed'; }
   });
+  // The steps are worked in order, so a written plan's step that has a later one checked is done too, even when
+  // its own "✓" line was skipped. Steps from the task tools carry their own status.
+  const lastDone = t.steps.reduce((at, s, i) => (s.key.startsWith('text:') && s.status === 'completed' ? i : at), -1);
+  t.steps.forEach((step, i) => { if (i < lastDone && step.key.startsWith('text:')) step.status = 'completed'; });
   const last = t.texts[t.texts.length - 1];
   const result = resultOf(t.texts);
   // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.

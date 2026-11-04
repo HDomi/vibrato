@@ -210,3 +210,13 @@ test('files named in the reply or written by shell commands are candidates for c
   ]);
   assert.deepEqual(turn.mentioned, ['/tmp/claude/data.txt', '/tmp/claude/chart.png']);
 });
+
+test('a checked step marks the skipped written steps before it as done', () => {
+  const [turn] = buildPlan([
+    user('u1', 'x'),
+    say('a1', '진행 계획\n1. 파악\n2. 확인\n3. 서버\n4. 웹\n5. 검증'),
+    say('a2', '✓ 4. 웹 끝'),
+  ]);
+  assert.deepEqual(turn.steps.map((s) => [s.status, s.note]), [
+    ['completed', null], ['completed', null], ['completed', null], ['completed', '웹 끝'], ['pending', null]]);
+});

@@ -13,6 +13,7 @@ Every request goes plan, then the steps one by one, then the result. This holds 
    2. <step>
    If you have a task list tool (TaskCreate / TaskUpdate or TodoWrite in Claude Code, update_plan in Codex), keep it in step with the same steps too.
 2. Work one step at a time. As soon as a step is done, write one line in exactly this form before starting the next: ✓ <step number>. <how it was done or what was found, one short sentence>
+   Every step gets its own ✓ line, the reading and investigating ones included; when several finish together, write one line for each.
 3. Finish with "결과:" (or "Result:" in English) followed by the outcome: one line, or the full answer under it when the request asked for an explanation, a summary or a report.
 4. If the user adds or changes something while you work, write the updated plan the same way, then carry on.`;
 
