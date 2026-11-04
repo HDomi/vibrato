@@ -57,6 +57,16 @@ html, body, #root {
    the slide distance until the animation ends. The value only shifts an alpha by 1e-4. */
 @property --glass-nudge { syntax: '<number>'; inherits: false; initial-value: 0; }
 
+/* Tailwind's preflight gives buttons the arrow cursor; anything clickable shows the hand instead. In the base layer,
+   so an explicit cursor utility on an element (cursor-default, cursor-grab) still wins. */
+@layer base {
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), a[href], summary, select:not(:disabled),
+  label:has(> input[type="checkbox"], > input[type="radio"], > input[type="file"]),
+  input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled), input[type="color"]:not(:disabled),
+  input[type="range"]:not(:disabled), input[type="file"]:not(:disabled) { cursor: pointer; }
+  button:disabled, select:disabled, input:disabled { cursor: not-allowed; }
+}
+
 /* In the components layer so Tailwind utilities on the same element (radius, shadow, border) still win. */
 @layer components {
 /* Native controls follow the glass palette: white checks and sliders, rounded translucent selects. */
