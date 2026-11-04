@@ -52,6 +52,11 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Animated on glass surfaces while a tab view slides (App.tsx): a changing value makes Chromium repaint them every
+   frame. Otherwise it moves their cached paint along with the view and the fixed wallpaper copy drifts off by up to
+   the slide distance until the animation ends. The value only shifts an alpha by 1e-4. */
+@property --glass-nudge { syntax: '<number>'; inherits: false; initial-value: 0; }
+
 /* In the components layer so Tailwind utilities on the same element (radius, shadow, border) still win. */
 @layer components {
 /* Native controls follow the glass palette: white checks and sliders, rounded translucent selects. */
@@ -74,19 +79,20 @@ select option { background: #1a1c22; color: #e6e8ee; }
    fixed background relative to the element and the blur no longer matches the wallpaper behind it. */
 .glass {
   background-color: var(--wall-color);
-  background-image: linear-gradient(180deg, rgb(255 255 255 / .075), rgb(255 255 255 / .025)), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--wall-blur);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / calc(.075 + var(--glass-nudge) * .0001)), rgb(255 255 255 / .025)), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--wall-blur);
   background-size: auto, auto, cover;
   background-position: 0 0, 0 0, center;
   background-repeat: no-repeat;
   background-attachment: scroll, scroll, fixed;
   /* One even hairline all round: a top-only inset highlight fades out along the corner curve and makes it look clipped. */
   border: 1px solid rgb(255 255 255 / .13);
-  box-shadow: 0 14px 40px rgb(0 0 0 / .28);
+  /* Short and light: a long drop shadow pooled in the 16px gaps between cards and smudged the corners. */
+  box-shadow: 0 2px 10px rgb(0 0 0 / .14);
 }
 /* Same backdrop as the card it sits in, without the frame: for overlays and sticky bars inside a card. */
 .glass-fill {
   background-color: var(--wall-color);
-  background-image: linear-gradient(rgb(255 255 255 / .05), rgb(255 255 255 / .05)), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--wall-blur);
+  background-image: linear-gradient(rgb(255 255 255 / calc(.05 + var(--glass-nudge) * .0001)), rgb(255 255 255 / .05)), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--wall-blur);
   background-size: auto, auto, cover;
   background-position: 0 0, 0 0, center;
   background-repeat: no-repeat;

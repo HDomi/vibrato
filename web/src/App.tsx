@@ -112,7 +112,10 @@ function AppInner() {
     if (firstView.current) { firstView.current = false; return; }
     const el = viewEls.current[view];
     if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    el.animate([{ left: `${slide === 'right' ? 16 : -16}px`, opacity: 0.55 }, { left: '0px', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    const timing = { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' };
+    el.animate([{ left: `${slide === 'right' ? 16 : -16}px`, opacity: 0.55 }, { left: '0px', opacity: 1 }], timing);
+    // Repaint the glass every frame of the slide so its fixed wallpaper copy stays lined up (see --glass-nudge in index.css).
+    for (const g of el.querySelectorAll<HTMLElement>('.glass, .glass-fill')) g.animate([{ '--glass-nudge': 0 }, { '--glass-nudge': 1 }], timing);
   }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
   // Mount the other views (hidden) shortly after start, so even their first visit has nothing left to load.
   useEffect(() => {
