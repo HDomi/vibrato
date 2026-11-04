@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { Schedule } from './schedule.js';
+import type { ExtensionsConfig } from './agentExtensions.js';
 import type { FormType } from '../web/src/lib/promptForm.js';
 
 /** VIBRATO_PORT / VIBRATO_CONFIG_DIR only exist so a test copy of the app can run next to the real one. */
@@ -63,6 +64,8 @@ export interface Config {
   schedules: Schedule[];
   /** "Send as form" types edited in Settings; absent while the built-in ones are in use. */
   formTypes?: FormType[];
+  /** Skills / plugins turned off for new sessions (Settings > Agent CLIs); everything else stays as the CLI has it. */
+  extensionsOff?: ExtensionsConfig;
 }
 
 export const CUSTOM_PROMPT_MAX = 20000;

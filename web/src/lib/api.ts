@@ -102,6 +102,12 @@ export interface AgentContext {
   mcp: { scope: 'project' | 'user'; agent: 'claude' | 'codex'; name: string; command: string; file: string }[];
 }
 
+/** Installed skills / plugins of one CLI (server/agentExtensions.ts) and the ones new sessions get turned off. */
+export interface ExtSkill { name: string; description: string; source: 'user' | 'plugin' | 'claude.ai' | 'system' | 'admin' | 'project' | 'other'; plugin?: string; enabled: boolean }
+export interface ExtPlugin { id: string; name: string; description: string; enabled: boolean; toggle: boolean }
+export interface ExtensionsOff { skills?: string[]; plugins?: string[] }
+export interface AgentExtensions { skills: ExtSkill[]; plugins: ExtPlugin[]; error?: string; off: ExtensionsOff }
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) { super(message); }
 }
@@ -227,6 +233,9 @@ export const api = {
   gitSuggestMessage: (cwd: string) => post<{ message: string; agent: 'claude' | 'codex' }>('/api/git/suggest-message', { cwd }),
   gitCommit: (cwd: string, message: string) =>
     req<{ ok: boolean; output: string }>('/api/git/commit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd, message }) }),
+  extensions: (agent: 'claude' | 'codex', force = false) => req<AgentExtensions>(`/api/extensions?agent=${agent}${force ? '&force=1' : ''}`),
+  saveExtensions: (agent: 'claude' | 'codex', skills: string[], plugins: string[]) =>
+    req<{ off: ExtensionsOff }>('/api/extensions', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent, skills, plugins }) }),
   agentContext: (cwd: string) => req<AgentContext>(`/api/agent-context?cwd=${q(cwd)}`),
   liveSessions: () => req<{ id: string; agent: 'claude' | 'codex'; cwd: string; createdAt: number; agentSessionId?: string }[]>('/api/sessions'),
   schedules: () => req<ScheduleSnapshot>('/api/schedules'),

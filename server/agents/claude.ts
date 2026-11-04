@@ -54,6 +54,8 @@ export interface ClaudeSessionOptions {
   model?: string;
   /** User's standing instructions (Settings > Custom prompt), appended to the system prompt. */
   instructions?: string;
+  /** Flag settings turning skills / plugins off for this session (Settings > Agent CLIs, see agentExtensions.ts). */
+  settings?: Options['settings'];
 }
 
 export class ClaudeSession implements AgentSession {
@@ -111,6 +113,8 @@ export class ClaudeSession implements AgentSession {
       // `append` lands in the system prompt itself, so the custom prompt is sent once per session and cached.
       systemPrompt: { type: 'preset', preset: 'claude_code', snapshot: true, ...(this.opts.instructions ? { append: this.opts.instructions } : {}) },
       model: this.opts.model,
+      // Flag settings outrank user / project / local ones, so this turns things off without editing the CLI's config.
+      ...(this.opts.settings ? { settings: this.opts.settings } : {}),
       // Backups before each edit, keyed by the user message id we send, so a turn's file changes can be undone.
       enableFileCheckpointing: true,
       includePartialMessages: true,

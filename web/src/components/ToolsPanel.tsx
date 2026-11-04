@@ -7,6 +7,7 @@ import LockSettings from './LockSettings';
 import FormTypesSettings from './FormTypesSettings';
 import WallpaperSettings from './WallpaperSettings';
 import AgentDefaultsSettings from './AgentDefaultsSettings';
+import AgentExtensionsSettings from './AgentExtensionsSettings';
 import { UpdateBadge } from './UpdatePanel';
 
 interface Props { onClose: () => void; /** Open at the lock screen tab (from the menu bar). */ focusLock?: boolean; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
@@ -133,6 +134,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
   const tabs = TABS.filter((x) => x.id !== 'lock' || !!window.vibe?.lock);
   const agentsNeedAttention = !!info?.tools.some((x) => !x.installed || x.loggedIn === false);
 
+  const [extReload, setExtReload] = useState(0);
   const refresh = () => api.tools(true).then(setInfo).catch((e) => setLog((l) => [...l, { line: e.message, err: true }]));
   useEffect(() => { refresh(); }, []);
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight }); }, [log]);
@@ -164,7 +166,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
         <div className="flex items-center pl-6 pr-4 h-[60px] shrink-0 border-b border-white/10">
           <div className="text-[15px] font-semibold">{t('settings.title')}</div>
           <div className="flex-1" />
-          {tab === 'agents' && <button className="text-xs text-zinc-400 hover:text-white mr-3" onClick={refresh}>{t('settings.redetect')}</button>}
+          {tab === 'agents' && <button className="text-xs text-zinc-400 hover:text-white mr-3" onClick={() => { refresh(); setExtReload((n) => n + 1); }}>{t('settings.redetect')}</button>}
           <button className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-fill-2 transition-colors" onClick={onClose} title="Esc"><Icon name="close" /></button>
         </div>
         {/* Left: sections; right: the selected section. Two cards inside the dialog. */}
@@ -211,6 +213,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
                       {tool.loggedIn === null && t('settings.loginUnknown')}
                     </div>
                   )}
+                  {tool.installed && <AgentExtensionsSettings agent={tool.id} reload={extReload} />}
                   {!tool.installed && (
                     <div className="mt-3 flex gap-2 flex-wrap">
                       {methodsFor(tool, info.installers).map((m) => (

@@ -31,6 +31,7 @@ import { convertImage, imageInfo, renderPng, writeImageBytes } from './image.js'
 import { allBacklogs, cleanBacklog, projectSettings, suggestVerifyCommands, updateProjectSettings } from './verify.js';
 import { revertTurn, turnDiff } from './turns.js';
 import { agentContext } from './agentContext.js';
+import { listExtensions, sanitizeExtensions } from './agentExtensions.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
 import { searchHistory } from './historySearch.js';
@@ -446,6 +447,26 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     }
     const claudePath = await which('claude');
     return c.json(claudePath ? await listClaudeModels(claudePath).catch(() => []) : []);
+  });
+
+  // Installed skills / plugins per CLI, and the ones turned off for new sessions (agentExtensions.ts).
+  app.get('/api/extensions', async (c) => {
+    const agent = c.req.query('agent') === 'codex' ? 'codex' : 'claude';
+    const [list, cfg] = await Promise.all([listExtensions(agent, await which(agent), c.req.query('force') === '1'), loadConfig()]);
+    return c.json({ ...list, off: sanitizeExtensions(cfg.extensionsOff)[agent] ?? {} });
+  });
+  app.put('/api/extensions', async (c) => {
+    const body = await c.req.json<{ agent?: unknown; skills?: unknown; plugins?: unknown }>().catch(() => null);
+    if (!body || (body.agent !== 'claude' && body.agent !== 'codex')) return c.json({ error: 'Expected { agent, skills, plugins }' }, 400);
+    const agent = body.agent;
+    const off = await withConfigLock(async () => {
+      const cfg = await loadConfig();
+      const next = sanitizeExtensions({ ...sanitizeExtensions(cfg.extensionsOff), [agent]: { skills: body.skills, plugins: body.plugins } });
+      if (Object.keys(next).length) cfg.extensionsOff = next; else delete cfg.extensionsOff;
+      await saveConfig(cfg);
+      return next[agent] ?? {};
+    });
+    return c.json({ off });
   });
 
   app.get('/api/sessions', (c) => c.json(registry?.list() ?? []));

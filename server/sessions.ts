@@ -6,6 +6,7 @@ import { ClaudeSession } from './agents/claude.js';
 import { CodexSession } from './agents/codex.js';
 import { which } from './shell.js';
 import { loadConfig } from './config.js';
+import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agentExtensions.js';
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
 
@@ -90,15 +91,17 @@ export class SessionRegistry {
     if (this.closing) throw new Error('Server is shutting down');
     let session: ClaudeSession | CodexSession;
     // Read at start so a prompt edited in Settings reaches the next session without a restart.
-    const instructions = sessionInstructions(await loadConfig().catch(() => null));
+    const cfg = await loadConfig().catch(() => null);
+    const instructions = sessionInstructions(cfg);
+    const off = sanitizeExtensions(cfg?.extensionsOff);
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
-      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions });
+      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, settings: claudeFlagSettings(off.claude) });
     } else if (cmd.agent === 'codex') {
       const codexPath = await which('codex');
       if (!codexPath) throw new Error('codex CLI not found. Install it from Settings.');
-      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions });
+      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: codexConfigArgs(off.codex) });
     } else {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }

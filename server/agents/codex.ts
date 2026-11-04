@@ -24,8 +24,8 @@ class AppServerClient {
   onRequest: (id: number | string, method: string, params: Json) => void = () => {};
   onExit: (code: number | null) => void = () => {};
 
-  constructor(codexPath: string, cwd: string) {
-    this.proc = spawn(codexPath, ['app-server', '--listen', 'stdio://'], { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  constructor(codexPath: string, cwd: string, extraArgs: string[] = []) {
+    this.proc = spawn(codexPath, ['app-server', '--listen', 'stdio://', ...extraArgs], { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
     const rl = createInterface({ input: this.proc.stdout! });
     // A codex CLI update can change message shapes; a TypeError in a handler must not take the server down.
     rl.on('line', (line) => {
@@ -88,6 +88,8 @@ export interface CodexSessionOptions {
   model?: string;
   /** User's standing instructions (Settings > Custom prompt), sent as the thread's developer instructions. */
   instructions?: string;
+  /** `-c` overrides for this session's app-server (skills turned off in Settings, see agentExtensions.ts). */
+  configArgs?: string[];
 }
 
 interface PendingReq {
@@ -150,7 +152,7 @@ export class CodexSession implements AgentSession {
   }
 
   private async boot() {
-    const c = new AppServerClient(this.opts.codexPath, this.cwd);
+    const c = new AppServerClient(this.opts.codexPath, this.cwd, this.opts.configArgs);
     this.client = c;
     c.onNotification = (m, p) => this.handleNotification(m, p);
     c.onRequest = (id, m, p) => this.handleRequest(id, m, p);
@@ -496,6 +498,33 @@ export async function listCodexModels(codexPath: string): Promise<{ id: string; 
     c.notify('initialized');
     const res = await c.request<Json>('model/list', { includeHidden: false }, 30000);
     return ((res.data as Json[]) ?? []).filter((m) => !m.hidden).map((m) => ({ id: String(m.model ?? m.id), name: String(m.displayName ?? m.model), description: m.description ? String(m.description) : undefined, isDefault: Boolean(m.isDefault) }));
+  } finally {
+    c.kill();
+  }
+}
+
+/** Installed skills and plugins as the app-server reports them, for Settings > Agent CLIs. */
+export async function listCodexExtensions(codexPath: string): Promise<{ skills: { name: string; description: string; source: 'user' | 'system' | 'admin' | 'project'; plugin?: string; enabled: boolean }[]; plugins: { id: string; name: string; description: string; enabled: boolean; toggle: boolean }[] }> {
+  const home = process.env.HOME ?? '/';
+  const c = new AppServerClient(codexPath, home);
+  try {
+    await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null });
+    c.notify('initialized');
+    const sk = await c.request<Json>('skills/list', { cwds: [home], forceReload: true }, 30000);
+    const skills = ((sk.data as Json[]) ?? []).flatMap((e) => (e.skills as Json[] | undefined) ?? []).filter((s) => s.name).map((s) => ({
+      name: String(s.name),
+      description: String(s.description ?? s.shortDescription ?? ''),
+      source: (s.scope === 'repo' ? 'project' : s.scope === 'system' || s.scope === 'admin' ? s.scope : 'user') as 'user' | 'system' | 'admin' | 'project',
+      ...(s.pluginId ? { plugin: String(s.pluginId) } : {}),
+      enabled: s.enabled !== false,
+    }));
+    // Plugins are listed only: their on/off state follows the account, and a -c override does not change it.
+    const pl = await c.request<Json>('plugin/list', {}, 30000).catch(() => ({} as Json));
+    const plugins = ((pl.marketplaces as Json[] | undefined) ?? []).flatMap((m) => (m.plugins as Json[] | undefined) ?? []).filter((p) => p.installed).map((p) => {
+      const ui = (p.interface ?? {}) as Json;
+      return { id: String(p.id), name: String(ui.displayName ?? p.name ?? p.id), description: String(ui.shortDescription ?? ''), enabled: p.enabled !== false, toggle: false };
+    });
+    return { skills: [...new Map(skills.map((s) => [s.name, s])).values()], plugins };
   } finally {
     c.kill();
   }
