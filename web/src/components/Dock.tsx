@@ -152,8 +152,8 @@ export default function Dock(p: Props) {
       <button key={f.path} draggable={!anim} onAnimationEnd={() => { if (anim === 'dock-in') setFresh((s) => { const n = new Set(s); n.delete(f.path); return n; }); }} onDragStart={(e) => { setTip(null); e.dataTransfer.setData(DRAG_FAV, f.path); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => p.onNavigate(f.path)} onContextMenu={(e) => { setTip(null); menu.open(e, favMenu(f, e)); }}
         onMouseEnter={(e) => showTip(e, f.name)} onMouseLeave={() => setTip(null)} aria-label={f.name} aria-current={active || undefined}
-        className={`relative w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${anim} ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
-        <ProjectIcon path={f.path} name={f.name} size={22} />
+        className={`relative w-[45px] h-[45px] shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${anim} ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
+        <ProjectIcon path={f.path} name={f.name} size={25} />
         <StatusDot state={p.badge(f.path)} />
       </button>
     );
@@ -165,15 +165,15 @@ export default function Dock(p: Props) {
   const current = p.project && !favorites.some((f) => f.path === p.project) ? p.project : null;
 
   return (
-    <nav ref={nav} className="glass relative w-14 max-h-full flex flex-col items-center py-2 rounded-[28px] select-none"
+    <nav ref={nav} className="glass relative w-[61px] max-h-full flex flex-col items-center py-2 rounded-[30px] select-none"
       onContextMenu={(e) => menu.open(e, [{ label: t('sidebar.newGroupMenu'), onClick: () => ask(e, 'newGroup', t('sidebar.newGroupDefault')) }])}>
       {current && (
-        <div className="shrink-0 flex flex-col items-center gap-2 pb-2 mb-1 border-b border-line w-10">
+        <div className="shrink-0 flex flex-col items-center gap-2 pb-2 mb-1 border-b border-line w-[45px]">
           <button onClick={() => p.onNavigate(current)} aria-label={baseName(current)} aria-current
             onMouseEnter={(e) => showTip(e, baseName(current), t('dock.current'))} onMouseLeave={() => setTip(null)}
             onContextMenu={(e) => { setTip(null); menu.open(e, [{ label: t('dock.addFavorite'), onClick: () => apply(api.addFavorite(current)) }, { separator: true }, ...commonItems(current)]); }}
-            className="relative w-10 h-10 rounded-full flex items-center justify-center bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)] outline-dashed outline-[1.5px] outline-offset-[3px] outline-white/45">
-            <ProjectIcon path={current} name={baseName(current)} size={22} />
+            className="relative w-[45px] h-[45px] rounded-full flex items-center justify-center bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)] outline-dashed outline-[1.5px] outline-offset-[3px] outline-white/45">
+            <ProjectIcon path={current} name={baseName(current)} size={25} />
             <StatusDot state={p.badge(current)} />
           </button>
         </div>
@@ -187,8 +187,8 @@ export default function Dock(p: Props) {
                 <div role="separator" aria-label={g.name} tabIndex={-1}
                   onMouseEnter={(e) => showTip(e, g.name, String(items.length))} onMouseLeave={() => setTip(null)}
                   onContextMenu={(e) => { setTip(null); menu.open(e, groupMenu(g, e)); }}
-                  className="group/div w-10 h-3.5 shrink-0 flex items-center justify-center cursor-default">
-                  <span className="h-[2px] w-6 rounded-full bg-white/25 transition-all duration-200 ease-glass group-hover/div:w-9 group-hover/div:bg-white/60" />
+                  className="group/div w-[45px] h-3.5 shrink-0 flex items-center justify-center cursor-default">
+                  <span className="h-[2px] w-7 rounded-full bg-white/25 transition-all duration-200 ease-glass group-hover/div:w-10 group-hover/div:bg-white/60" />
                 </div>
                 {items.map(icon)}
               </div>
@@ -196,15 +196,15 @@ export default function Dock(p: Props) {
           );
         })}
         <div {...dropTarget(null)} className={`w-full min-h-3 flex flex-col items-center gap-1.5 rounded-2xl transition-colors ${dragOver === '__top__' ? 'bg-sky-400/15' : ''}`}>
-          {groups.length > 0 && topLevel.length > 0 && <span className="w-10 h-px my-1 bg-line" aria-hidden="true" />}
+          {groups.length > 0 && topLevel.length > 0 && <span className="w-[45px] h-px my-1 bg-line" aria-hidden="true" />}
           {topLevel.map(icon)}
         </div>
       </div>
-      <div className="shrink-0 pt-1.5 mt-1 border-t border-line w-10 flex justify-center">
+      <div className="shrink-0 pt-1.5 mt-1 border-t border-line w-[45px] flex justify-center">
         <button onClick={() => { setTip(null); setRecentOpen((v) => !v); }} aria-label={t('sidebar.recentSessions')} aria-expanded={recentOpen}
           onMouseEnter={(e) => { if (!recentOpen) showTip(e, t('sidebar.recentSessions')); }} onMouseLeave={() => setTip(null)}
-          className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-200 ${recentOpen ? 'bg-selected text-on-selected' : 'text-zinc-300 hover:bg-fill-2 hover:text-white'}`}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></svg>
+          className={`relative w-[45px] h-[45px] rounded-full flex items-center justify-center transition-colors duration-200 ${recentOpen ? 'bg-selected text-on-selected' : 'text-zinc-300 hover:bg-fill-2 hover:text-white'}`}>
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></svg>
           {p.waiting > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-amber-400 text-[10px] font-semibold leading-4 text-center text-black" title={t('app.waitingRequests', { n: p.waiting })}>{p.waiting}</span>}
         </button>
       </div>

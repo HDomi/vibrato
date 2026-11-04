@@ -418,7 +418,7 @@ function AppInner() {
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
         ) : (
         <div className="flex-1 min-w-0 flex px-[42px] pb-4">
-          <div className="w-14 shrink-0 flex items-center">
+          <div className="w-[61px] shrink-0 flex items-center">
             <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={resumeSession} waiting={waiting} badge={projectBadge} />
           </div>
           <main className="flex-1 min-w-0 flex ml-8">
@@ -480,14 +480,14 @@ function AppInner() {
               </div>
             </section>
             {rightCollapsed ? <div className="w-4 shrink-0" /> : <Splitter gap onStart={() => setDragging(true)} onEnd={() => setDragging(false)} onDrag={(dx) => right.setWidth(right.width - dx)} />}
-            <section style={{ width: rightCollapsed ? 56 : right.width }} className={`glass shrink-0 relative overflow-hidden ${paneTransition}`}>
+            <section style={{ width: rightCollapsed ? 61 : right.width }} className={`glass shrink-0 relative overflow-hidden ${paneTransition}`}>
               {/* Collapsed: a strip as wide as the dock with one button per tab. */}
               <div className={`absolute inset-0 flex flex-col items-center gap-1.5 py-2 transition-opacity duration-200 ${rightCollapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-hidden={!rightCollapsed}>
-                <button className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full text-zinc-300 hover:bg-fill-2 hover:text-white" onClick={() => setRightCollapsed(false)} title={t('app.expandPanel')}><Icon name="chevronsLeft" /></button>
+                <button className="w-[45px] h-[45px] shrink-0 flex items-center justify-center rounded-full text-zinc-300 hover:bg-fill-2 hover:text-white" onClick={() => setRightCollapsed(false)} title={t('app.expandPanel')}><Icon name="chevronsLeft" /></button>
                 <span className="w-8 h-px bg-line my-0.5" />
                 {rightTabs.map(([k, label]) => (
                   <button key={k} title={label} aria-label={label} onClick={() => { setRightTab(k); setRightCollapsed(false); }}
-                    className={`relative w-10 h-10 shrink-0 flex items-center justify-center rounded-full transition-colors ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill-2 hover:text-white'}`}>
+                    className={`relative w-[45px] h-[45px] shrink-0 flex items-center justify-center rounded-full transition-colors ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill-2 hover:text-white'}`}>
                     <Icon name={tabIcons[k]} size={15} />
                     {k === 'run' && runStatus.running > 0 && <span className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${runStatus.errors ? 'bg-red-400' : 'bg-emerald-400'}`} />}
                   </button>
