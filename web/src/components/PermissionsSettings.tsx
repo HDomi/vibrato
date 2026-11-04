@@ -12,7 +12,16 @@ import Icon from './Icon';
 
 type Need = 'required' | 'recommended' | 'optional';
 type Action = { kind: 'request'; id: string } | { kind: 'ask'; id: 'accessibility' | 'camera' | 'microphone' } | { kind: 'notify' } | { kind: 'wakeHelper' };
-interface Item { id: string; need: Need; state: PermState; pane?: string; action?: Action; detail?: string; /** State text when the generic one reads wrong (a switch, not a prompt). */ label?: string }
+interface Item {
+  id: string; need: Need; state: PermState; pane?: string; action?: Action; detail?: string;
+  /** State text when the generic one reads wrong (a switch, not a prompt). */ label?: string;
+  /** Allowed only for an earlier build: macOS does not apply it to this one. */ stale?: boolean;
+  /** TCC service of a stale entry, for the reset button. */ service?: string;
+}
+interface Live { state: PermState; stale?: boolean; detail?: string; service?: string }
+
+/** TCC services kept in the system database; the others live in the per-user one. */
+const SYSTEM_SERVICES = new Set(['SystemPolicyAllFiles', 'Accessibility', 'ScreenCapture', 'ListenEvent', 'PostEvent', 'DeveloperTool', 'EndpointSecurityClient']);
 
 const NEED_CLASS: Record<Need, string> = {
   required: 'bg-amber-400/15 text-amber-200',
@@ -78,36 +87,67 @@ export default function PermissionsSettings({ active }: { active: boolean }) {
 
   const ownId = snap?.bundleIds[0] ?? 'com.hdomi.vibrato';
   const own = (snap?.tcc ?? []).filter((r) => r.client === ownId);
-  const fromTcc = (svc: string): PermState | null => {
-    if (!snap?.tcc) return null;
-    const row = own.find((r) => r.service === svc && !r.stale);
-    return row ? row.state : 'notDetermined';
+  const dbs = snap?.tccDbs ?? [];
+  /** This build's TCC answer; a row only for an older signature is stale; null when its database cannot be read. */
+  const tccOf = (svc: string): Live | null => {
+    const rows = own.filter((r) => r.service === svc);
+    const current = rows.find((r) => !r.stale);
+    if (current) return { state: current.state };
+    if (rows.length) return { state: 'notDetermined', stale: true, service: svc };
+    return dbs.includes(SYSTEM_SERVICES.has(svc) ? 'system' : 'user') ? { state: 'notDetermined' } : null;
   };
-  const stale = (snap?.tcc ?? []).filter((r) => r.stale);
+  /** A live answer from the app process wins when it says allowed; otherwise a stale row explains why it is not. */
+  const combine = (live: PermState | null, svc: string): Live => {
+    if (live === 'granted') return { state: 'granted' };
+    const row = tccOf(svc);
+    if (row?.stale) return row;
+    return { state: live ?? row?.state ?? 'unknown' };
+  };
+  /** Folders and volumes are files: Full Disk Access covers them whatever their own switch says. */
+  const files = (svc: string): Live => {
+    const row = tccOf(svc);
+    if (row?.state === 'granted') return row;
+    if (snap?.fullDisk) return { state: 'granted', detail: t('perm.viaFullDisk') };
+    return row ?? { state: 'unknown' };
+  };
+  const stale = own.filter((r) => r.stale && !own.some((x) => x.service === r.service && !x.stale));
   const automation = own.filter((r) => r.service === 'AppleEvents' && !r.stale);
 
+  const photoKit: PermState = snap?.photos ?? 'unknown';
+  const live = (l: Live) => ({ state: l.state, stale: l.stale, service: l.service, detail: l.detail ?? (l.stale ? t('perm.staleFix') : undefined) });
   const items: Item[] = snap ? [
     { id: 'fullDisk', need: 'recommended', state: snap.fullDisk ? 'granted' : 'denied', pane: 'fullDisk' },
     ...(['desktop', 'documents', 'downloads'] as const).map((id): Item => ({ id, need: 'required', state: snap.folders[id], pane: 'files', action: { kind: 'request', id } })),
-    { id: 'removable', need: 'optional', state: fromTcc('SystemPolicyRemovableVolumes') ?? 'unknown', pane: 'files' },
-    { id: 'network', need: 'optional', state: fromTcc('SystemPolicyNetworkVolumes') ?? 'unknown', pane: 'files' },
+    { id: 'removable', need: 'optional', ...live(files('SystemPolicyRemovableVolumes')), pane: 'files' },
+    { id: 'network', need: 'optional', ...live(files('SystemPolicyNetworkVolumes')), pane: 'files' },
     { id: 'notifications', need: 'recommended', state: 'unknown', pane: 'notifications', action: window.vibe?.isElectron ? { kind: 'notify' } : undefined },
-    { id: 'appManagement', need: 'recommended', state: fromTcc('SystemPolicyAppBundles') ?? 'unknown', pane: 'appManagement' },
-    { id: 'photos', need: 'optional', state: snap.photos !== 'unknown' ? snap.photos : fromTcc('Photos') ?? 'unknown', pane: 'photos', action: { kind: 'request', id: 'photos' } },
-    { id: 'screen', need: 'optional', state: mediaState(info?.screen) ?? fromTcc('ScreenCapture') ?? 'unknown', pane: 'screen' },
-    { id: 'accessibility', need: 'optional', state: info ? (info.accessibility ? 'granted' : fromTcc('Accessibility') ?? 'notDetermined') : fromTcc('Accessibility') ?? 'unknown', pane: 'accessibility', action: info ? { kind: 'ask', id: 'accessibility' } : undefined },
+    { id: 'appManagement', need: 'recommended', ...live(combine(null, 'SystemPolicyAppBundles')), pane: 'appManagement' },
+    {
+      id: 'photos', need: 'optional', pane: 'photos', action: { kind: 'request', id: 'photos' },
+      ...live(photoKit === 'granted' || photoKit === 'limited' ? { state: photoKit } : snap.fullDisk ? { state: 'granted', detail: t('perm.photosViaFullDisk') } : combine(photoKit === 'unknown' ? null : photoKit, 'Photos')),
+    },
+    { id: 'screen', need: 'optional', ...live(combine(mediaState(info?.screen), 'ScreenCapture')), pane: 'screen' },
+    { id: 'accessibility', need: 'optional', ...live(combine(info ? (info.accessibility ? 'granted' : 'notDetermined') : null, 'Accessibility')), pane: 'accessibility', action: info ? { kind: 'ask', id: 'accessibility' } : undefined },
     {
       id: 'automation', need: 'optional', pane: 'automation',
-      state: automation.some((r) => r.state === 'granted') ? 'granted' : automation.length ? 'denied' : snap.tcc ? 'notDetermined' : 'unknown',
+      state: automation.some((r) => r.state === 'granted') ? 'granted' : automation.length ? 'denied' : dbs.includes('user') ? 'notDetermined' : 'unknown',
       detail: automation.length ? automation.map((r) => `${r.target ?? '?'} ${r.state === 'granted' ? '✓' : '✗'}`).join(' · ') : undefined,
     },
-    { id: 'developerTools', need: 'optional', state: fromTcc('DeveloperTool') ?? 'unknown', pane: 'developerTools' },
-    { id: 'inputMonitoring', need: 'optional', state: fromTcc('ListenEvent') ?? 'unknown', pane: 'inputMonitoring' },
-    { id: 'camera', need: 'optional', state: mediaState(info?.camera) ?? fromTcc('Camera') ?? 'unknown', pane: 'camera', action: info ? { kind: 'ask', id: 'camera' } : undefined },
-    { id: 'microphone', need: 'optional', state: mediaState(info?.microphone) ?? fromTcc('Microphone') ?? 'unknown', pane: 'microphone', action: info ? { kind: 'ask', id: 'microphone' } : undefined },
+    { id: 'developerTools', need: 'optional', ...live(combine(null, 'DeveloperTool')), pane: 'developerTools' },
+    { id: 'inputMonitoring', need: 'optional', ...live(combine(null, 'ListenEvent')), pane: 'inputMonitoring' },
+    { id: 'camera', need: 'optional', ...live(combine(mediaState(info?.camera), 'Camera')), pane: 'camera', action: info ? { kind: 'ask', id: 'camera' } : undefined },
+    { id: 'microphone', need: 'optional', ...live(combine(mediaState(info?.microphone), 'Microphone')), pane: 'microphone', action: info ? { kind: 'ask', id: 'microphone' } : undefined },
     { id: 'loginItem', need: 'optional', state: info ? (info.loginItem ? 'granted' : 'notDetermined') : 'unknown', label: info ? t(info.loginItem ? 'perm.state.on' : 'perm.state.off') : undefined, pane: 'loginItems' },
     { id: 'wakeHelper', need: 'optional', state: snap.wakeHelper ? 'granted' : 'notDetermined', label: t(snap.wakeHelper ? 'perm.state.installed' : 'perm.state.notInstalled'), action: snap.wakeHelper ? undefined : { kind: 'wakeHelper' } },
   ] : [];
+
+  // Drop the old build's entry, then ask again so macOS records this build (or show the pane to switch it on).
+  const resetStale = (it: Item) => void run(`reset:${it.id}`, async () => {
+    await api.resetPermission(it.service!, info?.bundlePath);
+    if (it.action?.kind === 'ask') await window.vibe!.permissions!.ask(it.action.id);
+    else if (it.action?.kind === 'request') await api.requestPermission(it.action.id);
+    else if (it.pane) await api.openPermissionPane(it.pane);
+  });
 
   const doAction = (a: Action) => {
     if (a.kind === 'request') void run(a.id, () => api.requestPermission(a.id));
@@ -157,11 +197,16 @@ export default function PermissionsSettings({ active }: { active: boolean }) {
                   <span className={`rounded-full px-2 py-px text-[10px] ${NEED_CLASS[it.need]}`}>{t(`perm.need.${it.need}`)}</span>
                 </div>
                 <div className="text-xs text-zinc-500 leading-relaxed mt-0.5">{t(`perm.desc.${it.id}`)}</div>
-                {it.detail && <div className="text-xs text-zinc-400 mt-0.5 font-mono break-all">{it.detail}</div>}
+                {it.detail && <div className={`text-xs mt-0.5 leading-relaxed ${it.stale ? 'text-amber-200' : 'text-zinc-400'} ${it.id === 'automation' ? 'font-mono break-all' : ''}`}>{it.detail}</div>}
               </div>
-              <div className="w-28 shrink-0"><StateBadge state={it.state} label={it.label} /></div>
+              <div className="w-28 shrink-0"><StateBadge state={it.state} label={it.label} stale={it.stale} /></div>
               <div className="w-[190px] shrink-0 flex justify-end gap-1.5">
-                {it.action && it.state !== 'granted' && (
+                {it.stale && it.service && (
+                  <button className={btn} disabled={busy !== null} onClick={() => resetStale(it)} title={t('perm.resetHint')}>
+                    {busy === `reset:${it.id}` ? t('perm.waiting') : t('perm.reset')}
+                  </button>
+                )}
+                {it.action && !it.stale && it.state !== 'granted' && (
                   <button className={btn} disabled={busy !== null} onClick={() => doAction(it.action!)}>
                     {busy === it.id || (it.action.kind === 'wakeHelper' && busy === 'wakeHelper') ? t('perm.waiting') : t(it.action.kind === 'notify' ? 'perm.test' : it.action.kind === 'wakeHelper' ? 'perm.install' : 'perm.request')}
                   </button>

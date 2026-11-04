@@ -66,3 +66,9 @@ test('permissions: Claude rules are read and removed without touching the rest o
   assert.equal(readFileSync(rulesFile, 'utf8'), 'prefix_rule(pattern=["git", "status"], decision="allow")\n');
   await assert.rejects(removeCodexRule(join(home, 'x.rules'), 'a'), /Not a Codex rules file/);
 });
+
+test('permissions: reset only takes known TCC services', async () => {
+  const { resetPermission } = await import('../server/permissions');
+  await assert.rejects(resetPermission('All; rm -rf /'), /Unknown service/);
+  await assert.rejects(resetPermission('Calendar'), /Unknown service/);
+});

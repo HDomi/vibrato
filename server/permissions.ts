@@ -6,12 +6,16 @@ import { loadConfig } from './config.js';
 
 /**
  * Settings > Permissions: what macOS (TCC) and the agent CLIs have granted this app, now and before.
- * - TCC.db (user + system) holds every privacy decision ever made for the app, including ones for its
- *   earlier bundle id and for a plain Electron dev run. Reading it needs Full Disk Access, which is also how
- *   that permission is detected. Rows whose code requirement no longer matches the running bundle (the app
- *   is signed ad hoc, so every update changes it) are reported as stale: macOS asks again.
- * - Without Full Disk Access, folders are checked by listing them on request (that is what raises the
- *   prompt) and Photos through PhotoKit from a JXA child; this server's children count as the app for TCC.
+ * - TCC.db holds every privacy decision ever made for the app, including ones for its earlier bundle id and
+ *   for a plain Electron dev run. The system database (Full Disk Access, Accessibility, Screen Recording, ...)
+ *   is readable only with Full Disk Access, which is also how that permission is detected. The per-user
+ *   database does not exist on every macOS release (it is gone on 27), so a missing row there means nothing.
+ *   Rows whose code requirement no longer matches the running bundle are reported as stale: the app is signed
+ *   ad hoc, every update changes that requirement, and switching an existing entry back on in System Settings
+ *   keeps the old one, so macOS does not apply them to this build.
+ * - Folders are checked by listing them: silently with Full Disk Access (which covers them), otherwise only
+ *   on request, since that is what raises the prompt. Photos goes through PhotoKit from a JXA child; this
+ *   server's children count as the app for TCC.
  * - Agent rules: Claude `permissions` in user / project settings files (where "always allow" lands),
  *   Codex approval / sandbox defaults, trusted projects and execpolicy rules.
  */
@@ -64,6 +68,8 @@ export interface PermissionsSnapshot {
   fullDisk: boolean;
   /** Every TCC row for the app's identities; null without Full Disk Access. */
   tcc: TccRow[] | null;
+  /** Databases that could be read; a missing row only means "never asked" in a database listed here. */
+  tccDbs: ('user' | 'system')[];
   folders: Record<FolderId, PermState>;
   photos: PermState;
   wakeHelper: boolean;
@@ -233,31 +239,52 @@ export interface SnapshotOptions {
   wakeHelper?: () => Promise<boolean>;
 }
 
+const bundleOf = (p: string | undefined) => (p && path.isAbsolute(p) && p.endsWith('.app') ? p : null);
+
+async function bundleId(bundle: string | null): Promise<string> {
+  const id = bundle && process.platform === 'darwin' ? (await exec('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(bundle, 'Contents', 'Info.plist')])).stdout.trim() : '';
+  return /^[A-Za-z0-9.-]+$/.test(id) ? id : 'com.hdomi.vibrato';
+}
+
+/** TCC services the UI may reset (stale entries of an earlier build), as `tccutil` names them. */
+const RESETTABLE = new Set(['SystemPolicyAllFiles', 'Accessibility', 'ScreenCapture', 'ListenEvent', 'PostEvent', 'DeveloperTool', 'SystemPolicyAppBundles', 'Photos', 'Camera', 'Microphone', 'AppleEvents']);
+
+/** Drop the app's decision for one service so macOS asks again and records this build's signature. */
+export async function resetPermission(service: string, bundlePath?: string): Promise<void> {
+  if (!RESETTABLE.has(service)) throw new PermissionsError(`Unknown service "${service}"`);
+  const r = await exec('/usr/bin/tccutil', ['reset', service, await bundleId(bundleOf(bundlePath))]);
+  if (!r.ok) throw new PermissionsError(r.stderr.trim() || r.stdout.trim() || 'tccutil failed');
+}
+
 /** Folder answers learned from explicit requests while Full Disk Access is off. */
 const probed = new Map<string, PermState>();
 
 export async function permissionsSnapshot(opts: SnapshotOptions = {}): Promise<PermissionsSnapshot> {
-  const bundle = opts.bundlePath && path.isAbsolute(opts.bundlePath) && opts.bundlePath.endsWith('.app') ? opts.bundlePath : null;
-  const plistId = bundle && process.platform === 'darwin' ? (await exec('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(bundle, 'Contents', 'Info.plist')])).stdout.trim() : '';
-  const ownId = /^[A-Za-z0-9.-]+$/.test(plistId) ? plistId : 'com.hdomi.vibrato';
+  const bundle = bundleOf(opts.bundlePath);
+  const ownId = await bundleId(bundle);
   const ids = [...new Set([ownId, ...KNOWN_BUNDLE_IDS])];
   const ownCsreq = bundle && process.platform === 'darwin' ? await bundleCsreq(bundle).catch(() => null) : null;
   const [user, system] = process.platform === 'darwin'
     ? await Promise.all([readTcc(USER_TCC, 'user', ids, ownId, ownCsreq), readTcc(SYSTEM_TCC, 'system', ids, ownId, ownCsreq)])
     : [null, null];
-  const tcc = user ? [...user, ...(system ?? [])].sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0)) : null;
+  const fullDisk = !!(user || system);
+  const tcc = fullDisk ? [...(user ?? []), ...(system ?? [])].sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0)) : null;
   const fromTcc = (service: string): PermState | null => {
     const row = tcc?.find((r) => r.client === ownId && r.service === service && !r.stale);
-    return row ? row.state : tcc ? 'notDetermined' : null;
+    return row ? row.state : user ? 'notDetermined' : null;
   };
-  const folders = Object.fromEntries((Object.keys(FOLDERS) as FolderId[]).map((id) => [id, fromTcc(FOLDERS[id].service) ?? probed.get(id) ?? 'unknown'])) as Record<FolderId, PermState>;
+  // Full Disk Access covers the folders, so listing them cannot raise a prompt and gives the real answer.
+  const folders = Object.fromEntries(await Promise.all((Object.keys(FOLDERS) as FolderId[]).map(async (id) => {
+    const state = fullDisk ? await probeFolder(id) : fromTcc(FOLDERS[id].service) ?? probed.get(id) ?? 'unknown';
+    return [id, state];
+  }))) as Record<FolderId, PermState>;
   const [photosNow, claude, codex, wakeHelper] = await Promise.all([
     photos(false),
     claudeRuleFiles(),
     codexPermissions(),
     opts.wakeHelper ? opts.wakeHelper().catch(() => false) : Promise.resolve(false),
   ]);
-  return { bundleIds: ids, fullDisk: !!user, tcc, folders, photos: photosNow, wakeHelper, claude, codex };
+  return { bundleIds: ids, fullDisk, tcc, tccDbs: [...(user ? ['user' as const] : []), ...(system ? ['system' as const] : [])], folders, photos: photosNow, wakeHelper, claude, codex };
 }
 
 /** Raise the macOS prompt for a folder or Photos; answers the resulting state. */

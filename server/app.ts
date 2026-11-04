@@ -40,7 +40,7 @@ import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWork
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
 import { killProcess, listeningPorts, netInfo, proxyHttp, type ProxyRequest } from './net.js';
 import type { Scheduler } from './scheduler.js';
-import { openSettingsPane, PermissionsError, permissionsSnapshot, removeClaudeRule, removeCodexRule, requestPermission, type ClaudeList } from './permissions.js';
+import { openSettingsPane, PermissionsError, permissionsSnapshot, removeClaudeRule, removeCodexRule, requestPermission, resetPermission, type ClaudeList } from './permissions.js';
 import { ScheduleError } from './schedule.js';
 import { cleanFormTypes, FormTypeError } from '../web/src/lib/promptForm.js';
 
@@ -497,6 +497,11 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     wakeHelper: scheduler ? () => scheduler.power.helperInstalled(true) : undefined,
   })));
   app.post('/api/permissions/request', async (c) => c.json({ state: await requestPermission(String((await c.req.json<{ id?: unknown }>()).id ?? '')) }));
+  app.post('/api/permissions/reset', async (c) => {
+    const b = await c.req.json<{ service?: unknown; bundlePath?: unknown }>();
+    await resetPermission(String(b.service ?? ''), typeof b.bundlePath === 'string' ? b.bundlePath : undefined);
+    return c.json({ ok: true });
+  });
   app.post('/api/permissions/open', async (c) => { await openSettingsPane(String((await c.req.json<{ pane?: unknown }>()).pane ?? '')); return c.json({ ok: true }); });
   app.post('/api/permissions/claude-rule/remove', async (c) => {
     const b = await c.req.json<{ file?: unknown; list?: unknown; rule?: unknown }>();

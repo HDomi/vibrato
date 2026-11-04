@@ -116,7 +116,7 @@ export interface TccRow { service: string; client: string; db: 'user' | 'system'
 export interface ClaudeRuleFile { file: string; scope: 'user' | 'project'; project: string | null; allow: string[]; ask: string[]; deny: string[]; defaultMode: string | null; additionalDirectories: string[] }
 export interface CodexRule { file: string; line: number; text: string; pattern: string[]; decision: string }
 export interface PermissionsSnapshot {
-  bundleIds: string[]; fullDisk: boolean; tcc: TccRow[] | null;
+  bundleIds: string[]; fullDisk: boolean; tcc: TccRow[] | null; tccDbs: ('user' | 'system')[];
   folders: Record<'desktop' | 'documents' | 'downloads', PermState>; photos: PermState; wakeHelper: boolean;
   claude: ClaudeRuleFile[];
   codex: { file: string; approvalPolicy: string | null; sandboxMode: string | null; trusted: { path: string; level: string }[]; rules: CodexRule[] } | null;
@@ -260,6 +260,7 @@ export const api = {
   scheduleClearRuns: () => req<ScheduleSnapshot>('/api/schedule-runs', { method: 'DELETE' }),
   permissions: (bundlePath?: string | null) => req<PermissionsSnapshot>(`/api/permissions${bundlePath ? `?bundlePath=${q(bundlePath)}` : ''}`),
   requestPermission: (id: string) => post<{ state: PermState }>('/api/permissions/request', { id }),
+  resetPermission: (service: string, bundlePath?: string | null) => post<{ ok: true }>('/api/permissions/reset', { service, bundlePath }),
   openPermissionPane: (pane: string) => post<{ ok: true }>('/api/permissions/open', { pane }),
   removeClaudeRule: (file: string, list: 'allow' | 'ask' | 'deny' | 'additionalDirectories', rule: string) => post<{ ok: true }>('/api/permissions/claude-rule/remove', { file, list, rule }),
   removeCodexRule: (file: string, text: string) => post<{ ok: true }>('/api/permissions/codex-rule/remove', { file, text }),
