@@ -1,5 +1,0 @@
-Tool: built-in image_gen
-References: icon-glass-v2.png (edit target), user waveform crop, original icon.png (waveform geometry and color)
-Transparent background: true
-
-undefined
