@@ -298,7 +298,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
         )}
       </div>
       )}
-      <div className="h-6 shrink-0 flex items-center px-3 text-[10px] text-zinc-600 border-t border-white/5">
+      <div className="h-6 shrink-0 flex items-center justify-center px-3 text-[10px] text-zinc-600 border-t border-white/5">
         {selected.size > 0 ? t('files.selected', { n: selected.size }) : t('files.items', { n: entries.length })} · {t('files.footerHint')}
       </div>
     </div>
