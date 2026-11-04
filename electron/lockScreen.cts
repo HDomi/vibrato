@@ -384,7 +384,7 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
     if (!fromAppWindow(e) || !patch || typeof patch !== 'object') return null;
     Object.assign(stored, sanitize(patch as Partial<LockSettings>));
     save();
-    if (locked) { sendToCovers('lock:update', { settings: settings() }); if ('mainDisplay' in (patch as object)) rebuildSoon(true); }
+    if (locked && 'mainDisplay' in (patch as object)) rebuildSoon(true);
     return settings();
   });
   ipcMain.handle('lock:password', async (e, req: unknown) => {
@@ -432,7 +432,7 @@ export function initLockScreen(opts: { appUrl: string; preload: string; fromApp:
   ipcMain.handle('lock:init', (e) => {
     const c = covers.find((x) => x.win.webContents === e.sender);
     if (!c || !fromApp(e)) return null;
-    return { role: c.role, self: c.display.bounds, displays: layout(), settings: settings(), sessions, retryIn: retryIn() };
+    return { role: c.role, sessions, retryIn: retryIn() };
   });
   ipcMain.on('lock:alive', (e) => {
     const c = covers.find((x) => x.win.webContents === e.sender);

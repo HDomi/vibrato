@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AES_DEFAULTS, aesDecrypt, aesEncrypt, digest, HASH_ALGS, hmac, randomBytes, type AesMode, type AesOptions, type HashAlg, type KeySource } from '../../lib/toolbox/crypto';
 import { bytesToBase64, bytesToHex, fromBytes, hexToBytes, toBytes, utf8ToBytes, type ByteFormat, type Bytes } from '../../lib/toolbox/bytes';
 import { t } from '../../lib/i18n';
-import { Area, Field, Rows, Seg, Section, btn, btnPrimary, errText, input, select, usePersisted } from './ui';
+import { Area, Field, Rows, Seg, btn, btnPrimary, errText, input, select, usePersisted } from './ui';
 
 const FORMATS: { value: ByteFormat; label: string }[] = [{ value: 'utf8', label: 'UTF-8' }, { value: 'hex', label: 'Hex' }, { value: 'base64', label: 'Base64' }, { value: 'base64url', label: 'Base64url' }];
 

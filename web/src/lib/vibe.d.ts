@@ -4,7 +4,7 @@ export interface ViewBounds { x: number; y: number; width: number; height: numbe
 export interface LockSettings { mainDisplay: string | null }
 export interface LockDisplay { key: string; label: string; internal: boolean; primary: boolean; main: boolean; bounds: ViewBounds }
 export interface LockSessionSummary { agent: string; total: number; running: number; waiting: number }
-export interface LockInit { role: 'main' | 'sub'; self: ViewBounds; displays: LockDisplay[]; settings: LockSettings; sessions: LockSessionSummary[]; retryIn: number }
+export interface LockInit { role: 'main' | 'sub'; sessions: LockSessionSummary[]; retryIn: number }
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
   set: (patch: Partial<LockSettings>) => Promise<LockSettings | null>;
@@ -18,7 +18,7 @@ export interface LockBridge {
   init: () => Promise<LockInit | null>;
   unlock: (password: string) => Promise<{ ok: boolean; retryIn?: number }>;
   alive: () => void;
-  onUpdate: (cb: (u: { sessions?: LockSessionSummary[]; settings?: LockSettings }) => void) => () => void;
+  onUpdate: (cb: (u: { sessions?: LockSessionSummary[] }) => void) => () => void;
 }
 
 declare global {

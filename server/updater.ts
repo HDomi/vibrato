@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { run, streamShell } from './shell.js';
 import { REPO_ROOT } from './paths.js';
-import { bundleOf, bundleProblem, installableReleases, latestRelease, releaseByTag, releaseCommits, stageRelease, summarize, type Release, type ReleaseSummary } from './releaseUpdate.js';
+import { bundleOf, bundleProblem, installableReleases, latestRelease, releaseByTag, releaseCommits, stageRelease, summarize, type ReleaseSummary } from './releaseUpdate.js';
 export { REPO_ROOT };
 
 /**
@@ -80,8 +80,6 @@ export function checkUpdate(force = false): Promise<UpdateStatus> {
   return checking;
 }
 
-let latest: Release | null = null;
-
 async function readReleaseUpdate(status: UpdateStatus): Promise<UpdateStatus> {
   try {
     const problem = bundleProblem(APP_BUNDLE!);
@@ -90,7 +88,6 @@ async function readReleaseUpdate(status: UpdateStatus): Promise<UpdateStatus> {
     const releases = await installableReleases(3);
     const release = releases[0];
     if (!release) throw Object.assign(new Error('No release has been published yet.'), { status: 404 });
-    latest = release;
     status.releases = releases.map(summarize);
     const version = release.tag_name.replace(/^v/, '');
     status.remote = { version, commit: '', builtAt: null };
@@ -164,7 +161,7 @@ export function applyUpdate(onLine: (line: string, stream: 'stdout' | 'stderr') 
     if (applying) return Promise.reject(new Error('An update is already running'));
     applying = true;
     // The latest release (also for "reinstall latest"), or a chosen one to roll back to, fetched again so a stale check is not applied.
-    const pick = version ? () => releaseByTag(`v${version}`) : async () => (latest = await latestRelease());
+    const pick = version ? () => releaseByTag(`v${version}`) : () => latestRelease();
     return (checking ?? Promise.resolve()).then(async () => stageRelease(await pick(), onLine))
       .finally(() => { applying = false; cached = null; });
   }

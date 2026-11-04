@@ -40,7 +40,7 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n… [+${text.length - max} chars]` : text;
 }
 
-function inputSummary(name: string, input: unknown): string {
+function inputSummary(input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>;
   const v = i.command ?? i.file_path ?? i.path ?? i.pattern ?? i.query ?? i.description ?? i.url ?? i.prompt ?? '';
   return String(v).split('\n')[0].slice(0, 100);
@@ -107,7 +107,7 @@ export function exportMarkdown(items: ChatItem[], selected: Set<string>, opts: E
         return parts.join('\n\n');
       }
       case 'tool': {
-        const summary = inputSummary(it.name, it.input);
+        const summary = inputSummary(it.input);
         const head = `🔧 ${it.name}${summary ? ` · ${summary}` : ''}${it.isError ? ' · error' : ''}`;
         const body: string[] = [];
         const input = it.input && typeof it.input === 'object' && Object.keys(it.input as object).length ? JSON.stringify(it.input, null, 2) : '';
