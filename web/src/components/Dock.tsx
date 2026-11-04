@@ -19,6 +19,13 @@ interface Props {
   onResumeSession: (s: RecentSession) => void;
   /** Approvals and questions waiting across open sessions (badge on the recent-sessions button). */
   waiting: number;
+  /** Per-project dot: yellow while a session works, green when one finished and the project was not opened since. */
+  badge: (path: string) => 'running' | 'done' | null;
+}
+
+function StatusDot({ state }: { state: 'running' | 'done' | null }) {
+  if (!state) return null;
+  return <span className={`absolute top-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-black/45 ${state === 'running' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} aria-hidden="true" />;
 }
 
 const DRAG_FAV = 'application/x-vibe-favorite';
@@ -145,8 +152,9 @@ export default function Dock(p: Props) {
       <button key={f.path} draggable={!anim} onAnimationEnd={() => { if (anim === 'dock-in') setFresh((s) => { const n = new Set(s); n.delete(f.path); return n; }); }} onDragStart={(e) => { setTip(null); e.dataTransfer.setData(DRAG_FAV, f.path); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => p.onNavigate(f.path)} onContextMenu={(e) => { setTip(null); menu.open(e, favMenu(f, e)); }}
         onMouseEnter={(e) => showTip(e, f.name)} onMouseLeave={() => setTip(null)} aria-label={f.name} aria-current={active || undefined}
-        className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${anim} ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
+        className={`relative w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-[background-color,box-shadow,transform] duration-200 ease-glass active:scale-95 ${anim} ${active ? 'bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)]' : 'hover:bg-fill-2'}`}>
         <ProjectIcon path={f.path} name={f.name} size={22} />
+        <StatusDot state={p.badge(f.path)} />
       </button>
     );
   };
@@ -164,8 +172,9 @@ export default function Dock(p: Props) {
           <button onClick={() => p.onNavigate(current)} aria-label={baseName(current)} aria-current
             onMouseEnter={(e) => showTip(e, baseName(current), t('dock.current'))} onMouseLeave={() => setTip(null)}
             onContextMenu={(e) => { setTip(null); menu.open(e, [{ label: t('dock.addFavorite'), onClick: () => apply(api.addFavorite(current)) }, { separator: true }, ...commonItems(current)]); }}
-            className="w-10 h-10 rounded-full flex items-center justify-center bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)] outline-dashed outline-[1.5px] outline-offset-[3px] outline-white/45">
+            className="relative w-10 h-10 rounded-full flex items-center justify-center bg-selected shadow-[0_4px_14px_rgb(0_0_0/.3)] outline-dashed outline-[1.5px] outline-offset-[3px] outline-white/45">
             <ProjectIcon path={current} name={baseName(current)} size={22} />
+            <StatusDot state={p.badge(current)} />
           </button>
         </div>
       )}

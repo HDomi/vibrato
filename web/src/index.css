@@ -23,10 +23,11 @@
   --color-fill-3: rgb(255 255 255 / .16);
   --color-selected: rgb(255 255 255 / .92);
   --color-on-selected: #0b0d12;
-  /* Muted grays one step lighter than Tailwind's: zinc-500..700 text vanished on translucent glass. */
-  --color-zinc-500: #8b8b95;
-  --color-zinc-600: #6e6e78;
-  --color-zinc-700: #55555e;
+  /* Muted grays lighter than Tailwind's: zinc-400..700 text faded into translucent glass over bright wallpapers. */
+  --color-zinc-400: #b4b4bd;
+  --color-zinc-500: #9f9fa9;
+  --color-zinc-600: #878791;
+  --color-zinc-700: #6c6c76;
   --color-claude: #d97757;
   --color-codex: #d7e5f5;
   --color-accent: #7aa2f7;
@@ -78,8 +79,9 @@ select option { background: #1a1c22; color: #e6e8ee; }
   background-position: 0 0, 0 0, center;
   background-repeat: no-repeat;
   background-attachment: scroll, scroll, fixed;
-  border: 1px solid rgb(255 255 255 / .1);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .09), 0 14px 40px rgb(0 0 0 / .28);
+  /* One even hairline all round: a top-only inset highlight fades out along the corner curve and makes it look clipped. */
+  border: 1px solid rgb(255 255 255 / .13);
+  box-shadow: 0 14px 40px rgb(0 0 0 / .28);
 }
 /* Same backdrop as the card it sits in, without the frame: for overlays and sticky bars inside a card. */
 .glass-fill {
@@ -91,7 +93,22 @@ select option { background: #1a1c22; color: #e6e8ee; }
   background-attachment: scroll, scroll, fixed;
 }
 .glass { border-radius: var(--radius-card); }
-.glass-pill { border-radius: 9999px; box-shadow: inset 0 1px 0 rgb(255 255 255 / .1), 0 6px 18px rgb(0 0 0 / .25); }
+.glass-pill { border-radius: 9999px; box-shadow: 0 6px 18px rgb(0 0 0 / .25); }
+/* Title bar controls: small and nearly static, so a real backdrop blur is cheap. One border, no filter
+   (a filter would trap the usage tooltips under the cards). */
+.glass-ctl {
+  background-color: rgb(16 18 24 / .42);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid rgb(255 255 255 / .16);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .22);
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.glass-ctl:hover { background-color: rgb(40 43 52 / .55); border-color: rgb(255 255 255 / .24); }
+.glass-ctl-claude { background-color: rgb(217 119 87 / .3); border-color: rgb(240 160 130 / .45); }
+.glass-ctl-claude:hover { background-color: rgb(217 119 87 / .42); }
+.glass-ctl-codex { background-color: rgb(150 175 205 / .24); border-color: rgb(215 229 245 / .4); }
+.glass-ctl-codex:hover { background-color: rgb(150 175 205 / .36); }
 /* Floating layers (menus, popovers, tooltips) sit over live content, so they use a real backdrop blur: small and short-lived. */
 .glass-pop {
   background: rgb(24 26 33 / .78);
@@ -99,13 +116,13 @@ select option { background: #1a1c22; color: #e6e8ee; }
   backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgb(255 255 255 / .12);
   border-radius: 16px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 18px 50px rgb(0 0 0 / .45);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .45);
 }
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* Motion. Views slide with `left` (not transform) so the glass inside stays aligned with the wallpaper.
-   The distance must not exceed the 16px page padding: Chromium does not repaint the fixed background of a
+   The distance must stay within the page padding: Chromium does not repaint the fixed background of a
    glass surface that started partly outside the viewport, leaving that strip blank after it slides in. */
 @keyframes view-in-right { from { left: 16px; opacity: 0; } to { left: 0; opacity: 1; } }
 @keyframes view-in-left { from { left: -16px; opacity: 0; } to { left: 0; opacity: 1; } }
@@ -165,14 +182,14 @@ select option { background: #1a1c22; color: #e6e8ee; }
   border: 1px solid rgb(255 255 255 / .14);
   -webkit-backdrop-filter: blur(30px) saturate(140%);
   backdrop-filter: blur(30px) saturate(140%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .12), 0 30px 90px rgb(0 0 0 / .45);
+  box-shadow: 0 30px 90px rgb(0 0 0 / .45);
 }
 .pin-box {
   position: relative; width: 64px; height: 64px; border-radius: 18px;
   display: flex; align-items: center; justify-content: center;
   background: rgb(10 11 14 / .72);
   border: 1.5px solid rgb(255 255 255 / .13);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), 0 8px 22px rgb(0 0 0 / .3);
+  box-shadow: 0 8px 22px rgb(0 0 0 / .3);
   transition: border-color .2s ease, box-shadow .25s ease, opacity .2s ease;
 }
 .pin-box-current { border-color: rgb(255 255 255 / .42); }

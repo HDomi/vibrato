@@ -62,7 +62,7 @@ export default function ToolboxView() {
 
   const pick = (id: string) => { setActive(id); setQuery(''); };
   return (
-    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-4 pb-4">
+    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-[42px] pb-4">
       <aside className="glass w-60 shrink-0 flex flex-col overflow-hidden">
         <div className="h-12 shrink-0 flex items-center gap-2 px-3 border-b border-line">
           <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('tb.search')} spellCheck={false}

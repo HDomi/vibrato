@@ -179,6 +179,26 @@ function AppInner() {
   }, [navigate]);
   // Notifications are skipped for the session on screen while the window is focused.
   useEffect(() => { setOnScreenSession(view === 'agent' ? (agentActive && agentActive !== 'new' ? agentActive : null) : (session?.id ?? null)); }, [view, agentActive, session?.id]);
+  // Dock badges: sessions whose turn ended while their project was not on screen stay "done, unseen" until it is opened.
+  const [unseen, setUnseen] = useState<Set<string>>(() => new Set());
+  const lastStatus = useRef<Record<string, ChatSession['status']>>({});
+  const shownProject = view === 'vibe' ? project : null;
+  useEffect(() => {
+    const ended: string[] = [];
+    for (const s of Object.values(S.sessions)) {
+      const before = lastStatus.current[s.id];
+      if ((before === 'running' || before === 'compacting') && s.status === 'idle' && !inProject(s, shownProject)) ended.push(s.id);
+      lastStatus.current[s.id] = s.status;
+    }
+    if (ended.length) setUnseen((u) => new Set([...u, ...ended]));
+  }, [S.sessions, shownProject]);
+  useEffect(() => {
+    if (!shownProject) return;
+    setUnseen((u) => {
+      const left = [...u].filter((id) => { const s = S.sessions[id]; return s && !inProject(s, shownProject); });
+      return left.length === u.size ? u : new Set(left);
+    });
+  }, [shownProject, unseen, S.sessions]);
   // Clicking a notification brings its session on screen in whichever view is active.
   const focusSession = useRef<(id: string) => void>(() => {});
   const approveRef = useRef<(sessionId: string, requestId: string, decision: 'allow' | 'allow_always' | 'deny') => void>(() => {});
@@ -375,6 +395,12 @@ function AppInner() {
   }, [project, session, S, view, agentActive]);
 
   const waiting = Object.values(S.sessions).reduce((n, s) => n + pendingRequests(s), 0);
+  /** Per project: 'running' while any of its sessions works, else 'done' if one finished unseen. */
+  const projectBadge = (path: string): 'running' | 'done' | null => {
+    const mine = Object.values(S.sessions).filter((s) => inProject(s, path));
+    if (mine.some((s) => s.status === 'running' || s.status === 'compacting')) return 'running';
+    return mine.some((s) => unseen.has(s.id)) ? 'done' : null;
+  };
   const tabIcons: Record<typeof rightTabs[number][0], IconName> = { files: 'list', preview: 'file', terminal: 'terminal', git: 'branch', run: 'play' };
 
   return (
@@ -391,9 +417,9 @@ function AppInner() {
         ) : view === 'schedule' ? (
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
         ) : (
-        <div className="flex-1 min-w-0 flex px-4 pb-4">
+        <div className="flex-1 min-w-0 flex px-[42px] pb-4">
           <div className="w-14 shrink-0 flex items-center">
-            <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={resumeSession} waiting={waiting} />
+            <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={resumeSession} waiting={waiting} badge={projectBadge} />
           </div>
           <main className="flex-1 min-w-0 flex ml-8">
             <section className="glass flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -408,7 +434,7 @@ function AppInner() {
                       <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
-                      <span className={session?.id === s.id ? 'text-zinc-100' : 'text-zinc-400'} title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
+                      <span className={session?.id === s.id ? 'text-zinc-100' : 'text-zinc-300'} title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
                       {s.worktree && <span className="flex items-center gap-0.5 rounded-full bg-violet-400/10 px-1.5 text-[10px] text-violet-200 max-w-28" title={`${s.worktree.branch} · ${s.worktree.path}`}><Icon name="branch" size={10} /><span className="truncate">{s.worktree.branch}</span></span>}
                       <AttentionBadge s={s} />
                       <button className="ml-0.5 w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/15 opacity-0 group-hover:opacity-100 transition-opacity" title={t('app.closeSession')}
@@ -471,7 +497,7 @@ function AppInner() {
                 <div className="h-11 shrink-0 flex items-center gap-1 px-2 border-b border-line text-xs">
                   <div className="flex-1 min-w-0 flex items-center gap-0.5 overflow-x-auto whitespace-nowrap no-scrollbar">
                     {rightTabs.map(([k, label]) => (
-                      <button key={k} className={`shrink-0 h-7 px-3 rounded-full flex items-center gap-1.5 transition-colors duration-150 ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:text-zinc-100 hover:bg-fill'}`} onClick={() => setRightTab(k)}>
+                      <button key={k} className={`shrink-0 h-7 px-3 rounded-full flex items-center gap-1.5 transition-colors duration-150 ${rightTab === k ? 'bg-fill-3 text-white' : 'text-zinc-300 hover:text-white hover:bg-fill'}`} onClick={() => setRightTab(k)}>
                         {label}
                         {k === 'run' && runStatus.running > 0 && <span className={`w-1.5 h-1.5 rounded-full ${runStatus.errors ? 'bg-red-400' : 'bg-emerald-400'}`} />}
                       </button>
@@ -537,7 +563,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
   const start = (c: string, o?: StartOptions) => S.start(c, o).then(setActive).catch((e) => window.alert(e.message));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   return (
-    <div className="flex-1 min-w-0 flex gap-4 px-4 pb-4 relative">
+    <div className="flex-1 min-w-0 flex gap-4 px-[42px] pb-4 relative">
       <aside className="glass w-72 shrink-0 flex flex-col overflow-hidden">
         <div className="h-12 shrink-0 flex items-center px-4 border-b border-line">
           <span className="text-[13px] font-semibold text-zinc-100">{t('app.agent')}</span>

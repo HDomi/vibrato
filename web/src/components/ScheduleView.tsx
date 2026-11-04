@@ -153,7 +153,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   const projectOptions = [...new Set([...(draft.cwd ? [draft.cwd] : []), ...projects])];
 
   return (
-    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-4 pb-4 text-[12.5px]">
+    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-[42px] pb-4 text-[12.5px]">
       <aside className="glass w-[320px] shrink-0 flex flex-col min-h-0 overflow-hidden">
         <div className="h-12 shrink-0 flex items-center gap-2 px-4 border-b border-line">
           <span className="text-[14px] font-semibold">{t('sched.title')}</span>

@@ -215,7 +215,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
         </div>
       )}
       {uploadError && <div role="alert" className="text-xs text-red-300 mb-2">{uploadError}</div>}
-      <div className="relative rounded-[22px] border border-white/12 bg-black/25 shadow-[0_10px_30px_rgb(0_0_0/.3),inset_0_1px_0_rgb(255_255_255/.06)] transition-colors duration-200 focus-within:border-white/25">
+      <div className="relative rounded-[22px] border border-white/12 bg-black/25 shadow-[0_10px_30px_rgb(0_0_0/.3)] transition-colors duration-200 focus-within:border-white/25">
         {mention && fileHits.length > 0 && (
           <div className="absolute bottom-full left-2 mb-1 w-[480px] max-w-[95%] glass-pop pop-in rounded-xl py-1 text-[13px] z-10">
             {fileHits.map((h, i) => (

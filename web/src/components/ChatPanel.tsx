@@ -245,8 +245,8 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
 
   return (
     <div className="@container h-full overflow-y-auto p-6">
-    {/* Wide: start options on the left, previous sessions on the right; narrow: stacked. */}
-    <div className="max-w-6xl mx-auto grid gap-4 items-start @[860px]:grid-cols-2">
+    {/* Project: start options left and previous sessions right when wide. Agent view: always stacked (its own list is on the left). */}
+    <div className={`mx-auto grid gap-4 items-start ${scope === 'home' ? 'max-w-3xl' : 'max-w-6xl @[860px]:grid-cols-2'}`}>
     <section className="rounded-[20px] border border-line bg-black/15 p-6 min-w-0">
       <div className="text-xs text-zinc-500 mb-1">{scope === 'home' ? t('chat.agent') : t('chat.project')}</div>
       {scope === 'home'

@@ -64,8 +64,7 @@ export function UsageChip({ agent, label, win, error, loading, empty }: {
     : win ? t('usage.used', { label, pct: win.usedPct, reset: resetLabel(win.resetsAt) }) : t(loading ? 'usage.loading' : 'usage.unavailable', { label, reason: '' });
   return (
     <button type="button" aria-label={title} data-agent={agent} onClick={() => loadUsage(true)} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      className="titlebar-nodrag glass-pill relative h-10 min-w-10 px-1.5 flex flex-col items-center justify-center gap-[3px] transition-[filter] duration-150 hover:brightness-125 active:brightness-95">
-      <span className={`absolute inset-0 rounded-full pointer-events-none ${agent === 'claude' ? 'bg-claude/[0.16] ring-1 ring-inset ring-claude/30' : 'bg-codex/[0.11] ring-1 ring-inset ring-codex/25'}`} />
+      className={`titlebar-nodrag glass-ctl relative h-10 min-w-10 px-2 rounded-full flex flex-col items-center justify-center gap-[3px] ${agent === 'claude' ? 'glass-ctl-claude' : 'glass-ctl-codex'}`}>
       <span className={`relative inline-flex items-center ${loading ? 'animate-pulse' : ''}`}>
         <span className="w-[19px] h-[9px] rounded-[2.5px] border border-zinc-300/60 p-px flex">
           <span className={`h-full rounded-[1px] transition-[width] duration-500 ease-glass ${remain === null ? 'bg-zinc-600' : color(remain)}`} style={{ width: `${remain ?? 0}%` }} />
@@ -73,7 +72,7 @@ export function UsageChip({ agent, label, win, error, loading, empty }: {
         <span className="w-[2px] h-[4px] bg-zinc-300/60 rounded-r-[1px] ml-px" />
         {empty != null && empty <= 60 && <span className="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
       </span>
-      <span className={`relative text-[9.5px] leading-none tabular-nums whitespace-nowrap ${error ? 'text-amber-300' : 'text-zinc-200'}`}>{label}: {remain === null ? '—' : `${remain}%`}</span>
+      <span className={`relative text-[9.5px] leading-none tabular-nums whitespace-nowrap ${error ? 'text-amber-300' : 'text-zinc-100'}`}>{label}: {remain === null ? '—' : `${remain}%`}</span>
       {hover && (
         <span role="tooltip" className="glass-pop pop-in absolute top-full right-0 mt-2 z-50 whitespace-nowrap rounded-xl px-3 py-2 text-left text-[11px] text-zinc-200 pointer-events-none">
           <span className="block font-medium text-zinc-100">{name} · {label}</span>
@@ -91,7 +90,7 @@ export function UsageChip({ agent, label, win, error, loading, empty }: {
 function CircleButton({ title, onClick, children }: { title: string; onClick?: () => void; children: React.ReactNode }) {
   return (
     <button type="button" title={title} aria-label={title} onClick={onClick}
-      className="titlebar-nodrag glass-pill w-8 h-8 shrink-0 flex items-center justify-center text-zinc-300 transition-[filter,color] duration-150 hover:text-white hover:brightness-125 active:brightness-95">
+      className="titlebar-nodrag glass-ctl w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-zinc-200 hover:text-white">
       {children}
     </button>
   );
@@ -107,11 +106,11 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
     if (el) setMarker({ left: el.offsetLeft, width: el.offsetWidth });
   }, [mode, lang]);
   return (
-    <div className="titlebar-nodrag glass-pill relative flex items-center p-1 text-[12px] font-medium">
+    <div className="titlebar-nodrag glass-ctl relative flex items-center p-1 rounded-full text-[12px] font-medium">
       {marker && <span className="absolute top-1 bottom-1 rounded-full bg-selected shadow-[0_2px_10px_rgb(0_0_0/.25)] transition-[left,width] duration-300 ease-glass" style={{ left: marker.left, width: marker.width }} />}
       {VIEW_ORDER.map((m) => (
         <button key={m} ref={(el) => { refs.current[m] = el; }} onClick={() => onMode(m)}
-          className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-400 hover:text-zinc-100'}`}>
+          className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
           {t(`usage.${m}`)}
         </button>
       ))}
@@ -131,17 +130,19 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
   const showFolder = mode === 'vibe' && !!onPickFolder;
 
   return (
-    <div className="titlebar-drag h-[88px] py-6 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-xs select-none">
+    // z-30: the usage tooltips hang over the cards below.
+    <div className="titlebar-drag relative z-30 h-[100px] pt-9 pb-6 shrink-0 grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-xs select-none">
       {/* Left: room for the macOS window buttons, then the folder (VIBE only) and settings buttons. */}
-      <div className={`min-w-0 flex items-center ${windowButtons ? 'pl-[84px]' : 'pl-4'}`}>
-        <div className={`shrink-0 overflow-hidden transition-[width,margin,opacity] duration-300 ease-glass ${showFolder ? 'w-8 mr-2 opacity-100' : 'w-0 mr-0 opacity-0'}`} aria-hidden={!showFolder}>
+      <div className={`min-w-0 flex items-center ${windowButtons ? 'pl-[84px]' : 'pl-[42px]'}`}>
+        {/* Not overflow-hidden: that would clip the round button's shadow into a square. */}
+        <div className={`shrink-0 transition-[width,margin,opacity,scale] duration-300 ease-glass ${showFolder ? 'w-8 mr-2 opacity-100 scale-100' : 'w-0 mr-0 opacity-0 scale-75 pointer-events-none'}`} aria-hidden={!showFolder}>
           <CircleButton title={t('sidebar.openFolder')} onClick={onPickFolder}><Icon name="folderPlus" size={15} /></CircleButton>
         </div>
         {onOpenSettings && <CircleButton title={t('common.settings')} onClick={onOpenSettings}><Icon name="gear" size={15} /></CircleButton>}
         <span className="ml-2"><UpdateBadge onlyAvailable /></span>
       </div>
       <ModeTabs mode={mode} onMode={onMode} />
-      <div className="min-w-0 flex items-center justify-end gap-1.5 pr-4">
+      <div className="min-w-0 flex items-center justify-end gap-1.5 pr-[42px]">
         <UsageChip agent="claude" label="5h" win={u?.claude?.fiveHour ?? null} error={claudeError} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
         <UsageChip agent="claude" label={t('usage.week')} win={u?.claude?.weekly ?? null} error={claudeError} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
         {u?.claude?.model && <UsageChip agent="claude" label={u.claude.model.name.slice(0, 5)} win={u.claude.model} loading={loading} />}
