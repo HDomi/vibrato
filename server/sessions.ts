@@ -97,7 +97,7 @@ export class SessionRegistry {
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
-      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, settings: claudeFlagSettings(off.claude) });
+      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, planGuard: cfg?.alwaysPlan !== false, settings: claudeFlagSettings(off.claude) });
     } else if (cmd.agent === 'codex') {
       const codexPath = await which('codex');
       if (!codexPath) throw new Error('codex CLI not found. Install it from Settings.');

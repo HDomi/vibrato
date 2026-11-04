@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { query, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type HookJSONOutput, type HookInput, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { saveToolImage } from '../attachments.js';
+import { planGap } from '../planGuard.js';
+import { PLAN_REMINDER } from '../planInstructions.js';
 import { tokenSum, turnCost } from './turnCost.js';
 import type { AgentEvent, AgentSession, AssistantBlock, Attachment, PermissionModeId, Question, RewindResult, TaskInfo } from './types.js';
 
@@ -54,6 +56,8 @@ export interface ClaudeSessionOptions {
   model?: string;
   /** User's standing instructions (Settings > Custom prompt), appended to the system prompt. */
   instructions?: string;
+  /** Hold the agent to the plan protocol: remind it with every message, send it back when a reply misses a part. */
+  planGuard?: boolean;
   /** Flag settings turning skills / plugins off for this session (Settings > Agent CLIs, see agentExtensions.ts). */
   settings?: Options['settings'];
 }
@@ -78,6 +82,8 @@ export class ClaudeSession implements AgentSession {
   private tasks = new Map<string, TaskInfo>();
   /** `total_cost_usd` after the last turn, to tell each turn's share; unknown for a resumed session until its first turn. */
   private lastTotalCost: number | null;
+  /** The agent's own text in the current turn (top level only), for the plan check when it stops. */
+  private turnTexts: string[] = [];
 
   constructor(private opts: ClaudeSessionOptions) {
     this.cwd = opts.cwd;
@@ -124,6 +130,12 @@ export class ClaudeSession implements AgentSession {
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'vibrato/0.1.0' },
       stderr: (data) => this.emit({ kind: 'log', text: data }),
       canUseTool: (toolName, input, { suggestions, signal }) => this.handlePermission(toolName, input, suggestions ?? [], signal),
+      ...(this.opts.planGuard ? {
+        hooks: {
+          UserPromptSubmit: [{ hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit' as const, additionalContext: PLAN_REMINDER } })] }],
+          Stop: [{ hooks: [async (input: HookInput) => this.planStop(input)] }],
+        },
+      } : {}),
     };
     this.q = query({ prompt: this.input, options });
     this.emit({ kind: 'session.init', sessionId: this.id, agent: 'claude', cwd: this.cwd, permissionMode: options.permissionMode, agentSessionId: this.agentSessionId });
@@ -209,7 +221,10 @@ export class ClaudeSession implements AgentSession {
       case 'assistant': {
         const blocks: AssistantBlock[] = [];
         for (const b of m.message.content as unknown as Array<Record<string, unknown>>) {
-          if (b.type === 'text') blocks.push({ type: 'text', text: String(b.text ?? '') });
+          if (b.type === 'text') {
+            blocks.push({ type: 'text', text: String(b.text ?? '') });
+            if (!m.parent_tool_use_id && String(b.text ?? '').trim()) this.turnTexts.push(String(b.text));
+          }
           else if (b.type === 'thinking') blocks.push({ type: 'thinking', text: String(b.thinking ?? '') });
           else if (b.type === 'tool_use') {
             blocks.push({ type: 'tool_use', id: String(b.id), name: String(b.name), input: b.input });
@@ -264,6 +279,16 @@ export class ClaudeSession implements AgentSession {
    * background_tasks_changed is the level signal (REPLACE semantics) and is the only thing that
    * tells us a backgrounded task is gone when its notification was missed.
    */
+  /**
+   * Stop hook: a reply that misses part of the plan protocol is sent back once with what is missing.
+   * Replies with no text at all (slash commands, tool-only turns) and the continuation it asked for pass.
+   */
+  private async planStop(input: HookInput): Promise<HookJSONOutput> {
+    if (input.hook_event_name !== 'Stop' || input.stop_hook_active || !this.turnTexts.length) return {};
+    const gap = planGap(this.turnTexts);
+    return gap ? { decision: 'block', reason: gap } : {};
+  }
+
   private handleTask(m: Extract<SDKMessage, { type: 'system' }>) {
     const upsert = (t: TaskInfo) => { this.tasks.set(t.id, t); this.emit({ kind: 'task', task: t }); };
     const now = Date.now();
@@ -389,6 +414,8 @@ export class ClaudeSession implements AgentSession {
     this.emit({ kind: 'user', text, attachments, messageId: uuid });
     await this.relaunching;
     if (this.closed) throw new Error('Session closed');
+    // A message sent while the agent works joins the turn in progress.
+    if (!this.running) this.turnTexts = [];
     this.running = true;
     this.emit({ kind: 'status', status: 'running' });
     this.input.push({ type: 'user', uuid: uuid as `${string}-${string}-${string}-${string}-${string}`, message: { role: 'user', content: content as never }, parent_tool_use_id: null });
