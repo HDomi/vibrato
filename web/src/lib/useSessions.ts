@@ -352,10 +352,17 @@ export function useSessions() {
     setSessions((prev) => prev[sessionId] ? { ...prev, [sessionId]: { ...prev[sessionId], pinned: pinned || undefined, pinnedKey: key ?? undefined } } : prev);
     if (key) pushPin(key, pinned);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Renames the CLI session (same title the history lists show) and the tab right away. */
+  const rename = useCallback((sessionId: string, title: string) => {
+    const s = sessionsRef.current[sessionId];
+    if (!s) return;
+    setSessions((prev) => prev[sessionId] ? { ...prev, [sessionId]: { ...prev[sessionId], title } } : prev);
+    if (s.agentSessionId) void api.historyRename(s.agent, s.agentSessionId, title, s.cwd).then(() => window.dispatchEvent(new Event('vibe:history-changed'))).catch(() => {});
+  }, []);
   const close = useCallback((sessionId: string) => {
     agentClient.send({ type: 'session.close', sessionId });
     setSessions((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
   }, []);
 
-  return { sessions, replaced, start, adopt, send, approve, answer, interrupt, stopTask, setMode, setModel, setPinned, rewind, verify, close };
+  return { sessions, replaced, start, adopt, send, approve, answer, interrupt, stopTask, setMode, setModel, setPinned, rename, rewind, verify, close };
 }

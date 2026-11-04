@@ -245,6 +245,7 @@ function AppInner() {
   setTransferTargets(() => sortSessions(Object.values(S.sessions)).filter((s) => s.id !== onScreenId && s.status !== 'closed')
     .map((s) => ({ id: s.id, agent: s.agent, name: `${displayTitle(s, 28) ?? t('common.new')} · ${(s.worktree?.origin ?? s.cwd).split('/').pop()}` })));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const dropProps = (id: string) => ({
     onDragOver: (e: React.DragEvent) => { if (hasTransfer(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (dropTarget !== id) setDropTarget(id); } },
     onDragLeave: () => setDropTarget((d) => (d === id ? null : d)),
@@ -336,10 +337,10 @@ function AppInner() {
     lastPanelRoot.current = panelRoot;
     if (panelRoot && (cwd === prev || (prev && cwd.startsWith(prev + '/')))) navigate(panelRoot);
   }, [panelRoot, cwd, navigate]);
-  const closeSession = (id: string) => {
+  const closeSession = (id: string, confirmed = false) => {
     const s = S.sessions[id];
     if (!s) return;
-    if ((s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
+    if (!confirmed && (s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
     S.close(id);
     if (activeSession === id) setActiveSession(null);
   };
@@ -467,12 +468,14 @@ function AppInner() {
                   <div className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {projectSessions.map((s) => (
                     <div key={s.id} onClick={() => setActiveSession(s.id)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
-                      onContextMenu={(e) => menu.open(e, sessionMenu(s, S.setPinned, () => closeSession(s.id)))} {...(s.id !== session?.id ? dropProps(s.id) : {})}
+                      onContextMenu={(e) => menu.open(e, sessionMenu(s, { setPinned: S.setPinned, rename: () => setRenamingTab(s.id), close: () => closeSession(s.id), remove: () => deleteSession(s, () => closeSession(s.id, true)) }))} {...(s.id !== session?.id ? dropProps(s.id) : {})}
                       className={`group flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 whitespace-nowrap cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
-                      <span className={session?.id === s.id ? 'text-zinc-100' : 'text-zinc-300'} title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>
+                      {renamingTab === s.id
+                        ? <RenameInput s={s} onDone={(v) => { setRenamingTab(null); if (v) S.rename(s.id, v); }} className="w-40 rounded-full bg-black/30 px-2 text-xs text-zinc-100 outline-none border border-white/20" />
+                        : <span className={session?.id === s.id ? 'text-zinc-100' : 'text-zinc-300'} title={displayTitle(s, 300) ?? undefined}>{displayTitle(s, 18) ?? t('common.new')}</span>}
                       {s.worktree && <span className="flex items-center gap-0.5 rounded-full bg-violet-400/10 px-1.5 text-[10px] text-violet-200 max-w-28" title={`${s.worktree.branch} · ${s.worktree.path}`}><Icon name="branch" size={10} /><span className="truncate">{s.worktree.branch}</span></span>}
                       <AttentionBadge s={s} />
                       <button className="ml-0.5 w-5 h-5 flex items-center justify-center rounded-full text-zinc-500 hover:text-white hover:bg-white/15 opacity-0 group-hover:opacity-100 transition-opacity" title={t('app.closeSession')}
@@ -604,6 +607,11 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
   const session = active && active !== 'new' ? S.sessions[active] ?? null : null;
   const start = (c: string, o?: StartOptions) => S.start(c, o).then(setActive).catch((e) => window.alert(e.message));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const closeOne = (s: ChatSession, confirmed = false) => {
+    if (!confirmed && (s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
+    S.close(s.id); if (session?.id === s.id) setActive(null);
+  };
   return (
     <div className="flex-1 min-w-0 flex gap-4 px-[42px] pb-4 relative">
       <aside className="glass w-72 shrink-0 flex flex-col overflow-hidden">
@@ -620,15 +628,14 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
               onDragOver={(e) => { if (s.id !== session?.id && hasTransfer(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDropTarget(s.id); } }}
               onDragLeave={() => setDropTarget((d) => (d === s.id ? null : d))}
               onDrop={(e) => { if (s.id === session?.id || !hasTransfer(e)) return; e.preventDefault(); setDropTarget(null); const p = readTransfer(e); if (p) sendTransfer(s.id, p); }}
-              onContextMenu={(e) => menu.open(e, sessionMenu(s, S.setPinned, () => {
-                if ((s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
-                S.close(s.id); if (session?.id === s.id) setActive(null);
-              }))}
+              onContextMenu={(e) => menu.open(e, sessionMenu(s, { setPinned: S.setPinned, rename: () => setRenaming(s.id), close: () => closeOne(s), remove: () => deleteSession(s, () => closeOne(s, true)) }))}
               className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-300 hover:bg-fill'}`}>
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
               <AgentIcon agent={s.agent} size={16} />
               {s.pinned && <span className="text-[10px]" title={t('common.pin')}>📌</span>}
-              <span className="truncate flex-1">{displayTitle(s, 40) ?? t('common.new')}</span>
+              {renaming === s.id
+                ? <RenameInput s={s} onDone={(v) => { setRenaming(null); if (v) S.rename(s.id, v); }} className="flex-1 min-w-0 rounded-lg bg-black/30 px-2 py-0.5 text-sm text-zinc-100 outline-none border border-white/20" />
+                : <span className="truncate flex-1">{displayTitle(s, 40) ?? t('common.new')}</span>}
               <AttentionBadge s={s} />
               <span className="text-[10px] text-zinc-600 truncate max-w-[70px]" title={s.cwd}>{s.cwd.split('/').pop()}</span>
             </div>
@@ -707,11 +714,43 @@ function AttentionBadge({ s }: { s: ChatSession }) {
   return <span className="min-w-4 h-4 px-1 rounded-full bg-amber-400 text-[10px] font-semibold leading-4 text-center text-black shrink-0" title={t('app.waitingRequests', { n })}>{n}</span>;
 }
 
-/** Right-click menu shared by project tabs and the Agent view list. */
-function sessionMenu(s: ChatSession, setPinned: (id: string, pinned: boolean) => void, close: () => void): MenuItem[] {
+interface SessionActions { setPinned: (id: string, pinned: boolean) => void; rename: () => void; close: () => void; remove: () => void }
+
+/** Right-click menu shared by project tabs and the Agent view list; mirrors the recent-sessions menu. */
+function sessionMenu(s: ChatSession, a: SessionActions): MenuItem[] {
+  const id = s.agentSessionId;
   return [
-    { label: t(s.pinned ? 'common.unpin' : 'common.pin'), onClick: () => setPinned(s.id, !s.pinned) },
+    { label: t(s.pinned ? 'common.unpin' : 'common.pin'), onClick: () => a.setPinned(s.id, !s.pinned) },
+    { label: t('common.rename'), onClick: a.rename },
+    { label: t('common.copySessionId'), disabled: !id, onClick: () => { if (id) void navigator.clipboard.writeText(id); } },
     { separator: true },
-    { label: t('app.closeSession'), shortcut: '⌘W', danger: true, onClick: close },
+    { label: t('app.closeSession'), shortcut: '⌘W', onClick: a.close },
+    { label: t(s.pinned ? 'common.deleteUnpinFirst' : 'common.deletePermanently'), danger: true, disabled: !!s.pinned || !id, onClick: a.remove },
   ];
+}
+
+/** Closes the tab and deletes the CLI session behind it, after one confirm. */
+function deleteSession(s: ChatSession, close: () => void) {
+  const id = s.agentSessionId;
+  if (!id || !window.confirm(t('common.confirmDeleteSession', { title: displayTitle(s, 60) ?? id }))) return;
+  const running = s.status === 'running' || s.status === 'compacting';
+  close();
+  // A running CLI may still append to its transcript while it stops; let it exit before the file goes.
+  window.setTimeout(() => {
+    api.historyDelete(s.agent, id, s.cwd).then(() => window.dispatchEvent(new Event('vibe:history-changed'))).catch((e: Error) => window.alert(e.message));
+  }, running ? 1000 : 0);
+}
+
+/** In-place title editor for a session tab or list row; Enter saves, Escape cancels. */
+function RenameInput({ s, onDone, className }: { s: ChatSession; onDone: (title: string | null) => void; className: string }) {
+  const initial = s.title?.trim() || displayTitle(s, 300) || '';
+  return (
+    <input autoFocus defaultValue={initial} onFocus={(e) => e.target.select()} onClick={(e) => e.stopPropagation()} className={className}
+      onBlur={(e) => { const v = e.target.value.trim(); onDone(v && v !== initial ? v : null); }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur();
+        if (e.key === 'Escape') { e.currentTarget.value = initial; e.currentTarget.blur(); }
+      }} />
+  );
 }

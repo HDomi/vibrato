@@ -240,8 +240,12 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
     p.then((rows) => { if (request === historyRequest.current) setHistory(rows); }).catch(() => { if (request === historyRequest.current) setHistory([]); }).finally(() => { if (request === historyRequest.current) setLoadingHistory(false); });
   };
   useEffect(() => { setHistory([]); loadHistory(); return () => { historyRequest.current++; }; /* eslint-disable-line react-hooks/exhaustive-deps */ }, [cwd, scope]);
-  // A pin toggled on a tab or in the sidebar shows here too.
-  useEffect(() => { const h = () => loadHistory(); window.addEventListener('vibe:pins-changed', h); return () => window.removeEventListener('vibe:pins-changed', h); }); // eslint-disable-line react-hooks/exhaustive-deps
+  // A pin, rename or delete done on a tab or in the sidebar shows here too.
+  useEffect(() => {
+    const h = () => loadHistory();
+    window.addEventListener('vibe:pins-changed', h); window.addEventListener('vibe:history-changed', h);
+    return () => { window.removeEventListener('vibe:pins-changed', h); window.removeEventListener('vibe:history-changed', h); };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!cwd) return <div className="h-full flex items-center justify-center text-zinc-600 text-sm">{t('chat.openFolderFirst')}</div>;
   const shown = filter.trim() ? history.filter((h) => `${h.customTitle ?? ''} ${h.summary} ${h.firstPrompt ?? ''} ${h.cwd ?? ''}`.toLowerCase().includes(filter.toLowerCase())) : history;
