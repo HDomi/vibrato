@@ -139,10 +139,10 @@ select option { background: #1a1c22; color: #e6e8ee; }
 /* Motion. (Tab views slide in App.tsx with the Web Animations API.) */
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-/* A chat item reached from the plan view ("Show in chat"). */
 /* Plan view: a step's check pops in when it is cleared. */
 @keyframes plan-check { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.18); opacity: 1; } 100% { transform: scale(1); } }
 .plan-check { animation: plan-check .32s cubic-bezier(.3, .7, .4, 1) both; }
+/* A chat item reached from the plan view ("Show in chat"). */
 @keyframes item-flash { 0%, 60% { box-shadow: 0 0 0 2px rgb(252 211 77 / .55); } 100% { box-shadow: 0 0 0 2px rgb(252 211 77 / 0); } }
 .item-flash { border-radius: 14px; animation: item-flash 1.6s ease-out both; }
 .pop-in { animation: pop-in .18s var(--ease-glass) both; }
