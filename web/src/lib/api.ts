@@ -50,7 +50,6 @@ export interface UpdateStatus { source: 'release' | 'git'; repo: string; branch:
 
 export interface GitFile { path: string; index: string; worktree: string; staged: boolean; untracked: boolean }
 export interface GitCommit { hash: string; parents: string[]; refs: string[]; subject: string; author: string; date: string }
-export interface SavedPrompt { id: string; name: string; text: string }
 export interface GitCommitFile { path: string; status: string; oldPath?: string }
 export interface GitBranch { name: string; current: boolean; remote: boolean; upstream: string | null }
 export interface GitStatus { repo: boolean; root: string | null; branch: string | null; ahead: number; behind: number; files: GitFile[] }
@@ -202,8 +201,6 @@ export const api = {
   saveFormTypes: (types: FormType[] | null) => req<{ types: FormType[] | null }>('/api/form-types', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ types }) }),
   customPrompt: () => req<{ text: string }>('/api/custom-prompt'),
   saveCustomPrompt: (text: string) => req<{ text: string }>('/api/custom-prompt', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }),
-  prompts: () => req<SavedPrompt[]>('/api/prompts'),
-  savePrompts: (list: SavedPrompt[]) => req<SavedPrompt[]>('/api/prompts', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(list) }),
   envFiles: (cwd: string) => req<{ path: string; rel: string; size: number }[]>(`/api/fs/env-files?cwd=${q(cwd)}`),
   search: (cwd: string, query: string) => req<{ path: string; rel: string; isDir: boolean }[]>(`/api/fs/search?cwd=${q(cwd)}&q=${q(query)}`),
   health: () => req<{ ok: boolean; version: string; commit: string; builtAt: string | null }>('/api/health'),

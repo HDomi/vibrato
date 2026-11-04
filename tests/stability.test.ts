@@ -208,17 +208,6 @@ test('commit file list covers root, rename and merge commits against the first p
   }
 });
 
-test('saved prompts are validated, trimmed and persisted', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'vibe-prompts-'));
-  const prev = process.env.HOME;
-  try {
-    const store = new ConfigStore(join(dir, 'config.json'));
-    assert.deepEqual((await store.load()).prompts, []);
-    await store.save({ ...(await store.load()), prompts: [{ id: 'a', name: '테스트', text: '테스트 돌리고 고쳐' }] });
-    assert.equal((await store.load()).prompts[0].text, '테스트 돌리고 고쳐');
-  } finally { process.env.HOME = prev; await rm(dir, { recursive: true, force: true }); }
-});
-
 test('rewind is answered per request and refused for agents without checkpoints', async () => {
   const wss = new EventEmitter();
   const sent: any[] = [];

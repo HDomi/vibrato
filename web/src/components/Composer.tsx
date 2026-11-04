@@ -4,7 +4,6 @@ import type { Attachment, PermissionModeId } from '../lib/agent';
 import { t, useLang } from '../lib/i18n';
 import { openLightbox } from './Lightbox';
 import FileIcon from './FileIcon';
-import PromptMenu from './PromptMenu';
 import PromptFormDialog from './PromptFormDialog';
 import { draftKey as draftStorageKey, readDraft, writeDraft } from '../lib/draft';
 import { mergeAttachments, resolveFiles, toAttachment } from '../lib/attachFiles';
@@ -251,7 +250,6 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
             📎 {t('composer.attach')}
             <input type="file" multiple className="hidden" onChange={(e) => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
           </label>
-          <PromptMenu draft={text} onInsert={insertText} disabled={disabled} />
           {uploading && <span className="text-xs text-zinc-500">{t('composer.uploading')}</span>}
           {tasks && <TaskChips tasks={tasks} rootLabel={taskRootLabel ?? (agent === 'codex' ? 'Codex' : 'Claude')} rootSub={taskRootSub} onShowCard={onShowTaskCard} onStopTask={onStopTask} />}
           {background.length > 0 && (

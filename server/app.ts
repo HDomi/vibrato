@@ -65,7 +65,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('/api/net/http', bodyLimit({ maxSize: 64 * 1024 * 1024 }));
   app.use('/api/wallpaper/image', bodyLimit({ maxSize: 2 * WALL_MAX_BYTES + 1024 * 1024 }));
   app.use('*', async (c, next) => {
-    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/prompts$|\/api\/custom-prompt$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
+    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/custom-prompt$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
     await next();
   });
 
@@ -198,19 +198,6 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return new Response(res.body, { status: res.status, headers: { ...res.headers, 'Cache-Control': 'private, max-age=300' } });
   });
 
-  app.get('/api/prompts', async (c) => c.json((await loadConfig()).prompts));
-  app.put('/api/prompts', async (c) => {
-    const body = await c.req.json<unknown>();
-    if (!Array.isArray(body) || body.length > 200) return c.json({ error: 'Expected a list of prompts' }, 400);
-    const prompts = body.filter((p): p is { id: string; name: string; text: string } => !!p && typeof p === 'object'
-      && typeof (p as { id?: unknown }).id === 'string' && typeof (p as { name?: unknown }).name === 'string' && typeof (p as { text?: unknown }).text === 'string')
-      .map((p) => ({ id: p.id.slice(0, 64), name: p.name.trim().slice(0, 80) || p.text.trim().split('\n')[0].slice(0, 40), text: p.text.slice(0, 20000) }))
-      .filter((p) => p.text.trim());
-    const cfg = await loadConfig();
-    cfg.prompts = prompts;
-    await saveConfig(cfg);
-    return c.json(prompts);
-  });
   // Conversation export: markdown + its images as one zip (exportZip.ts). `dest` is the user's Save As choice;
   // without it (plain browser tab) the zip comes back as the response body for a download.
   app.post('/api/export/zip', async (c) => {

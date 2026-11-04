@@ -24,13 +24,6 @@ export interface FavoriteGroup {
   collapsed?: boolean;
 }
 
-/** A reusable instruction the composer can insert ("run the tests and fix failures"). */
-export interface SavedPrompt {
-  id: string;
-  name: string;
-  text: string;
-}
-
 /** Per-project settings, keyed by absolute folder path. */
 export interface ProjectSettings {
   path: string;
@@ -58,7 +51,6 @@ export interface Config {
   recent: string[];
   /** "agent:sessionId" keys of pinned sessions; pinned sessions cannot be deleted. */
   pinnedSessions: string[];
-  prompts: SavedPrompt[];
   projects: ProjectSettings[];
   /**
    * Standing instructions handed to every new agent session, whichever CLI runs it. Injected once at session
@@ -73,7 +65,7 @@ export interface Config {
 
 export const CUSTOM_PROMPT_MAX = 20000;
 
-const DEFAULT: Config = { favorites: [], groups: [], recent: [], pinnedSessions: [], prompts: [], projects: [], schedules: [] };
+const DEFAULT: Config = { favorites: [], groups: [], recent: [], pinnedSessions: [], projects: [], schedules: [] };
 
 export class ConfigStore {
   private pending: Promise<unknown> = Promise.resolve();
