@@ -6,13 +6,15 @@ import Icon from './Icon';
 import LockSettings from './LockSettings';
 import FormTypesSettings from './FormTypesSettings';
 import WallpaperSettings from './WallpaperSettings';
+import AgentDefaultsSettings from './AgentDefaultsSettings';
 import { UpdateBadge } from './UpdatePanel';
 
 interface Props { onClose: () => void; /** Open at the lock screen tab (from the menu bar). */ focusLock?: boolean; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
 
-type Tab = 'general' | 'wallpaper' | 'customPrompt' | 'formTypes' | 'lock' | 'agents';
+type Tab = 'general' | 'agentDefaults' | 'wallpaper' | 'customPrompt' | 'formTypes' | 'lock' | 'agents';
 const TABS: { id: Tab; key: string }[] = [
   { id: 'general', key: 'settings.general' },
+  { id: 'agentDefaults', key: 'settings.tab.agentDefaults' },
   { id: 'wallpaper', key: 'settings.tab.wallpaper' },
   { id: 'customPrompt', key: 'settings.customPrompt' },
   { id: 'formTypes', key: 'settings.tab.formTypes' },
@@ -179,6 +181,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
           {/* Every tab stays mounted so unsaved edits survive switching. */}
           <div className="flex-1 min-w-0 rounded-[18px] border border-line bg-black/20 p-5 overflow-y-auto">
             <div className={tab === 'general' ? '' : 'hidden'}><GeneralSettings /></div>
+            <div className={tab === 'agentDefaults' ? '' : 'hidden'}><AgentDefaultsSettings /></div>
             <div className={tab === 'wallpaper' ? '' : 'hidden'}><WallpaperSettings /></div>
             <div className={tab === 'customPrompt' ? '' : 'hidden'}><CustomPromptSettings /></div>
             <div className={tab === 'formTypes' ? '' : 'hidden'}><FormTypesSettings focus={focusFormTypes} /></div>

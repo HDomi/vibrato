@@ -4,6 +4,7 @@ import type { ChatSession } from './chatStore';
 import type { AgentId, PermissionModeId } from './agent';
 import type { useSessions } from './useSessions';
 import { t } from './i18n';
+import { agentDefaults } from './agentDefaults';
 
 export const EMPTY_BACKLOG: Backlog = { items: [], auto: false, agent: 'claude', mode: 'acceptEdits', worktree: false };
 
@@ -84,7 +85,7 @@ export function useBacklogs(S: ReturnType<typeof useSessions>) {
         try {
           const mode = (b.agent === 'codex' && b.mode === 'auto' ? 'default' : b.mode) as PermissionModeId;
           const agent = b.agent as AgentId;
-          const model = localStorage.getItem(`vibe.model.${agent}`);
+          const model = agentDefaults(agent).model;
           const title = next.text.split('\n')[0].slice(0, 40);
           let sessionId: string;
           if (b.worktree) {

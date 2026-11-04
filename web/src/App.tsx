@@ -500,7 +500,7 @@ function AppInner() {
                   backlog={project ? projectBacklog : undefined} onBacklogChange={(fn) => project && B.update(project, fn)} onOpenBacklogSession={(id) => focusSession.current(S.replaced[id] ?? id)}
                   partner={partnerOf(session)} worktreeUsers={session?.worktree ? Object.values(S.sessions).filter((x) => x.id !== session.id && x.status !== 'closed' && x.worktree?.path === session.worktree!.path).length : 0}
                   openWorktrees={Object.values(S.sessions).flatMap((x) => (x.worktree ? [x.worktree.path] : []))}
-                  onOpenWorktree={(wt) => { if (project) void S.start(wt.path, { agent: (localStorage.getItem('vibe.agent') as 'claude' | 'codex') || 'claude', permissionMode: (localStorage.getItem('vibe.mode') as StartOptions['permissionMode']) || 'default', worktree: { ...wt, origin: project } }).then(setActiveSession).catch((e) => window.alert((e as Error).message)); }} onFocusPartner={(id) => setActiveSession(id)} onClosePartner={(id) => S.close(id)}
+                  onOpenWorktree={(wt) => { if (project) void S.start(wt.path, { agent: (localStorage.getItem('vibe.agent') as 'claude' | 'codex') || 'claude', worktree: { ...wt, origin: project } }).then(setActiveSession).catch((e) => window.alert((e as Error).message)); }} onFocusPartner={(id) => setActiveSession(id)} onClosePartner={(id) => S.close(id)}
                   onSend={(t, a) => session && S.send(session.id, t, a)}
                   onApprove={(r, d, m) => session && S.approve(session.id, r, d, m)}
                   onAnswer={(r, a) => session && S.answer(session.id, r, a)}
@@ -682,8 +682,8 @@ async function startCrossReview(S: ReturnType<typeof useSessions>, s: ChatSessio
 /** Continue a session with the other agent: same folder (and worktree), briefing put into its composer to edit and send. */
 async function startHandoff(S: ReturnType<typeof useSessions>, s: ChatSession): Promise<string> {
   const other = s.agent === 'claude' ? 'codex' : 'claude';
-  const mode = other === 'codex' && s.permissionMode === 'auto' ? 'default' : s.permissionMode;
-  const id = await S.start(s.cwd, { agent: other, permissionMode: mode, model: localStorage.getItem(`vibe.model.${other}`), worktree: s.worktree && { ...s.worktree, shared: true }, title: displayTitle(s, 40) ?? undefined });
+  // A new session: mode and model follow Settings > AI behavior for the other agent.
+  const id = await S.start(s.cwd, { agent: other, worktree: s.worktree && { ...s.worktree, shared: true }, title: displayTitle(s, 40) ?? undefined });
   writeDraft(draftKey(id), { text: handoffText(s), attachments: [] });
   return id;
 }

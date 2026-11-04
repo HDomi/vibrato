@@ -24,6 +24,7 @@ import { minutesLabel } from './UsageBar';
 import { sessionBrief } from '../lib/brief';
 import { exportFileName, exportMarkdown } from '../lib/exportMarkdown';
 import { toast } from './Toast';
+import { useAgentDefaults } from '../lib/agentDefaults';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -206,9 +207,11 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
   const menu = useContextMenu();
   const [history, setHistory] = useState<HistorySession[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [mode, setMode] = useState<PermissionModeId>(() => { try { return (localStorage.getItem('vibe.mode') as PermissionModeId) || 'default'; } catch { return 'default'; } });
   const [agent, setAgent] = useState<AgentId>(() => { try { return (localStorage.getItem('vibe.agent') as AgentId) || 'claude'; } catch { return 'claude'; } });
-  const [model, setModel] = useState<string | null>(() => { try { return localStorage.getItem(`vibe.model.${agent}`); } catch { return null; } });
+  // New sessions start with Settings > AI behavior; a pick here only applies to the session started from this screen.
+  const defaults = useAgentDefaults();
+  const [mode, setMode] = useState<PermissionModeId>(() => defaults[agent].mode);
+  const [model, setModel] = useState<string | null>(() => defaults[agent].model);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [filter, setFilter] = useState('');
@@ -225,9 +228,8 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
     api.gitStatus(cwd).then((st) => { if (alive) setIsGit(st.repo); }).catch(() => {});
     return () => { alive = false; };
   }, [cwd, scope]);
-  useEffect(() => { try { localStorage.setItem('vibe.agent', agent); setModel(localStorage.getItem(`vibe.model.${agent}`)); } catch { /* ignore */ } }, [agent]);
-  useEffect(() => { try { localStorage.setItem('vibe.mode', mode); } catch { /* ignore */ } }, [mode]);
-  useEffect(() => { try { model ? localStorage.setItem(`vibe.model.${agent}`, model) : localStorage.removeItem(`vibe.model.${agent}`); } catch { /* ignore */ } }, [model, agent]);
+  useEffect(() => { try { localStorage.setItem('vibe.agent', agent); } catch { /* ignore */ } }, [agent]);
+  useEffect(() => { setMode(defaults[agent].mode); setModel(defaults[agent].model); }, [agent, defaults]);
 
   const historyRequest = useRef(0);
   const loadHistory = () => {
@@ -244,6 +246,8 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
   if (!cwd) return <div className="h-full flex items-center justify-center text-zinc-600 text-sm">{t('chat.openFolderFirst')}</div>;
   const shown = filter.trim() ? history.filter((h) => `${h.customTitle ?? ''} ${h.summary} ${h.firstPrompt ?? ''} ${h.cwd ?? ''}`.toLowerCase().includes(filter.toLowerCase())) : history;
   const opts = (extra: Partial<StartOptions> = {}) => ({ permissionMode: mode, agent, model, ...extra });
+  // Resuming the other agent's session: its own defaults (left unset), not the picks made here for this agent.
+  const resumeOpts = (h: HistorySession) => opts({ resume: h.sessionId, agent: h.agent, title: h.customTitle || h.summary || undefined, ...(h.agent !== agent ? { permissionMode: undefined, model: undefined } : {}) });
   const rename = (h: HistorySession) => {
     const title = draft.trim(); setRenaming(null);
     if (!title) return;
@@ -281,11 +285,11 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
         <div className="mb-6 rounded-lg border border-violet-400/25 bg-violet-400/[0.05] p-3 space-y-2.5">
           <div className="text-xs text-zinc-400 leading-relaxed">{t('pair.about')}</div>
           <textarea value={pairPrompt} onChange={(e) => setPairPrompt(e.target.value)} rows={4} placeholder={t('pair.placeholder')}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pairPrompt.trim()) onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: localStorage.getItem('vibe.model.claude'), codex: localStorage.getItem('vibe.model.codex') } }); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pairPrompt.trim()) onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: defaults.claude.model, codex: defaults.codex.model } }); }}
             className="w-full rounded-md bg-black/40 border border-white/10 focus:border-violet-400/50 px-3 py-2 text-[13px] outline-none resize-y" />
           <div className="flex items-center gap-2 flex-wrap">
             <button disabled={!pairPrompt.trim()} className="rounded-full bg-violet-300 hover:bg-violet-200 text-violet-950 font-medium disabled:opacity-40 px-4 py-2 text-sm transition-colors"
-              onClick={() => onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: localStorage.getItem('vibe.model.claude'), codex: localStorage.getItem('vibe.model.codex') } })}>
+              onClick={() => onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: defaults.claude.model, codex: defaults.codex.model } })}>
               {t('pair.start')} <span className="opacity-60 text-xs ml-1">⌘⏎</span>
             </button>
             <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
@@ -339,9 +343,9 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
       <div className="space-y-1">
         {shown.map((h) => (
           <div key={h.agent + h.sessionId} className="w-full text-left rounded-xl hover:bg-fill-2 px-3 py-2 cursor-pointer flex items-center gap-3 transition-colors duration-150"
-            onClick={() => onStart(h.cwd ?? cwd, opts({ resume: h.sessionId, agent: h.agent, title: h.customTitle || h.summary || undefined }))}
+            onClick={() => onStart(h.cwd ?? cwd, resumeOpts(h))}
             onContextMenu={(e) => menu.open(e, [
-              { label: t('common.resume'), onClick: () => onStart(h.cwd ?? cwd, opts({ resume: h.sessionId, agent: h.agent, title: h.customTitle || h.summary || undefined })) },
+              { label: t('common.resume'), onClick: () => onStart(h.cwd ?? cwd, resumeOpts(h)) },
               { label: h.pinned ? t('common.unpin') : t('common.pin'), onClick: () => togglePin(h) },
               { label: t('common.rename'), onClick: () => { setRenaming(h.sessionId); setDraft(h.customTitle || h.summary || ''); } },
               { label: t('common.copySessionId'), onClick: () => navigator.clipboard.writeText(h.sessionId) },

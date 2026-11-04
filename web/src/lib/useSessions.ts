@@ -3,6 +3,7 @@ import { agentClient, type AgentId, type Attachment, type PermissionModeId, type
 import { ACTIVITY_EVENTS, displayTitle, itemsFromHistory, reduceEvent, type ChatItem, type ChatSession } from './chatStore';
 import { api, type WorktreeInfo } from './api';
 import { t } from './i18n';
+import { agentDefaults } from './agentDefaults';
 
 const LS_ACTIVE = 'vibe.sessions';
 
@@ -251,10 +252,14 @@ export function useSessions() {
         try { const msgs = await api.historyMessages(cwd, opts.resume); preload = itemsFromHistory(msgs); historyLen = msgs.length; } catch { /* history is optional */ }
       }
     }
+    // Anything the caller left unset follows Settings > AI behavior (null model = the CLI's own default).
+    const defaults = agentDefaults(opts.agent ?? 'claude');
+    const permissionMode = opts.permissionMode ?? defaults.mode;
+    const model = opts.model === undefined ? defaults.model : opts.model;
     return new Promise<string>((resolve, reject) => {
       const requestId = crypto.randomUUID();
       pendingStart.current.set(requestId, { cwd, resolve, reject, preload, historyLen, replaces: opts.replaces, title: opts.title, worktree: opts.worktree, pairKey: opts.pairKey, resumed: !!opts.resume && !opts.replaces, resume: opts.resume });
-      agentClient.send({ type: 'session.start', requestId, agent: opts.agent ?? 'claude', cwd, resume: opts.resume, permissionMode: opts.permissionMode, model: opts.model ?? undefined });
+      agentClient.send({ type: 'session.start', requestId, agent: opts.agent ?? 'claude', cwd, resume: opts.resume, permissionMode, model: model ?? undefined });
     });
   };
   const startRef = useRef(start);
