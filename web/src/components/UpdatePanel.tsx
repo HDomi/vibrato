@@ -4,8 +4,8 @@ import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
 
 /** Small badge for the sidebar header; opens the modal with commit list and apply log. */
-/** `onlyAvailable`: render nothing until an update is out (the header); Settings shows the version always. */
-export function UpdateBadge({ onlyAvailable = false }: { onlyAvailable?: boolean }) {
+/** Installed version (green with the new one when an update is out); a click opens the update dialog. `onWall`: over the wallpaper (title bar). */
+export function UpdateBadge({ onWall = false }: { onWall?: boolean }) {
   useLang();
   const [st, setSt] = useState<UpdateStatus | null>(null);
   const [open, setOpen] = useState(false);
@@ -15,10 +15,9 @@ export function UpdateBadge({ onlyAvailable = false }: { onlyAvailable?: boolean
   useEffect(() => { load(true); }, []);
   const available = !!st?.available;
   const installed = st?.installed;
-  if (onlyAvailable && !available && !open) return null;
   return (
     <>
-      <button className={`titlebar-nodrag text-[11px] rounded-full px-2 py-0.5 ${available ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : 'text-zinc-600 hover:text-zinc-300'}`}
+      <button className={`titlebar-nodrag text-[11px] rounded-full px-2 py-0.5 transition-colors ${available ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30' : onWall ? 'text-white/75 hover:text-white [text-shadow:0_1px_3px_rgb(0_0_0/.6)]' : 'text-zinc-600 hover:text-zinc-300'}`}
         onClick={() => { setOpen(true); void load(true); }} title={st?.error ?? (available ? t('update.availableTitle', { v: st?.remote?.version ?? '' }) : t('update.upToDateTitle', { v: installed?.version ?? '' }))}>
         {available ? t('update.badgeVersion', { v: st?.remote?.version ?? '' }) : installed ? `v${installed.version}` : '…'}
       </button>

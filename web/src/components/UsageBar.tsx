@@ -139,7 +139,7 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
           <CircleButton title={t('sidebar.openFolder')} onClick={onPickFolder}><Icon name="folderPlus" size={15} /></CircleButton>
         </div>
         {onOpenSettings && <CircleButton title={t('common.settings')} onClick={onOpenSettings}><Icon name="gear" size={15} /></CircleButton>}
-        <span className="ml-2"><UpdateBadge onlyAvailable /></span>
+        <span className="ml-1.5"><UpdateBadge onWall /></span>
       </div>
       <ModeTabs mode={mode} onMode={onMode} />
       <div className="min-w-0 flex items-center justify-end gap-1.5 pr-[42px]">
