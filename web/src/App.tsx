@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { backgroundState, displayTitle, inProject, pendingRequests, sortSessions, type ChatSession } from './lib/chatStore';
 import { api, ApiError, type Entry, type Favorites, type HomeInfo, type Listing, type RecentSession, type ScheduleRun } from './lib/api';
 import { agentClient, type Attachment } from './lib/agent';
@@ -48,6 +48,14 @@ const LS_MODE_V1 = 'vibe.mode.view';
 const LS_ACTIVE_SESSION = 'vibe.active.session';
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|avif|bmp|svg|heic)$/i;
+
+/**
+ * A hidden (kept-alive) view does not re-render with the app: while streaming, the app re-renders on every
+ * token, and the views behind other tabs would redo their whole tree each time. It catches up when shown.
+ */
+const Freeze = memo(function Freeze({ children }: { active: boolean; children: ReactNode }) {
+  return <>{children}</>;
+}, (prev, next) => !prev.active && !next.active);
 
 export default function App() {
   return (
@@ -413,6 +421,8 @@ function AppInner() {
   }, [project, session, S, view, agentActive]);
 
   const waiting = Object.values(S.sessions).reduce((n, s) => n + pendingRequests(s), 0);
+  // Same element every render: the toolbox takes no props, so React skips it when the app re-renders.
+  const toolbox = useMemo(() => <Suspense fallback={null}><ToolboxView /></Suspense>, []);
   /** Per project: 'running' while any of its sessions works, else 'done' if one finished unseen. */
   const projectBadge = (path: string): 'running' | 'done' | null => {
     const mine = Object.values(S.sessions).filter((s) => inProject(s, path));
@@ -434,10 +444,11 @@ function AppInner() {
           {/* left-0 + w-full (not inset-0): the slide moves `left` without changing the width. */}
           <div ref={(el) => { viewEls.current[v] = el; }} aria-hidden={v !== view}
             className={`absolute top-0 bottom-0 left-0 w-full flex ${v === view ? '' : 'invisible pointer-events-none'}`}>
+          <Freeze active={v === view}>
           {v === 'agent' ? (
           <AgentView home={home?.home ?? '~'} S={S} active={agentActive} setActive={setAgentActive} onFocusSession={(id) => focusSession.current(id)} />
           ) : v === 'tools' ? (
-          <Suspense fallback={null}><ToolboxView /></Suspense>
+          toolbox
           ) : v === 'schedule' ? (
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
         ) : (
@@ -571,6 +582,7 @@ function AppInner() {
           )}
         </div>
         )}
+          </Freeze>
           </div>
           </ViewActiveContext.Provider>
         ))}
