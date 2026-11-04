@@ -200,7 +200,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
 
         <div className="flex-1 min-h-0 flex">
           {/* Left (wider): what runs. */}
-          <div className="flex-[3] min-w-0 overflow-y-auto px-6 py-5 space-y-5">
+          <div className="flex-[3] min-w-0 overflow-y-auto px-6 py-5 flex flex-col gap-5">
             <Field label={t('sched.project')}>
               <div className="flex gap-2">
                 <select className={input} value={draft.cwd} onChange={(e) => set('cwd', e.target.value)}>
@@ -243,9 +243,9 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
               </div>
             </Field>
 
-            <Field label={draft.skill ? t('sched.args') : t('sched.prompt')} hint={draft.resumeSessionId ? t('sched.resumeHint') : undefined}>
+            <Field label={draft.skill ? t('sched.args') : t('sched.prompt')} hint={draft.resumeSessionId ? t('sched.resumeHint') : undefined} className="flex-1 min-h-[200px] flex flex-col">
               {draft.resumeSessionId && (
-                <div className="mb-1.5 flex items-center gap-2 rounded-md border border-violet-400/20 bg-violet-500/10 px-2.5 py-1.5">
+                <div className="shrink-0 mb-1.5 flex items-center gap-2 rounded-md border border-violet-400/20 bg-violet-500/10 px-2.5 py-1.5">
                   <Icon name="reload" size={12} className="shrink-0 text-violet-200" />
                   <span className="shrink-0 text-[11px] text-violet-200/80">{t('sched.resume')}</span>
                   <span className="min-w-0 truncate text-violet-100" title={draft.resumeSessionId}>{draft.resumeTitle || draft.resumeSessionId}</span>
@@ -253,13 +253,14 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                   <button className="shrink-0 text-[11px] text-zinc-400 hover:text-zinc-100" onClick={() => setDraft((d) => ({ ...d, resumeSessionId: undefined, resumeTitle: undefined }))}>{t('sched.resumeClear')}</button>
                 </div>
               )}
-              <div className="relative">
-                <textarea ref={promptRef} className={`${input} min-h-[72px] font-mono text-[12px]`} rows={3} value={draft.prompt}
+              {/* Fills the rest of the column; the session picker opens above it so the scroll area never clips it. */}
+              <div className="relative flex-1 min-h-0 flex flex-col">
+                <textarea ref={promptRef} className={`${input} flex-1 min-h-[120px] resize-none font-mono text-[12px]`} value={draft.prompt}
                   onChange={(e) => { set('prompt', e.target.value); setCaret(e.target.selectionStart); }}
                   onSelect={(e) => setCaret(e.currentTarget.selectionStart)} onKeyDown={onPromptKey} onBlur={() => setCaret(0)}
                   placeholder={draft.skill ? t('sched.argsPlaceholder', { skill: draft.skill }) : t('sched.promptPlaceholder')} />
                 {mention && (
-                  <div className="absolute top-full left-0 mt-1 w-[520px] max-w-full glass-pop pop-in rounded-xl py-1 z-10">
+                  <div className="absolute bottom-full left-0 mb-1 w-[520px] max-w-full glass-pop pop-in rounded-xl py-1 z-10">
                     {sessions === null && <div className="px-3 py-1.5 text-zinc-500">{t('common.loading')}</div>}
                     {sessions !== null && !sessionHits.length && <div className="px-3 py-1.5 text-zinc-500">{t('sched.resumeNone')}</div>}
                     {sessionHits.map((r, i) => (
@@ -352,10 +353,10 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="mb-1.5 flex items-baseline gap-2"><span className="text-[11.5px] font-medium text-zinc-400">{label}</span>{hint && <span className="text-[11px] text-zinc-600">{hint}</span>}</div>
+    <div className={className}>
+      <div className="shrink-0 mb-1.5 flex items-baseline gap-2"><span className="text-[11.5px] font-medium text-zinc-400">{label}</span>{hint && <span className="text-[11px] text-zinc-600">{hint}</span>}</div>
       {children}
     </div>
   );
