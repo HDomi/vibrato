@@ -30,8 +30,23 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Electron's postinstall (and electron-builder) download the Electron binary from GitHub into this cache.
+      - name: Cache Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: |
+          # That download now and then gets a 502 from GitHub: retry before failing the release.
+          for i in 1 2 3; do
+            npm ci --no-audit --no-fund && exit 0
+            echo "::warning::npm ci failed (attempt $i of 3)"
+            [ "$i" -lt 3 ] && sleep $((i * 30))
+          done
+          exit 1
 
       - name: Typecheck and test
         run: |
