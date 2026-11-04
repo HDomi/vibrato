@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { useViewActiveRef } from '../../lib/viewActive';
 import { t, useLang } from '../../lib/i18n';
 import { usePersisted } from './ui';
 
@@ -46,9 +47,10 @@ export default function ToolboxView() {
   // Shortcuts number the tools in list order (unfiltered): ⌘1-9, ⌘0 for the tenth.
   const order = useMemo(() => GROUPS.flatMap((g) => TOOLS.filter((x) => x.group === g)), []);
   useEffect(() => { setCursor(0); }, [q]);
+  const viewActive = useViewActiveRef();
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!viewActive.current || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       if (e.key.toLowerCase() === 'k') { e.preventDefault(); search.current?.focus(); search.current?.select(); return; }
       const i = e.key === '0' ? 9 : Number(e.key) - 1;
       if (!/^[0-9]$/.test(e.key) || !order[i]) return;

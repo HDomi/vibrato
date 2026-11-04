@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { backgroundState, displayTitle, inProject, pendingRequests, sortSessions, type ChatSession } from './lib/chatStore';
 import { api, ApiError, type Entry, type Favorites, type HomeInfo, type Listing, type RecentSession, type ScheduleRun } from './lib/api';
 import { agentClient, type Attachment } from './lib/agent';
@@ -33,6 +33,7 @@ import AgentContextDialog from './components/AgentContextDialog';
 import { EMPTY_BACKLOG, useBacklogs } from './lib/backlog';
 import Icon, { type IconName } from './components/Icon';
 import { IDE_CHANNEL, openIde, type IdeMessage } from './lib/ide';
+import { ViewActiveContext } from './lib/viewActive';
 
 // The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
@@ -86,12 +87,29 @@ function AppInner() {
   });
   // Views slide in from the side of the tab that was picked (left of the old one: from the left).
   const [slide, setSlide] = useState<'left' | 'right'>('right');
+  const [mountedViews, setMountedViews] = useState<Set<ViewMode>>(() => new Set([view]));
+  const viewEls = useRef<Partial<Record<ViewMode, HTMLDivElement | null>>>({});
   const viewRef = useRef(view);
   viewRef.current = view;
   const setView = useCallback((v: ViewMode) => {
     if (v === viewRef.current) return;
     setSlide(VIEW_ORDER.indexOf(v) > VIEW_ORDER.indexOf(viewRef.current) ? 'right' : 'left');
+    setMountedViews((m) => (m.has(v) ? m : new Set(m).add(v)));
     setViewState(v);
+  }, []);
+  // The slide moves `left` (a transform would misalign the glass with the wallpaper) and stays within the page
+  // padding: Chromium does not repaint the fixed background of glass that started partly off screen.
+  const firstView = useRef(true);
+  useLayoutEffect(() => {
+    if (firstView.current) { firstView.current = false; return; }
+    const el = viewEls.current[view];
+    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    el.animate([{ left: `${slide === 'right' ? 16 : -16}px`, opacity: 0.55 }, { left: '0px', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mount the other views (hidden) shortly after start, so even their first visit has nothing left to load.
+  useEffect(() => {
+    const id = window.setTimeout(() => setMountedViews(new Set(VIEW_ORDER)), 1500);
+    return () => window.clearTimeout(id);
   }, []);
   const [agentActive, setAgentActive] = useState<string | 'new' | null>(null);
   useEffect(() => { try { localStorage.setItem(LS_MODE, view); } catch { /* ignore */ } }, [view]);
@@ -373,7 +391,7 @@ function AppInner() {
       if (inEditor && (k === 'w' || k === '/' || k === 's' || k === 'k')) return;
       // Tools mode has no sessions or panels; its own ⌘1-9 switch tools (see ToolboxView). Schedules have none either.
       if (view === 'tools' || view === 'schedule') return;
-      if (k === 'p' && !e.shiftKey) { e.preventDefault(); if (project) setQuickOpen((v) => !v); }
+      if (k === 'p' && !e.shiftKey) { e.preventDefault(); if (project && view === 'vibe') setQuickOpen((v) => !v); }
       else if (k === 'j') { e.preventDefault(); setRightCollapsed((v) => !v); }
       else if (k === 'k') { e.preventDefault(); window.dispatchEvent(new Event('vibe:focus-composer')); }
       else if (k === 'f' && !e.shiftKey && !(e.target as HTMLElement)?.closest?.('[data-own-find]')) { e.preventDefault(); window.dispatchEvent(new Event('vibe:chat-search')); }
@@ -409,12 +427,18 @@ function AppInner() {
         <Toaster />
         {previewPopup && <PreviewDialog entry={previewPopup} onClose={() => setPreviewPopup(null)} />}
         <UsageBar mode={view} onMode={setView} onPickFolder={pickFolder} onOpenSettings={() => setShowTools(true)} />
-        <div key={view} className={`flex-1 min-h-0 flex ${slide === 'right' ? 'view-in-right' : 'view-in-left'}`}>
-        {view === 'agent' ? (
+        {/* Opened views stay mounted (hidden when another tab is on screen): switching back is instant and keeps their state. */}
+        <div className="flex-1 min-h-0 relative">
+        {VIEW_ORDER.filter((v) => mountedViews.has(v)).map((v) => (
+          <ViewActiveContext.Provider key={v} value={v === view}>
+          {/* left-0 + w-full (not inset-0): the slide moves `left` without changing the width. */}
+          <div ref={(el) => { viewEls.current[v] = el; }} aria-hidden={v !== view}
+            className={`absolute top-0 bottom-0 left-0 w-full flex ${v === view ? '' : 'invisible pointer-events-none'}`}>
+          {v === 'agent' ? (
           <AgentView home={home?.home ?? '~'} S={S} active={agentActive} setActive={setAgentActive} onFocusSession={(id) => focusSession.current(id)} />
-        ) : view === 'tools' ? (
+          ) : v === 'tools' ? (
           <Suspense fallback={null}><ToolboxView /></Suspense>
-        ) : view === 'schedule' ? (
+          ) : v === 'schedule' ? (
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
         ) : (
         <div className="flex-1 min-w-0 flex px-[42px] pb-4">
@@ -547,6 +571,9 @@ function AppInner() {
           )}
         </div>
         )}
+          </div>
+          </ViewActiveContext.Provider>
+        ))}
         </div>
         {showTools && <ToolsPanel focusLock={toolsFocusLock} focusFormTypes={toolsFocusForms} onClose={() => { setShowTools(false); setToolsFocusLock(false); setToolsFocusForms(false); }} />}
       </div>

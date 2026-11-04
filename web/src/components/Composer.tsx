@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useViewActiveRef } from '../lib/viewActive';
 import { api } from '../lib/api';
 import type { Attachment, PermissionModeId } from '../lib/agent';
 import { t, useLang } from '../lib/i18n';
@@ -108,8 +109,9 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
     el.style.height = Math.min(240, el.scrollHeight) + 'px';
   }, [text]);
 
+  const viewActive = useViewActiveRef();
   useEffect(() => {
-    const focus = () => ta.current?.focus();
+    const focus = () => { if (viewActive.current) ta.current?.focus(); };
     window.addEventListener('vibe:focus-composer', focus);
     return () => window.removeEventListener('vibe:focus-composer', focus);
   }, []);
@@ -162,7 +164,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
   useEffect(() => {
     const h = (ev: Event) => {
       const d = (ev as CustomEvent<{ text: string; handled: boolean }>).detail;
-      if (!d?.text || d.handled || disabled) return;
+      if (!d?.text || d.handled || disabled || !viewActive.current) return;
       d.handled = true;
       insertText(d.text);
     };

@@ -121,19 +121,13 @@ select option { background: #1a1c22; color: #e6e8ee; }
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* Motion. Views slide with `left` (not transform) so the glass inside stays aligned with the wallpaper.
-   The distance must stay within the page padding: Chromium does not repaint the fixed background of a
-   glass surface that started partly outside the viewport, leaving that strip blank after it slides in. */
-@keyframes view-in-right { from { left: 16px; opacity: 0; } to { left: 0; opacity: 1; } }
-@keyframes view-in-left { from { left: -16px; opacity: 0; } to { left: 0; opacity: 1; } }
+/* Motion. (Tab views slide in App.tsx with the Web Animations API.) */
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-.view-in-right { position: relative; animation: view-in-right .34s var(--ease-glass) both; }
-.view-in-left { position: relative; animation: view-in-left .34s var(--ease-glass) both; }
 .pop-in { animation: pop-in .18s var(--ease-glass) both; }
 .fade-in { animation: fade-in .16s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .view-in-right, .view-in-left, .pop-in, .fade-in { animation: none; }
+  .pop-in, .fade-in { animation: none; }
 }
 }
 

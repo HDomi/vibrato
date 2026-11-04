@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useViewActiveRef } from '../lib/viewActive';
 import { t, useLang } from '../lib/i18n';
 import { matchOffsets } from '../lib/textSearch';
 import Icon from './Icon';
@@ -46,9 +47,10 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
   const [index, setIndex] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
+  const viewActive = useViewActiveRef();
   useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
   useEffect(() => {
-    const refocus = () => { input.current?.focus(); input.current?.select(); };
+    const refocus = () => { if (!viewActive.current) return; input.current?.focus(); input.current?.select(); };
     window.addEventListener('vibe:chat-search', refocus);
     return () => window.removeEventListener('vibe:chat-search', refocus);
   }, []);

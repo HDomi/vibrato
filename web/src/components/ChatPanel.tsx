@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useViewActiveRef } from '../lib/viewActive';
 import { currentTodos, displayTitle, isInjected, type ChatItem, type ChatSession } from '../lib/chatStore';
 import type { AgentId, Attachment, PermissionModeId, RewindResult } from '../lib/agent';
 import { api, type Backlog, type HistorySession, type ModelInfo, type WorktreeInfo } from '../lib/api';
@@ -366,15 +367,16 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const [withThinking, setWithThinking] = useState(false);
   const [exporting, setExporting] = useState(false);
   useEffect(() => { setPicked(null); }, [session?.id]);
+  const viewActive = useViewActiveRef();
   useEffect(() => {
     if (!picked) return;
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); setPicked(null); } };
+    const h = (e: KeyboardEvent) => { if (viewActive.current && e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); setPicked(null); } };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [picked]);
   // ⌘F (dispatched by the app's shortcut handler) opens the in-chat search bar.
   useEffect(() => {
-    const open = () => setSearching(true);
+    const open = () => { if (viewActive.current) setSearching(true); };
     window.addEventListener('vibe:chat-search', open);
     return () => window.removeEventListener('vibe:chat-search', open);
   }, []);
