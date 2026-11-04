@@ -128,10 +128,19 @@ test('a plan written in the reply becomes the checklist, "✓ n." lines clear it
   assert.deepEqual(done.steps.map((s) => [s.content, s.status, s.note]), [['더하기', 'completed', '합 = 1540'], ['나누기', 'completed', '몫 308, 나머지 0'], ['곱하기', 'completed', '0 × 10 = 0']]);
   assert.equal(done.answer, '0. 몫이었다면 3080.');
 
-  // No plan, no marks: the answer is the gist of the last message.
-  const plain = buildPlan([user('u1', 'hi'), say('a1', 'Hello there, nice to meet you. More.')])[0];
+  assert.equal(done.answerFull, false);
+
+  // No plan, no "Result:" line: the reply is the answer, all of it.
+  const reply = 'Hello there, nice to meet you.\n\n## Backend\n- one\n- two';
+  const plain = buildPlan([user('u1', 'hi'), say('a1', reply)])[0];
   assert.equal(plain.hasPlan, false);
-  assert.equal(plain.answer, 'Hello there, nice to meet you.');
+  assert.equal(plain.answer, reply);
+  assert.equal(plain.answerFull, true);
+
+  // A plan without a "Result:" line: the gist of the last message.
+  const gist = buildPlan([user('u1', 'x'), say('a1', '진행 계획\n1. 더하기\n2. 나누기'), say('a2', 'Both steps are done now. Details follow.\n\n- a')])[0];
+  assert.equal(gist.answer, 'Both steps are done now.');
+  assert.equal(gist.answerFull, false);
 });
 
 test('done marks add the account to steps from the task tools', () => {

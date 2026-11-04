@@ -52,8 +52,10 @@ export interface PlanTurn {
   pending: (Item<'approval'> | Item<'question'>)[];
   /** The agent's own words in this turn, in order (for the plan written as text and the result line). */
   texts: string[];
-  /** The outcome: the reply's "Result:" line, else the gist of its last message. */
+  /** The outcome: the reply's "Result:" line, else the gist of its last message (all of it when there is no plan). */
   answer: string | null;
+  /** The answer is the whole last message (markdown), not a one-line summary. */
+  answerFull: boolean;
 }
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -130,7 +132,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null };
+    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -277,7 +279,10 @@ function applyTextPlan(t: PlanTurn) {
     if (how) { step.note = how; if (step.key.startsWith('text:')) step.status = 'completed'; }
   });
   const last = t.texts[t.texts.length - 1];
-  t.answer = resultLine(t.texts) ?? noteLine(last ?? null, 240);
+  const result = resultLine(t.texts);
+  // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.
+  t.answerFull = !result && !t.hasPlan && !!last?.trim();
+  t.answer = result ?? (t.answerFull ? last.trim() : noteLine(last ?? null, 240));
 }
 
 /** First sentence-ish of a note, for the one-line summary under a step. */

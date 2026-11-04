@@ -3,6 +3,7 @@ import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
 import { buildPlan, noteLine, type PlanStep, type PlanTurn } from '../lib/planView';
 import { ApprovalItem, QuestionItem } from './ChatItems';
+import MarkdownView from './MarkdownView';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
@@ -98,7 +99,9 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
       {showAnswer && (
         <div className="rounded-xl bg-black/15 border border-line px-3.5 py-2.5">
           <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>
-          <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>
+          {turn.answerFull
+            ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} /></div>
+            : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}
         </div>
       )}
       {turn.pending.map((p) => p.kind === 'approval'
