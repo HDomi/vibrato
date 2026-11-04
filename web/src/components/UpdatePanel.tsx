@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, type ReleaseSummary, type UpdateStatus } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
@@ -75,7 +76,9 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
     es.onerror = () => { es.close(); setPhase((p) => p === 'running' ? 'failed' : p); setLog((l) => [...l, { line: t('update.connectionLost'), err: true }]); };
   };
 
-  return (
+  // Portaled to <body>: the badge sits inside the settings card, whose backdrop-filter and pop-in transform make it the
+  // containing block for fixed descendants, so the dim would only cover the card (square corners past its rounded edge).
+  return createPortal(
     <div data-update-locked={locked} className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onClick={close}>
       <div className="w-[640px] max-w-[92vw] max-h-[85vh] glass-pop pop-in !rounded-[22px] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center px-5 h-12 border-b border-white/10">
@@ -130,7 +133,8 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

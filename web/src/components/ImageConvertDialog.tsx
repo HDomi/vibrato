@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, ApiError, formatSize, type Entry } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 
@@ -146,7 +147,9 @@ export default function ImageConvertDialog({ entry, onClose, onSaved }: Props) {
   const groups = useMemo(() => (['common', 'other', 'icon', 'texture'] as const).map((g) => [g, IMAGE_FORMATS.filter((f) => f.group === g)] as const), []);
   const input = 'w-24 bg-black/30 border border-white/10 rounded px-2 py-1 text-[13px] outline-none focus:border-blue-400/60 tabular-nums';
 
-  return (
+  // Portaled to <body>: opened from the preview modal, whose glass-pop card (backdrop-filter, transform) would otherwise
+  // be the containing block for this fixed overlay and clip the dim to the card.
+  return createPortal(
     <div className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div role="dialog" aria-label={t('image.title')} className="glass-pop pop-in w-[440px] max-w-[92vw] !rounded-[22px] text-sm">
         <div className="px-5 pt-4 pb-3 border-b border-white/10">
@@ -228,6 +231,7 @@ export default function ImageConvertDialog({ entry, onClose, onSaved }: Props) {
           <button disabled={busy || !info || !valid || unchanged} onClick={save} className="px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40">{t('image.save')}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
