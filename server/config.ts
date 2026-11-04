@@ -57,6 +57,8 @@ export interface Config {
    * start (Claude: system prompt append, Codex: thread developer instructions), so it costs no extra tokens per turn.
    */
   customPrompt?: string;
+  /** Ask every session for a step plan (plan view). Absent means on. */
+  alwaysPlan?: boolean;
   /** Skills / prompts run on a cron schedule (server/scheduler.ts). */
   schedules: Schedule[];
   /** "Send as form" types edited in Settings; absent while the built-in ones are in use. */

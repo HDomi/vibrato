@@ -164,6 +164,8 @@ export const api = {
   tools: (force = false) => req<ToolsInfo>(`/api/tools${force ? '?force=1' : ''}`),
   installUrl: (tool: string, method: string) => `/api/tools/install?tool=${q(tool)}&method=${q(method)}`,
   usage: (force = false) => req<UsageSnapshot>(`/api/usage${force ? '?force=1' : ''}`),
+  alwaysPlan: () => req<{ on: boolean }>('/api/settings/always-plan'),
+  setAlwaysPlan: (on: boolean) => req<{ on: boolean }>('/api/settings/always-plan', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) }),
   wallpaper: () => req<Wallpaper>('/api/wallpaper'),
   setWallpaper: (patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'blur' | 'dim'>>) =>
     req<Wallpaper>('/api/wallpaper', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }),

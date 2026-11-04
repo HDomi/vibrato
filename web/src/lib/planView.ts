@@ -2,10 +2,12 @@ import type { TodoItem } from './agent';
 import { isInjected, todosFromInput, type ChatItem } from './chatStore';
 
 /*
- * The plan view: a session regrouped as turns -> plan steps -> what was done for each step. Nothing new is
- * asked of the agent here; the steps come from the checklist it already keeps (Claude's TodoWrite calls, and
- * Codex plan updates recorded the same way), and every item is filed under the step that was in progress
- * when it happened.
+ * The plan view: a session regrouped as turns -> plan steps -> what was done for each step. The steps come from
+ * the checklist the agent keeps itself, and every item is filed under the step that was in progress when it
+ * happened. Three shapes of checklist exist:
+ *  - TodoWrite (older Claude Code): the whole list, re-sent on every change;
+ *  - TaskCreate / TaskUpdate (current Claude Code): one task at a time, numbered, kept for the whole session;
+ *  - Codex plan updates, recorded in the timeline as TodoWrite items (chatStore 'todos').
  */
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
@@ -55,6 +57,33 @@ const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'WebFetch', 'WebSearch
 const SUBAGENT_TOOLS = new Set(['Agent', 'Task', 'SubAgent']);
 /** Checklist bookkeeping: shown as the steps themselves, not as work. */
 export const PLAN_TOOL = 'TodoWrite';
+export const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
+/** Housekeeping calls that are not work on any step (loading deferred tools). */
+const SILENT_TOOLS = new Set(['ToolSearch']);
+export const isPlanTool = (name: string) => name === PLAN_TOOL || TASK_TOOLS.has(name);
+
+/** The number TaskCreate gave a task ("Task #3 created successfully: …"). */
+function createdTaskId(it: Item<'tool'>): string | null {
+  return it.output?.match(/Task #(\S+?) created/)?.[1] ?? null;
+}
+
+interface TaskState { id: string; content: string; activeForm?: string; status: TodoItem['status'] }
+
+/** Task titles by id across the session, for one-line labels of TaskUpdate calls in the chat. */
+export function taskTitles(items: ChatItem[]): Map<string, string> {
+  const out = new Map<string, string>();
+  let auto = 0;
+  for (const it of items) {
+    if (it.kind !== 'tool' || it.parent) continue;
+    const i = (it.input ?? {}) as Record<string, unknown>;
+    if (it.name === 'TaskCreate') {
+      const id = createdTaskId(it) ?? String(auto + 1);
+      auto = Math.max(auto, Number(id) || auto + 1);
+      out.set(id, String(i.subject ?? ''));
+    } else if (it.name === 'TaskUpdate' && typeof i.taskId === 'string' && typeof i.subject === 'string') out.set(i.taskId, i.subject);
+  }
+  return out;
+}
 
 const emptyStats = (): StepStats => ({ commands: 0, failed: 0, files: [], reads: 0, subagents: 0, toolSeconds: 0 });
 const group = (key: string, content: string): PlanStep => ({ key, content, status: 'pending', items: [], stats: emptyStats(), note: null });
@@ -84,6 +113,16 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   const turns: PlanTurn[] = [];
   let turn: PlanTurn | null = null;
   let active: PlanStep | null = null;
+  // TaskCreate / TaskUpdate: the session's task list, and the step each task has in the current turn.
+  const tasks = new Map<string, TaskState>();
+  let autoId = 0;
+  const taskStep = (t: PlanTurn, task: TaskState): PlanStep => {
+    const key = `task:${task.id}`;
+    let step = t.steps.find((s) => s.key === key);
+    if (!step) { step = group(key, task.content); t.steps.push(step); }
+    step.content = task.content; step.activeForm = task.activeForm; step.status = task.status;
+    return step;
+  };
   const start = (user: Item<'user'> | null, id: string) => {
     turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [] };
     turns.push(turn);
@@ -92,7 +131,12 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   };
   for (const it of items) {
     if ((it.kind === 'assistant' || it.kind === 'tool') && it.parent) continue;
-    if (it.kind === 'user' && !isInjected(it)) { start(it, it.id); continue; }
+    if (it.kind === 'user' && !isInjected(it)) {
+      const t = start(it, it.id);
+      const carried = [...tasks.values()].find((x) => x.status === 'in_progress');
+      if (carried) { t.hasPlan = true; active = taskStep(t, carried); }
+      continue;
+    }
     const t: PlanTurn = turn ?? start(null, `pre-${it.id}`);
     if (it.kind === 'tool' && it.name === PLAN_TOOL) {
       const todos = todosFromInput(it.input);
@@ -107,11 +151,42 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
       active = t.steps.find((s) => s.status === 'in_progress') ?? null;
       continue;
     }
+    if (it.kind === 'tool' && (it.name === 'TaskCreate' || it.name === 'TaskUpdate')) {
+      const i = (it.input ?? {}) as Record<string, unknown>;
+      t.hasPlan = true;
+      if (it.name === 'TaskCreate') {
+        const id = createdTaskId(it) ?? String(autoId + 1);
+        autoId = Math.max(autoId, Number(id) || autoId + 1);
+        const task: TaskState = { id, content: String(i.subject ?? i.description ?? ''), activeForm: typeof i.activeForm === 'string' ? i.activeForm : undefined, status: 'pending' };
+        tasks.set(id, task);
+        taskStep(t, task);
+      } else {
+        const id = String(i.taskId ?? '');
+        const task = tasks.get(id) ?? { id, content: `#${id}`, status: 'pending' as const };
+        tasks.set(id, task);
+        if (typeof i.subject === 'string') task.content = i.subject;
+        if (typeof i.activeForm === 'string') task.activeForm = i.activeForm;
+        if (i.status === 'deleted') {
+          tasks.delete(id);
+          t.steps = t.steps.filter((s) => s.key !== `task:${id}` || s.items.length > 0);
+          if (active?.key === `task:${id}`) active = null;
+          continue;
+        }
+        if (i.status === 'pending' || i.status === 'in_progress' || i.status === 'completed') task.status = i.status;
+        const step = taskStep(t, task);
+        if (task.status === 'in_progress') active = step;
+        else if (active === step) active = null;
+      }
+      continue;
+    }
+    if (it.kind === 'tool' && (TASK_TOOLS.has(it.name) || SILENT_TOOLS.has(it.name))) continue;
     if (it.kind === 'result') { t.result = it; continue; }
     if (it.kind === 'changes') { t.changes.push(it); continue; }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
-    file(active ?? (t.hasPlan ? t.after : t.before), it);
+    // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
+    const started = t.steps.some((x) => x.status !== 'pending');
+    file(active ?? (started ? t.after : t.before), it);
   }
   return turns;
 }

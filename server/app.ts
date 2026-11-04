@@ -65,7 +65,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('/api/net/http', bodyLimit({ maxSize: 64 * 1024 * 1024 }));
   app.use('/api/wallpaper/image', bodyLimit({ maxSize: 2 * WALL_MAX_BYTES + 1024 * 1024 }));
   app.use('*', async (c, next) => {
-    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/custom-prompt$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
+    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/custom-prompt$|\/api\/settings\/always-plan$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
     await next();
   });
 
@@ -221,6 +221,15 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
       await saveConfig(cfg);
       return types;
     }) });
+  });
+  app.get('/api/settings/always-plan', async (c) => c.json({ on: (await loadConfig()).alwaysPlan !== false }));
+  app.put('/api/settings/always-plan', async (c) => {
+    const body = await c.req.json<{ on?: unknown }>().catch(() => null);
+    if (!body || typeof body.on !== 'boolean') return c.json({ error: 'Expected { on }' }, 400);
+    const cfg = await loadConfig();
+    if (body.on) delete cfg.alwaysPlan; else cfg.alwaysPlan = false;
+    await saveConfig(cfg);
+    return c.json({ on: body.on });
   });
   app.get('/api/custom-prompt', async (c) => c.json({ text: (await loadConfig()).customPrompt ?? '' }));
   app.put('/api/custom-prompt', async (c) => {

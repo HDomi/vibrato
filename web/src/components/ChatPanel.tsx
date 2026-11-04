@@ -8,9 +8,9 @@ import BacklogPanel from './BacklogPanel';
 import Composer, { type BackgroundSession } from './Composer';
 import ChatSearch from './ChatSearch';
 import TodoPanel from './TodoPanel';
-import { ApprovalItem, AssistantItem, PlanSnapshot, QuestionItem, ResultItem, ToolItem, UserItem } from './ChatItems';
+import { ApprovalItem, AssistantItem, PlanEvent, PlanSnapshot, QuestionItem, ResultItem, ToolItem, UserItem } from './ChatItems';
 import PlanView from './PlanView';
-import { PLAN_TOOL } from '../lib/planView';
+import { PLAN_TOOL, TASK_TOOLS, taskTitles } from '../lib/planView';
 import { useContextMenu } from './ContextMenu';
 import { t, useLang } from '../lib/i18n';
 import ProjectIcon from './ProjectIcon';
@@ -112,12 +112,13 @@ function readSessionView(id: string): SessionView {
   } catch { return 'chat'; }
 }
 
-function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: { showPlan?: (todoId: string) => void; approve: Props['onApprove']; answer: Props['onAnswer']; cwd: string; rewind?: (messageId: string) => void; latestVerify?: string; verify?: () => void; review?: (changes: Extract<ChatItem, { kind: 'changes' }>) => void; otherAgent?: string }): React.ReactNode {
+function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: { showPlan?: (todoId: string) => void; taskTitles?: Map<string, string>; approve: Props['onApprove']; answer: Props['onAnswer']; cwd: string; rewind?: (messageId: string) => void; latestVerify?: string; verify?: () => void; review?: (changes: Extract<ChatItem, { kind: 'changes' }>) => void; otherAgent?: string }): React.ReactNode {
   switch (it.kind) {
     case 'user': return <UserItem key={it.id} item={it} onRewind={actions.rewind && UUID_RE.test(it.id) && !isInjected(it) ? () => actions.rewind!(it.id) : undefined} />;
     case 'assistant': return <AssistantItem key={it.id} item={it} baseDir={actions.cwd} />;
     case 'tool': {
       if (it.name === PLAN_TOOL && !it.parent) return <PlanSnapshot key={it.id} item={it} onShowPlan={actions.showPlan ? () => actions.showPlan!(it.id) : undefined} />;
+      if (TASK_TOOLS.has(it.name) && !it.parent) return <PlanEvent key={it.id} item={it} title={actions.taskTitles?.get(String((it.input as { taskId?: unknown } | null)?.taskId ?? ''))} onShowPlan={actions.showPlan ? () => actions.showPlan!(it.id) : undefined} />;
       const kids = childrenOf.get(it.id);
       return <ToolItem key={it.id} item={it}>{kids?.map((k) => renderItem(k, childrenOf, actions))}</ToolItem>;
     }
@@ -413,6 +414,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     }
     return { top, childrenOf };
   }, [session?.items]);
+  const titles = useMemo(() => taskTitles(session?.items ?? []), [session?.items]);
   const latestVerify = useMemo(() => { const items = session?.items ?? []; for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'verify') return items[i].id; return undefined; }, [session?.items]);
 
   const scrollToBottom = () => {
@@ -630,7 +632,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
             {session.resumed && <ResumeBrief session={session} />}
             {top.length === 0 && <div className="text-center text-zinc-600 text-sm py-10">{session.restoring ? t('chat.restoring') : session.status === 'starting' ? t('chat.starting') : t('chat.firstMessage')}</div>}
             {top.map((it) => {
-              const node = renderItem(it, childrenOf, { showPlan: picked ? undefined : showInPlan, approve: onApprove, answer: onAnswer, cwd: session.cwd, rewind: canRewind ? rewind : undefined, latestVerify, verify: running ? undefined : onVerify, review: onCrossReview, otherAgent: session.agent === 'claude' ? 'Codex' : 'Claude' });
+              const node = renderItem(it, childrenOf, { showPlan: picked ? undefined : showInPlan, taskTitles: titles, approve: onApprove, answer: onAnswer, cwd: session.cwd, rewind: canRewind ? rewind : undefined, latestVerify, verify: running ? undefined : onVerify, review: onCrossReview, otherAgent: session.agent === 'claude' ? 'Codex' : 'Claude' });
               if (!picked) return <div key={it.id} data-item-id={it.id}>{node}</div>;
               const on = picked.has(it.id);
               // In export mode a click anywhere on a block toggles it; the block's own buttons are inert meanwhile.

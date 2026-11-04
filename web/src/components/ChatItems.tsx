@@ -192,6 +192,27 @@ export function PlanSnapshot({ item, onShowPlan }: { item: Extract<ChatItem, { k
   );
 }
 
+/** One line for a TaskCreate / TaskUpdate / TaskList call (current Claude Code checklist). */
+export function PlanEvent({ item, title, onShowPlan }: { item: Extract<ChatItem, { kind: 'tool' }>; title?: string; onShowPlan?: () => void }) {
+  useLang();
+  const i = (item.input ?? {}) as Record<string, unknown>;
+  const status = typeof i.status === 'string' ? i.status : null;
+  let text: React.ReactNode;
+  if (item.name === 'TaskCreate') text = <><span className="text-zinc-400">{t('plan.ev.create')}</span> <span className="text-zinc-200">{String(i.subject ?? '')}</span></>;
+  else if (item.name === 'TaskUpdate') {
+    const label = status === 'deleted' ? t('plan.ev.deleted') : status ? t(`plan.st.${status}`) : '';
+    const tone = status === 'completed' ? 'text-emerald-300' : status === 'in_progress' ? 'text-amber-200' : 'text-zinc-400';
+    text = <><span className="text-zinc-400">{t('plan.ev.update')}</span> <span className="text-zinc-200">{title || `#${String(i.taskId ?? '')}`}</span>{label && <span className={tone}> → {label}</span>}</>;
+  } else text = <span className="text-zinc-400">{t('plan.ev.list')}</span>;
+  return (
+    <div className="flex items-center gap-2 px-1 text-[12px]">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status === 'completed' ? 'bg-emerald-400' : status === 'in_progress' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
+      <span className="flex-1 min-w-0 truncate">{text}</span>
+      {onShowPlan && <button className="shrink-0 text-[11px] text-zinc-500 hover:text-white transition-colors" onClick={onShowPlan}>{t('plan.jumpPlan')} →</button>}
+    </div>
+  );
+}
+
 export function ToolItem({ item, children }: { item: Extract<ChatItem, { kind: 'tool' }>; children?: React.ReactNode }) {
   useLang();
   const [open, setOpen] = useState(true); // tool cards start expanded (input + output visible)

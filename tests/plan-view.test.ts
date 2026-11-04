@@ -79,3 +79,39 @@ test('Codex plan updates land in the timeline once per change', () => {
   assert.equal(recorded.length, 2);
   assert.deepEqual(buildPlan(s.items)[0].steps.map((x) => x.status), ['completed']);
 });
+
+test('sessions get the plan instruction unless it is turned off, then the custom prompt', async () => {
+  const { sessionInstructions, PLAN_INSTRUCTIONS } = await import('../server/planInstructions');
+  assert.equal(sessionInstructions(null), PLAN_INSTRUCTIONS);
+  assert.equal(sessionInstructions({ customPrompt: '  Answer in Korean.  ' }), `${PLAN_INSTRUCTIONS}\n\nAnswer in Korean.`);
+  assert.equal(sessionInstructions({ alwaysPlan: false, customPrompt: 'Answer in Korean.' }), 'Answer in Korean.');
+  assert.equal(sessionInstructions({ alwaysPlan: false }), undefined);
+});
+
+test('TaskCreate / TaskUpdate plans: numbered tasks, carried across turns, deletions dropped', () => {
+  const created = (id: string, n: number, subject: string) => tool(id, 'TaskCreate', { subject, description: '', activeForm: `${subject}…` }, { output: `Task #${n} created successfully: ${subject}` });
+  const upd = (id: string, taskId: string, status: string) => tool(id, 'TaskUpdate', { taskId, status }, { output: `Updated task #${taskId} status` });
+  const turns = buildPlan([
+    user('u1', 'build it'),
+    tool('ts', 'ToolSearch', { query: 'select:TaskCreate,TaskUpdate' }),
+    created('c1', 1, 'Write files'),
+    created('c2', 2, 'Run tests'),
+    created('c3', 3, 'Spare step'),
+    upd('s1', '1', 'in_progress'),
+    tool('w1', 'Write', { file_path: '/p/a.js' }),
+    upd('s2', '1', 'completed'),
+    upd('s3', '2', 'in_progress'),
+    upd('s4', '3', 'deleted'),
+    tool('b1', 'Bash', { command: 'npm test' }),
+    user('u2', 'also add a README'),
+    tool('w2', 'Write', { file_path: '/p/README.md' }),
+    upd('s5', '2', 'completed'),
+  ]);
+  assert.deepEqual(turns[0].steps.map((s) => [s.content, s.status]), [['Write files', 'completed'], ['Run tests', 'in_progress']]);
+  assert.deepEqual(turns[0].steps[0].items.map((i) => i.id), ['w1']);
+  assert.deepEqual(turns[0].steps[1].items.map((i) => i.id), ['b1']);
+  assert.deepEqual(turns[0].before.items, []);
+  // The task still in progress continues in the next turn and takes its work.
+  assert.deepEqual(turns[1].steps.map((s) => [s.content, s.status]), [['Run tests', 'completed']]);
+  assert.deepEqual(turns[1].steps[0].items.map((i) => i.id), ['w2']);
+});

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { sessionInstructions } from './planInstructions.js';
 import type { WebSocket, WebSocketServer } from 'ws';
 import type { AgentEvent, AgentSession, ClientCommand, ServerMessage } from './agents/types.js';
 import { ClaudeSession } from './agents/claude.js';
@@ -89,7 +90,7 @@ export class SessionRegistry {
     if (this.closing) throw new Error('Server is shutting down');
     let session: ClaudeSession | CodexSession;
     // Read at start so a prompt edited in Settings reaches the next session without a restart.
-    const instructions = (await loadConfig().catch(() => null))?.customPrompt?.trim() || undefined;
+    const instructions = sessionInstructions(await loadConfig().catch(() => null));
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
