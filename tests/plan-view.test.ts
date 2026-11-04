@@ -175,3 +175,38 @@ test('created files come from new files in the turn changes and from writes onto
   ]);
   assert.deepEqual(turn.created, ['/p/REPORT.md', '/p/new.ts', '/p/img/out.png']);
 });
+
+test('a message sent while the agent works joins that request instead of stopping it', () => {
+  const result: ChatItem = { kind: 'result', id: 'r1', ok: true, text: '', costUsd: 1, numTurns: 2, durationMs: 9000, at: 20_000 };
+  const turns = buildPlan([
+    user('u1', 'Fix the dialog'),
+    say('a1', '진행 계획\n1. 찾기\n2. 고치기'),
+    { kind: 'user', id: 'u2', text: '추가: the close button too', attachments: [], followUp: true },
+    say('a2', '✓ 1. 찾았어\n✓ 2. 고쳤어\n\n결과: 둘 다 고침'),
+    result,
+    { kind: 'user', id: 'u3', text: 'next thing', attachments: [], followUp: true },
+  ]);
+  assert.equal(turns.length, 2, 'a follow-up after the result is a new request');
+  assert.deepEqual(turns[0].additions, ['추가: the close button too']);
+  assert.deepEqual(turns[0].steps.map((s) => s.status), ['completed', 'completed']);
+  assert.equal(turns[0].result, result);
+  assert.equal(turns[0].answer, '둘 다 고침');
+
+  // Without the mark (saved history, or sent while idle) a message is its own request.
+  const plain = buildPlan([user('u1', 'a'), say('a1', 'x'), user('u2', 'b')]);
+  assert.equal(plain.length, 2);
+});
+
+test('files named in the reply or written by shell commands are candidates for created files', async () => {
+  const { pathsInText, pathsWritten } = await import('../web/src/lib/planView');
+  assert.deepEqual(pathsInText('문서: `REPORT.md`. 이미지는 /tmp/claude/out.png 에 저장. [보기](file:///Users/x/a.pdf), ~/Desktop/r.csv, `foo.bar()`, and/or 1.5x'),
+    ['/Users/x/a.pdf', 'REPORT.md', '/tmp/claude/out.png', '~/Desktop/r.csv']);
+  assert.deepEqual(pathsWritten('printf hi > out/a.txt; curl -o /tmp/x.zip https://e.com/x 2>/dev/null | tee -a log.md > /dev/null'), ['out/a.txt', '/tmp/x.zip', 'log.md']);
+
+  const [turn] = buildPlan([
+    user('u1', 'make it'),
+    tool('b1', 'Bash', { command: 'printf 42 > /tmp/claude/data.txt' }),
+    say('a1', 'Saved to `/tmp/claude/data.txt` and /tmp/claude/chart.png.'),
+  ]);
+  assert.deepEqual(turn.mentioned, ['/tmp/claude/data.txt', '/tmp/claude/chart.png']);
+});

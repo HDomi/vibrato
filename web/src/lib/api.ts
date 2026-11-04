@@ -8,6 +8,8 @@ export interface Entry {
   isDir: boolean;
   size: number;
   mtime: number;
+  /** When the file was created (stat only). */
+  birthtime?: number;
   ext: string;
   hidden: boolean;
   kind: PreviewKind;

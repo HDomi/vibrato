@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
 import { buildPlan, noteLine, type PlanStep, type PlanTurn } from '../lib/planView';
+import { resolveLocal } from '../lib/localPath';
 import { ApprovalItem, QuestionItem } from './ChatItems';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
@@ -12,6 +13,8 @@ type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
 interface Props {
   items: ChatItem[];
+  /** Session folder, for relative paths the agent names. */
+  cwd: string;
   running: boolean;
   /** Show this item in the chat view. */
   onJump: (itemId: string) => void;
@@ -95,8 +98,38 @@ function CreatedFiles({ paths }: { paths: string[] }) {
  * One request as the user asked for it: title, the plan ("진행 계획") as a numbered list where each finished
  * step gains an "a." line on how it was done, then the result. No tool calls here; the chat view has those.
  */
-function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean } & Pick<Props, 'onJump' | 'onApprove' | 'onAnswer'>) {
+/** Slack around a turn's time span when telling whether a named file was made during it. */
+const TURN_SLACK_MS = 10_000;
+
+/**
+ * Files the turn named that it did not visibly create (agents often write into their own temp folder and link
+ * it): kept when the file exists and was created while the turn ran. Checked once the turn has ended.
+ */
+function useNamedFiles(turn: PlanTurn, cwd: string): string[] {
+  const [found, setFound] = useState<string[]>([]);
+  const result = turn.result;
+  const key = turn.mentioned.join('\n');
+  useEffect(() => {
+    setFound([]);
+    if (!result?.at || !turn.mentioned.length) return;
+    const from = Math.min(turn.startedAt ?? Infinity, result.at - result.durationMs) - TURN_SLACK_MS;
+    const to = result.at + TURN_SLACK_MS;
+    const paths = [...new Set(turn.mentioned.map((p) => resolveLocal(p, cwd)).filter((p): p is string => !!p && !turn.created.includes(p)))];
+    let live = true;
+    void Promise.all(paths.map((p) => api.stat(p).then((e) => {
+      const made = e.birthtime ?? e.mtime;
+      return !e.isDir && made >= from && made <= to && !turn.created.includes(e.path) ? e.path : null;
+    }).catch(() => null))).then((hits) => { if (live) setFound([...new Set(hits.filter((p): p is string => !!p))]); });
+    return () => { live = false; };
+    // turn.mentioned is covered by its joined key; the rest only changes with the result.
+  }, [result?.id, key, cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+  return found;
+}
+
+function TurnCard({ turn, live, cwd, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; cwd: string } & Pick<Props, 'onJump' | 'onApprove' | 'onAnswer'>) {
   useLang();
+  const named = useNamedFiles(turn, cwd);
+  const created = [...turn.created, ...named];
   const done = turn.steps.filter((s) => s.status === 'completed').length;
   const total = turn.steps.length;
   const state = turn.result ? (turn.result.ok ? 'done' : 'failed') : live ? 'running' : total && done < total ? 'stopped' : null;
@@ -115,6 +148,9 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
         <div className="flex-1 min-w-0">
           <div className="text-[14.5px] leading-6 font-semibold text-zinc-100 line-clamp-2">{lines[0]}</div>
           {lines.length > 1 && <div className="mt-0.5 text-[12.5px] leading-relaxed text-zinc-400 line-clamp-2">{lines.slice(1).join(' · ')}</div>}
+          {turn.additions.map((a, i) => (
+            <div key={i} className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.replace(/\s+/g, ' ').trim()}</span></div>
+          ))}
         </div>
         {state && (
           <span className={`shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' ? 'bg-amber-300/15 text-amber-200' : 'bg-fill-2 text-zinc-300'}`}>
@@ -150,7 +186,7 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
             : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}
         </div>
       )}
-      {turn.created.length > 0 && <CreatedFiles paths={turn.created} />}
+      {created.length > 0 && <CreatedFiles paths={created} />}
       {turn.pending.map((p) => p.kind === 'approval'
         ? <ApprovalItem key={p.id} item={p as Item<'approval'>} onDecide={(d, m) => onApprove(p.id, d, m)} />
         : <QuestionItem key={p.id} item={p as Item<'question'>} onAnswer={(a) => onAnswer(p.id, a)} />)}
@@ -166,7 +202,7 @@ function TurnCard({ turn, live, onJump, onApprove, onAnswer }: { turn: PlanTurn;
 }
 
 /** The session as a checklist per turn: each plan step with what was done for it. */
-function PlanView({ items, running, onJump, onApprove, onAnswer, focusTurn }: Props) {
+function PlanView({ items, cwd, running, onJump, onApprove, onAnswer, focusTurn }: Props) {
   useLang();
   const turns = useMemo(() => buildPlan(items), [items]);
   const scroller = useRef<HTMLDivElement>(null);
@@ -188,7 +224,7 @@ function PlanView({ items, running, onJump, onApprove, onAnswer, focusTurn }: Pr
     <div ref={scroller} className="absolute inset-0 overflow-y-auto" onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
       <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
         {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
-        {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} live={running && i === turns.length - 1} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
+        {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
       </div>
     </div>
   );

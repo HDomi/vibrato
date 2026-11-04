@@ -1,5 +1,6 @@
 import type { TodoItem } from './agent';
 import { isInjected, todosFromInput, type ChatItem } from './chatStore';
+import { codePathCandidate } from './localPath';
 
 /*
  * The plan view: a session regrouped as turns -> plan steps -> what was done for each step. The steps come from
@@ -39,6 +40,10 @@ export interface PlanStep {
 export interface PlanTurn {
   id: string;
   user: Item<'user'> | null;
+  /** Messages the user added while the agent was still on this request: part of it, not new requests. */
+  additions: string[];
+  /** When the first timed item of the turn happened (server ms); absent for turns loaded from saved history. */
+  startedAt?: number;
   /** Work before the first checklist (reading around, asking), or the whole turn when there is no checklist. */
   before: PlanStep;
   steps: PlanStep[];
@@ -49,6 +54,12 @@ export interface PlanTurn {
   changes: Item<'changes'>[];
   /** Absolute paths of the files this turn created, in order. */
   created: string[];
+  /**
+   * File paths the turn named without a tool that shows it created them (a link in the reply, a shell redirect),
+   * as written: absolute, "~/" or relative to the session folder. Whether they were made in this turn is checked
+   * against the disk (see PlanView).
+   */
+  mentioned: string[];
   verify: Item<'verify'>[];
   /** Approvals and questions still waiting for the user. */
   pending: (Item<'approval'> | Item<'question'>)[];
@@ -115,6 +126,30 @@ function createdFiles(it: Item<'tool'>): string[] {
   return [];
 }
 
+const MENTION_LIMIT = 40;
+/** A path-looking token with a file extension, as agents write them in prose: /abs/x.md, ~/x.png, ./out/x.csv. */
+const BARE_PATH = /(?:^|[\s(:："'“])((?:~\/|\.{0,2}\/(?!\/))[^\s`'"“”()<>\[\]]*[\w-]\.[A-Za-z][\w]{0,9})(?=[\s)"'”.,:;!?]|$)/gm;
+const MD_LINK = /\]\(([^)\s]+)\)/g;
+const BACKTICK = /`([^`\n]+)`/g;
+/** Where a shell command writes: "> f", ">> f", "-o f", "--output f", "tee f". */
+const SHELL_OUT = /(?:^|[\s;&|])(?:>>?|-o|--output(?:=|\s)|tee(?:\s+-a)?)\s*(['"]?)([^\s'";&|<>]+)\1/g;
+
+/** File paths named in the agent's words. */
+export function pathsInText(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(MD_LINK)) if (!/^[a-z][\w+.-]*:/i.test(m[1]) || m[1].startsWith('file://')) out.push(m[1].replace(/^file:\/\//, ''));
+  for (const m of text.matchAll(BACKTICK)) { const c = codePathCandidate(m[1]); if (c && /\.[A-Za-z][\w]{0,9}(?::\d+(?::\d+)?)?$/.test(c)) out.push(c.replace(/:\d+(?::\d+)?$/, '')); }
+  for (const m of text.matchAll(BARE_PATH)) out.push(m[1]);
+  return [...new Set(out)];
+}
+
+/** Files a shell command writes to. */
+export function pathsWritten(command: string): string[] {
+  return [...command.matchAll(SHELL_OUT)].map((m) => m[2]).filter((p) => p !== '/dev/null' && !p.startsWith('&') && /[\w-]\.[A-Za-z][\w]{0,9}$/.test(p));
+}
+
+const addMentioned = (t: PlanTurn, paths: string[]) => { for (const p of paths) if (t.mentioned.length < MENTION_LIMIT && !t.mentioned.includes(p)) t.mentioned.push(p); };
+
 const addCreated = (t: PlanTurn, paths: string[]) => { for (const p of paths) if (!t.created.includes(p)) t.created.push(p); };
 
 function file(step: PlanStep, it: ChatItem) {
@@ -148,7 +183,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, created: [] };
+    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, created: [], mentioned: [] };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -157,12 +192,16 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   for (const it of items) {
     if ((it.kind === 'assistant' || it.kind === 'tool') && it.parent) continue;
     if (it.kind === 'user' && !isInjected(it)) {
+      // Assigned inside start(), which the compiler does not follow.
+      const cur = turn as PlanTurn | null;
+      if (it.followUp && cur?.user && !cur.result) { cur.additions.push(it.text); continue; }
       const t = start(it, it.id);
       const carried = [...tasks.values()].find((x) => x.status === 'in_progress');
       if (carried) { t.hasPlan = true; active = taskStep(t, carried); }
       continue;
     }
     const t: PlanTurn = turn ?? start(null, `pre-${it.id}`);
+    if ('at' in it && it.at && !t.startedAt) t.startedAt = it.at;
     if (it.kind === 'tool' && it.name === PLAN_TOOL) {
       const todos = todosFromInput(it.input);
       if (!todos) continue;
@@ -209,10 +248,14 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (it.kind === 'tool' && (TASK_TOOLS.has(it.name) || SILENT_TOOLS.has(it.name))) continue;
     if (it.kind === 'result') { t.result = it; continue; }
     if (it.kind === 'changes') { t.changes.push(it); addCreated(t, it.files.filter((f) => f.status === 'A').map((f) => `${it.root}/${f.path}`)); continue; }
-    if (it.kind === 'tool') addCreated(t, createdFiles(it));
+    if (it.kind === 'tool') {
+      addCreated(t, createdFiles(it));
+      const cmd = (it.input as { command?: unknown } | null)?.command;
+      if (it.name === 'Bash' && typeof cmd === 'string') addMentioned(t, pathsWritten(cmd));
+    }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
-    if (it.kind === 'assistant' && it.text.trim()) t.texts.push(it.text);
+    if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); addMentioned(t, pathsInText(it.text)); }
     if (!active && justDone && !justDone.note && it.kind === 'assistant' && it.text.trim()) justDone.note = it.text.trim();
     // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
     const started = t.steps.some((x) => x.status !== 'pending');

@@ -627,7 +627,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         </div>
       )}
       <div className="flex-1 min-h-0 relative">
-        {view === 'plan' && <PlanView items={session.items} running={running} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
+        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} running={running} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
         {searching && view === 'chat' && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
           onJump={() => { stick.current = false; setAtBottom(false); }} />}
         {/* Kept mounted under the plan view so switching back keeps its place. */}

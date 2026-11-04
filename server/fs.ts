@@ -11,6 +11,8 @@ export interface Entry {
   isDir: boolean;
   size: number;
   mtime: number;
+  /** When the file was created (stat only). */
+  birthtime?: number;
   ext: string;
   hidden: boolean;
   kind: PreviewKind;
@@ -82,7 +84,7 @@ export async function statPath(p: string): Promise<Entry> {
     const isDir = st.isDirectory();
     const ext = isDir ? '' : path.extname(name);
     return {
-      name, path: abs, isDir, size: st.size, mtime: st.mtimeMs, ext,
+      name, path: abs, isDir, size: st.size, mtime: st.mtimeMs, birthtime: st.birthtimeMs, ext,
       hidden: name.startsWith('.'),
       kind: isDir ? 'binary' : previewKind(ext, name),
     };

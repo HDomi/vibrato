@@ -270,7 +270,7 @@ export function useSessions() {
     setSessions((prev) => {
       const s = prev[sessionId];
       if (!s) return prev;
-      return { ...prev, [sessionId]: { ...s, items: [...s.items, { kind: 'user', id: messageId, text, attachments, pending: true }], status: s.status === 'idle' ? 'running' : s.status, turnStartedAt: s.turnStartedAt ?? Date.now(), lastActivity: Date.now() } };
+      return { ...prev, [sessionId]: { ...s, items: [...s.items, { kind: 'user', id: messageId, text, attachments, pending: true, followUp: s.status === 'running' || undefined }], status: s.status === 'idle' ? 'running' : s.status, turnStartedAt: s.turnStartedAt ?? Date.now(), lastActivity: Date.now() } };
     });
     agentClient.send({ type: 'session.send', sessionId, text, attachments, messageId });
   }, []);
