@@ -17,7 +17,7 @@ import type { BackgroundSession } from './components/Composer';
 import TerminalPanel from './components/TerminalPanel';
 import GitPanel from './components/GitPanel';
 import RunPanel from './components/RunPanel';
-import Splitter, { usePaneWidth } from './components/Splitter';
+import Splitter, { SideSplitter, usePaneWidth } from './components/Splitter';
 import { ContextMenuProvider, useContextMenu, type MenuItem } from './components/ContextMenu';
 import QuickOpen from './components/QuickOpen';
 import { t, useLang } from './lib/i18n';
@@ -612,9 +612,10 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
     if (!confirmed && (s.status === 'running' || s.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
     S.close(s.id); if (session?.id === s.id) setActive(null);
   };
+  const list = usePaneWidth('vibe.w.agentList', 288, 200, 560);
   return (
-    <div className="flex-1 min-w-0 flex gap-4 px-[42px] pb-4 relative">
-      <aside className="glass w-72 shrink-0 flex flex-col overflow-hidden">
+    <div className="flex-1 min-w-0 flex px-[42px] pb-4 relative">
+      <aside style={{ width: list.width }} className="glass shrink-0 flex flex-col overflow-hidden">
         <div className="h-12 shrink-0 flex items-center px-4 border-b border-line">
           <span className="text-[13px] font-semibold text-zinc-100">{t('app.agent')}</span>
           <div className="flex-1" />
@@ -642,6 +643,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
           ))}
         </div>
       </aside>
+      <SideSplitter pane={list} />
       <section className="glass flex-1 min-w-0 overflow-hidden">
         <ChatPanel cwd={home} scope="home" session={session}
           onStart={start}

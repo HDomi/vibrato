@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentTyp
 import { useViewActiveRef } from '../../lib/viewActive';
 import { t, useLang } from '../../lib/i18n';
 import { usePersisted } from './ui';
+import { SideSplitter, usePaneWidth } from '../Splitter';
 
 type Group = 'data' | 'web' | 'security' | 'time' | 'image' | 'system';
 const GROUPS: Group[] = ['data', 'web', 'security', 'time', 'image', 'system'];
@@ -63,9 +64,10 @@ export default function ToolboxView() {
   }, [setActive, order]);
 
   const pick = (id: string) => { setActive(id); setQuery(''); };
+  const list = usePaneWidth('vibe.w.toolList', 240, 180, 480);
   return (
-    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-[42px] pb-4">
-      <aside className="glass w-60 shrink-0 flex flex-col overflow-hidden">
+    <div className="flex-1 min-w-0 flex min-h-0 px-[42px] pb-4">
+      <aside style={{ width: list.width }} className="glass shrink-0 flex flex-col overflow-hidden">
         <div className="h-12 shrink-0 flex items-center gap-2 px-3 border-b border-line">
           <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('tb.search')} spellCheck={false}
             onKeyDown={(e) => {
@@ -92,6 +94,7 @@ export default function ToolboxView() {
           {q && !visible.length && <div className="px-2 py-2 text-[12px] text-zinc-600">{t('tb.noMatch')}</div>}
         </div>
       </aside>
+      <SideSplitter pane={list} />
       <section className="glass flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
         <div className="h-12 shrink-0 flex items-center gap-3 px-5 border-b border-line text-xs">
           <span className="font-medium text-zinc-200">{t(`tb.${tool.id}.name`)}</span>

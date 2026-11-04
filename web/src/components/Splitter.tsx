@@ -48,3 +48,9 @@ export default function Splitter({ onDrag, onStart, onEnd, gap }: Props) {
     </div>
   );
 }
+
+/** Gap handle that resizes the pane on its left (a list beside a main area). */
+export function SideSplitter({ pane }: { pane: ReturnType<typeof usePaneWidth> }) {
+  const start = useRef(0);
+  return <Splitter gap onStart={() => { start.current = pane.width; }} onDrag={(dx) => pane.setWidth(start.current + dx)} />;
+}

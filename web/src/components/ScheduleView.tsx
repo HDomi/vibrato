@@ -5,6 +5,7 @@ import { relativeTime } from '../lib/toolbox/time';
 import { getLang, t, useLang } from '../lib/i18n';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
+import Splitter, { SideSplitter, usePaneWidth } from './Splitter';
 
 const STATUS_DOT: Record<ScheduleRunStatus, string> = {
   running: 'bg-amber-400 animate-pulse', waiting: 'bg-sky-400 animate-pulse', done: 'bg-emerald-400', failed: 'bg-red-400', missed: 'bg-zinc-500', skipped: 'bg-zinc-600',
@@ -151,10 +152,13 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   const lastRun = (id: string) => snap?.runs.find((r) => r.scheduleId === id);
   const power = snap?.power;
   const projectOptions = [...new Set([...(draft.cwd ? [draft.cwd] : []), ...projects])];
+  const list = usePaneWidth('vibe.w.scheduleList', 320, 240, 640);
+  const side = usePaneWidth('vibe.w.scheduleSide', 460, 320, 900);
+  const sideStart = useRef(0);
 
   return (
-    <div className="flex-1 min-w-0 flex min-h-0 gap-4 px-[42px] pb-4 text-[12.5px]">
-      <aside className="glass w-[320px] shrink-0 flex flex-col min-h-0 overflow-hidden">
+    <div className="flex-1 min-w-0 flex min-h-0 px-[42px] pb-4 text-[12.5px]">
+      <aside style={{ width: list.width }} className="glass shrink-0 flex flex-col min-h-0 overflow-hidden">
         <div className="h-12 shrink-0 flex items-center gap-2 px-4 border-b border-line">
           <span className="text-[14px] font-semibold">{t('sched.title')}</span>
           <div className="flex-1" />
@@ -187,6 +191,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
         )}
       </aside>
 
+      <SideSplitter pane={list} />
       <main className="glass flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden">
         {/* Header: name, on/off and the actions. */}
         <div className="h-14 shrink-0 flex items-center gap-2 px-5 border-b border-line">
@@ -200,7 +205,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
 
         <div className="flex-1 min-h-0 flex">
           {/* Left (wider): what runs. */}
-          <div className="flex-[3] min-w-0 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+          <div className="flex-1 min-w-[320px] overflow-y-auto px-6 py-5 flex flex-col gap-5">
             <Field label={t('sched.project')}>
               <div className="flex gap-2">
                 <select className={input} value={draft.cwd} onChange={(e) => set('cwd', e.target.value)}>
@@ -279,7 +284,8 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
           </div>
 
           {/* Right: when and how it runs, then its run history (scrolls on its own). */}
-          <div className="flex-[2] min-w-[340px] flex flex-col min-h-0 border-l border-line">
+          <Splitter onStart={() => { sideStart.current = side.width; }} onDrag={(dx) => side.setWidth(sideStart.current - dx)} />
+          <div style={{ width: side.width }} className="shrink-0 flex flex-col min-h-0">
             <div className="min-h-0 overflow-y-auto px-5 py-5 space-y-5">
               <Field label={t('sched.when')}>
                 <input className={`${input} font-mono`} value={draft.cron} onChange={(e) => set('cron', e.target.value)} spellCheck={false} />
