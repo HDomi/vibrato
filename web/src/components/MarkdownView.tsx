@@ -56,14 +56,18 @@ function CodePath({ text, baseDir, children }: { text: string; baseDir?: string 
     void pathExists(local).then((v) => { if (alive) setOk(v); });
     return () => { alive = false; };
   }, [local]);
+  const open = useContext(LocalLinkContext) ?? openLocalFile;
   if (!local || !ok) return <code>{children}</code>;
-  return <code className="cursor-pointer underline decoration-dotted decoration-zinc-500 underline-offset-2 hover:decoration-zinc-200" title={local} onClick={() => openLocalFile(local)}>{children}</code>;
+  return <code className="cursor-pointer underline decoration-dotted decoration-zinc-500 underline-offset-2 hover:decoration-zinc-200" title={local} onClick={() => open(local)}>{children}</code>;
 }
 
 /** Ask the app to show a local file in the Preview tab. */
 export function openLocalFile(path: string) {
   window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path } }));
 }
+
+/** Overrides where local links open (the Preview stacks them as layers instead of replacing itself). */
+export const LocalLinkContext = createContext<((path: string) => void) | null>(null);
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
   useLang();
@@ -109,11 +113,12 @@ export default function MarkdownView({ text, baseDir, className }: Props) {
             const url = local ? api.rawUrl(local) : String(src ?? '');
             return <MarkdownImage key={url} url={url} label={local ?? alt ?? ''} alt={alt ?? ''} title={title ?? local ?? undefined} />;
           },
-          a: ({ href, children, title }) => {
+          a: function Link({ href, children, title }) {
+            const open = useContext(LocalLinkContext) ?? openLocalFile;
             const h = String(href ?? '');
             const local = resolveLocal(h, baseDir);
             if (local) {
-              return <a href="#" title={local} onClick={(e) => { e.preventDefault(); openLocalFile(local); }}>{children}</a>;
+              return <a href="#" title={local} onClick={(e) => { e.preventDefault(); open(local); }}>{children}</a>;
             }
             if (h.startsWith('#')) return <a href={h} title={title}>{children}</a>;
             // External: let Electron's window-open handler send it to the default browser.

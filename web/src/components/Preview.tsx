@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ImageConvertDialog from './ImageConvertDialog';
 import { highlight, highlightedLines, LANGUAGES, languageFor, rememberLanguage } from '../lib/highlight';
-import { CopyButton } from './MarkdownView';
+import { CopyButton, LocalLinkContext, openLocalFile } from './MarkdownView';
 import MarkdownView from './MarkdownView';
 import { api, ApiError, formatSize, imageSrc, type Entry, type TextFile } from '../lib/api';
 import { findTables } from '../lib/mdtable';
@@ -10,8 +10,15 @@ import { findTables } from '../lib/mdtable';
 const MdTableEditor = lazy(() => import('./MdTableEditor'));
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
+import { toast } from './Toast';
 
-interface Props { entry: Entry | null; /** Shown in a dialog (views without a preview panel): adds a close button. */ onClose?: () => void }
+interface Props {
+  entry: Entry | null;
+  /** Shown in a dialog (views without a preview panel): adds a close button. */
+  onClose?: () => void;
+  /** A linked file stacked over another preview: its links open in the outer preview's stack. */
+  layer?: boolean;
+}
 
 /** Syntax-highlighted source view with line numbers and a language picker (remembered per extension). */
 function CodeView({ content, name, ext }: { content: string; name: string; ext: string }) {
@@ -136,9 +143,33 @@ function CopySourceButton({ path }: { path: string }) {
   );
 }
 
-export default function Preview({ entry, onClose }: Props) {
+export default function Preview({ entry, onClose, layer }: Props) {
   useLang();
   const [converting, setConverting] = useState(false);
+  // Files linked from the Markdown on screen open as closable layers over it, so the linking file stays put.
+  const [layers, setLayers] = useState<Entry[]>([]);
+  const root = useRef<HTMLDivElement>(null);
+  const entryPath = entry?.path;
+  useEffect(() => { setLayers([]); }, [entryPath]);
+  const openLink = useCallback((path: string) => {
+    api.stat(path).then((e) => {
+      if (e.isDir) openLocalFile(e.path);
+      else setLayers((l) => [...l, e]);
+    }).catch(() => toast(t('preview.openFailed', { path }), 'error'));
+  }, []);
+  const hasLayers = layers.length > 0;
+  useEffect(() => {
+    if (!hasLayers) return;
+    // Capture phase: the top layer closes before an enclosing preview dialog sees the key.
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented) return;
+      if (root.current && !root.current.checkVisibility({ visibilityProperty: true })) return;
+      e.preventDefault(); e.stopPropagation();
+      setLayers((l) => l.slice(0, -1));
+    };
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, [hasLayers]);
   // Bumped when the file on screen changes (saved here, edited elsewhere, opened again), so it is read again.
   const [rev, setRev] = useState(0);
   const seen = useRef<{ path: string; mtime: number } | null>(null);
@@ -163,8 +194,8 @@ export default function Preview({ entry, onClose }: Props) {
     return <div className="h-full flex items-center justify-center text-zinc-600 text-sm">{t('preview.hint')}</div>;
   }
   const url = api.rawUrl(entry.path);
-  return (
-    <div className="h-full flex flex-col min-w-0">
+  const body = (
+    <div ref={root} className="relative h-full flex flex-col min-w-0">
       <div className="h-10 flex items-center gap-3 px-4 border-b border-white/10 text-sm">
         <span className="truncate font-medium">{entry.name}</span>
         <span className="text-zinc-500 text-xs">{formatSize(entry.size)}</span>
@@ -206,8 +237,16 @@ export default function Preview({ entry, onClose }: Props) {
           </div>
         )}
       </div>
+      {layers.map((l, i) => (
+        <div key={`${i}:${l.path}`} className="fade-in absolute inset-0 z-20 bg-black/40" style={{ padding: 12 + i * 10 }} onMouseDown={() => setLayers((ls) => ls.slice(0, i))}>
+          <div className="h-full glass-pop pop-in !rounded-[18px] !bg-[rgb(24_26_33/.97)] overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
+            <Preview entry={l} layer onClose={() => setLayers((ls) => ls.slice(0, i))} />
+          </div>
+        </div>
+      ))}
     </div>
   );
+  return layer ? body : <LocalLinkContext.Provider value={openLink}>{body}</LocalLinkContext.Provider>;
 }
 
 /** The preview as a dialog, for views without the right-hand panel (Agents, Tools, Schedules). */
