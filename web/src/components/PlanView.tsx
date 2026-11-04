@@ -79,7 +79,38 @@ function ActivityLine({ text }: { text: string }) {
   );
 }
 
-/** One plan step: number and text, "a. how it was done" (or why it was skipped), what it took, and live, what is happening now. */
+/** a, b, …, z, aa, ab, … */
+const letter = (i: number): string => (i < 26 ? String.fromCharCode(97 + i) : letter(Math.floor(i / 26) - 1) + letter(i % 26));
+/** Accounts shown under a step before "earlier ones" folds the rest away. */
+const ENTRIES_SHOWN = 4;
+
+/** A step's accounts: one "a." line, or for a step done again in later rounds, a., b., c. with the round's title. */
+function StepEntries({ step, note }: { step: PlanStep; note: string | null }) {
+  const [all, setAll] = useState(false);
+  if (step.entries.length < 2) {
+    if (step.skipped) return <div className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-amber-200/80"><span className="shrink-0">{t('plan.skipped')}</span>{note && <span className="line-clamp-2">{note}</span>}</div>;
+    return note ? <div className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-400"><span className="shrink-0 text-zinc-500">a.</span><span className="line-clamp-2">{note}</span></div> : null;
+  }
+  const hidden = all ? 0 : Math.max(0, step.entries.length - ENTRIES_SHOWN);
+  return (
+    <div className="mt-1 space-y-0.5">
+      {hidden > 0 && (
+        <button type="button" onClick={(e) => { e.stopPropagation(); setAll(true); }} className="text-[11.5px] text-zinc-500 hover:text-zinc-200">{t('plan.entriesEarlier', { n: hidden })}</button>
+      )}
+      {step.entries.slice(hidden).map((e, i) => (
+        <div key={hidden + i} className={`flex gap-1.5 text-[12.5px] leading-relaxed ${e.skipped ? 'text-amber-200/80' : 'text-zinc-400'}`}>
+          <span className="shrink-0 tabular-nums text-zinc-500">{letter(hidden + i)}.</span>
+          <span className="min-w-0 line-clamp-2">
+            {e.title && e.title !== step.content && <span className="text-zinc-300 mr-1.5">{e.title}</span>}
+            {e.skipped && <span className="mr-1">{t('plan.skipped')}</span>}{e.note}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One plan step: number and text, its accounts (a., b., …) or why it was skipped, what it took, and live, what is happening now. */
 function StepRow({ step, index, current, live, activity, now, onJump }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; onJump: (id: string) => void }) {
   useLang();
   const done = step.status === 'completed';
@@ -87,22 +118,55 @@ function StepRow({ step, index, current, live, activity, now, onJump }: { step: 
   const note = done || current ? noteLine(step.note, 200) : null;
   const target = step.items[0]?.id;
   const working = current && live;
+  const jump = () => { if (target) onJump(target); };
   return (
-    <button type="button" disabled={!target} onClick={() => target && onJump(target)} title={target ? t('plan.jumpChat') : undefined}
-      className={`group w-full flex items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 ${current && live ? 'bg-amber-300/[0.07]' : target ? 'hover:bg-fill' : ''}`}>
+    <div role="button" tabIndex={target ? 0 : -1} aria-disabled={!target} onClick={jump} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); } }} title={target ? t('plan.jumpChat') : undefined}
+      className={`group w-full flex items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 outline-none ${current && live ? 'bg-amber-300/[0.07]' : target ? 'cursor-pointer hover:bg-fill focus-visible:bg-fill' : ''}`}>
       <StatusIcon status={current ? 'in_progress' : step.status} live={live} skipped={step.skipped} />
       <div className="flex-1 min-w-0">
         <div className={`text-[13.5px] leading-5 transition-colors duration-300 ${done ? 'text-zinc-300' : current ? 'text-white font-medium' : 'text-zinc-400'}`}>
           <span className="tabular-nums text-zinc-500 mr-1.5">{index + 1}.</span>{title}
+          {step.entries.length > 1 && <span className="ml-2 rounded-full bg-fill-2 px-1.5 py-px text-[10.5px] tabular-nums text-zinc-400">×{step.entries.length}</span>}
         </div>
-        {step.skipped
-          ? <div className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-amber-200/80"><span className="shrink-0">{t('plan.skipped')}</span>{note && <span className="line-clamp-2">{note}</span>}</div>
-          : note && <div className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-400"><span className="shrink-0 text-zinc-500">a.</span><span className="line-clamp-2">{note}</span></div>}
+        <StepEntries step={step} note={note} />
         {(done || current) && <StepStatsLine step={step} now={now} running={working} />}
         {working && activity && <ActivityLine text={activity} />}
       </div>
       {target && <span className="shrink-0 mt-0.5 text-[11px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">{t('plan.jumpChat')} →</span>}
-    </button>
+    </div>
+  );
+}
+
+/** Rows of the progress log shown before "show all". */
+const LOG_SHOWN = 12;
+
+/**
+ * Under the result, when steps were done again round after round: every round's account in order, headed by
+ * what it reported ("#12 thaw_warning (해빙 예고)"), so the outcome lists the work and not just its last line.
+ */
+function ProgressLog({ turn, onJump }: { turn: PlanTurn; onJump: (id: string) => void }) {
+  const [all, setAll] = useState(false);
+  const rows = turn.steps.flatMap((s) => s.entries.map((e) => ({ ...e, order: turn.textIds.indexOf(e.itemId ?? '') })))
+    .sort((a, b) => a.order - b.order);
+  // Only a repeated step makes a log worth showing; a plan done once is already read off the steps.
+  if (!turn.steps.some((s) => s.entries.length > 1)) return null;
+  const shown = all ? rows : rows.slice(0, LOG_SHOWN);
+  return (
+    <div className="mt-3 border-t border-line pt-2.5">
+      <div className="mb-1 flex items-baseline gap-2 text-[11.5px] font-medium text-zinc-400">{t('plan.log')}<span className="tabular-nums text-zinc-500">{rows.length}</span></div>
+      <ol className="space-y-0.5">
+        {shown.map((r, i) => (
+          <li key={i}>
+            <button type="button" disabled={!r.itemId} onClick={() => r.itemId && onJump(r.itemId)} title={r.note}
+              className="w-full flex gap-2 rounded-md px-1 py-0.5 text-left text-[12.5px] leading-relaxed hover:bg-fill transition-colors">
+              <span className="shrink-0 w-7 text-right tabular-nums text-zinc-500">{i + 1}.</span>
+              <span className={`min-w-0 truncate ${r.skipped ? 'text-amber-200/80' : 'text-zinc-200'}`}>{r.detail ?? (r.title ? `${r.title} · ${r.note}` : r.note)}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      {!all && rows.length > LOG_SHOWN && <button type="button" onClick={() => setAll(true)} className="mt-1 px-1 text-[11.5px] text-zinc-500 hover:text-zinc-200">{t('plan.logAll', { n: rows.length })}</button>}
+    </div>
   );
 }
 
@@ -246,6 +310,7 @@ function TurnCard({ turn, live, cwd, activity, now, onJump, onApprove, onAnswer 
           {turn.answerFull
             ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} /></div>
             : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}
+          <ProgressLog turn={turn} onJump={onJump} />
         </div>
       )}
       {created.length > 0 && <CreatedFiles paths={created} />}

@@ -1,7 +1,7 @@
 import type { TodoItem } from './agent';
 import { isInjected, todosFromInput, type ChatItem } from './chatStore';
 import { codePathCandidate } from './localPath';
-import { doneMarks, resultOf, textPlan } from './textPlan';
+import { doneMarks, mergedPlan, planIn, resultOf, stepEntries } from './textPlan';
 
 export { doneMarks, textPlan } from './textPlan';
 
@@ -42,11 +42,23 @@ export interface PlanStep {
   stats: StepStats;
   /** The last thing the agent said while on this step: usually what it did or found. */
   note: string | null;
+  /** Every "✓ n." account of this step, in order: a step done again in later rounds has several (a., b., c.). */
+  entries: PlanEntry[];
   /** Closed without being done ("✓ n. Not done: why"); `note` holds the why. */
   skipped?: boolean;
   /** First and last timed item filed under it (server ms). */
   startedAt?: number;
   endedAt?: number;
+}
+
+/** One account of a step: the plan title it had in that round, what was done, and the round's headline. */
+export interface PlanEntry {
+  title: string;
+  note: string;
+  detail: string | null;
+  skipped: boolean;
+  /** The message it was written in. */
+  itemId?: string;
 }
 
 export interface PlanTurn {
@@ -80,6 +92,8 @@ export interface PlanTurn {
   pending: (Item<'approval'> | Item<'question'>)[];
   /** The agent's own words in this turn, in order (for the plan written as text and the result line). */
   texts: string[];
+  /** Item ids of `texts`, index for index. */
+  textIds: string[];
   /** The outcome: the reply's "Result:" line, else the gist of its last message (all of it when there is no plan). */
   answer: string | null;
   /** The answer is the whole last message (markdown), not a one-line summary. */
@@ -120,7 +134,7 @@ export function taskTitles(items: ChatItem[]): Map<string, string> {
 }
 
 const emptyStats = (): StepStats => ({ commands: 0, failed: 0, files: [], reads: 0, subagents: 0, toolSeconds: 0, denied: 0, errors: 0 });
-const group = (key: string, content: string): PlanStep => ({ key, content, status: 'pending', items: [], stats: emptyStats(), note: null });
+const group = (key: string, content: string): PlanStep => ({ key, content, status: 'pending', items: [], stats: emptyStats(), note: null, entries: [] });
 
 function editedFiles(it: Item<'tool'>): string[] {
   const i = (it.input ?? {}) as Record<string, unknown>;
@@ -210,7 +224,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], answer: null, answerFull: false, commits: [], pushed: false, created: [], mentioned: [] };
+    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, commits: [], pushed: false, created: [], mentioned: [] };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -289,7 +303,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
-    if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); addMentioned(t, pathsInText(it.text)); }
+    if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); t.textIds.push(it.id); addMentioned(t, pathsInText(it.text)); }
     if (!active && justDone && !justDone.note && it.kind === 'assistant' && it.text.trim()) justDone.note = it.text.trim();
     // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
     const started = t.steps.some((x) => x.status !== 'pending');
@@ -308,10 +322,12 @@ function fileTextSteps(t: PlanTurn) {
   const pool = [...t.before.items, ...t.after.items];
   t.before = group('before', '');
   t.after = group('after', '');
-  const planAt = pool.findIndex((it) => it.kind === 'assistant' && textPlan([it.text]) !== null);
+  const planAt = pool.findIndex((it) => it.kind === 'assistant' && planIn(it.text) !== null);
   let k = 0;
   pool.forEach((it, i) => {
     if (i <= planAt) { file(t.before, it); return; }
+    // A new round's plan starts over from its first step.
+    if (it.kind === 'assistant' && planIn(it.text)) k = 0;
     // A message with "✓ n." lines belongs to the first step it closes (later ones may have been skipped over).
     const done = it.kind === 'assistant' ? [...doneMarks([it.text]).keys()].filter((n) => n <= t.steps.length) : [];
     if (done.length) k = Math.max(k, Math.min(...done) - 1);
@@ -326,20 +342,24 @@ const NOT_DONE = /^(?:not\s+done|skipped|안\s*함|못\s*함|건너뜀)\s*[:：-
 function applyTextPlan(t: PlanTurn) {
   const marks = doneMarks(t.texts);
   if (!t.hasPlan) {
-    const steps = textPlan(t.texts);
+    const steps = mergedPlan(t.texts);
     if (steps) {
       t.hasPlan = true;
       t.steps = steps.map((content, i) => ({ ...group(`text:${i}`, content), status: marks.has(i + 1) ? 'completed' as const : 'pending' as const }));
       fileTextSteps(t);
     }
   }
-  // A "✓ n." line is the step's account, whichever way the plan came.
+  // "✓ n." lines are the step's account, whichever way the plan came; a step done again in later rounds has several.
+  const entries = stepEntries(t.texts);
   t.steps.forEach((step, i) => {
-    const how = marks.get(i + 1);
-    if (!how) return;
-    const skipped = how.match(NOT_DONE);
-    step.note = skipped ? how.slice(skipped[0].length) || null : how;
-    step.skipped = !!skipped;
+    step.entries = entries.filter((e) => e.step === i + 1).map((e) => {
+      const skipped = e.note.match(NOT_DONE);
+      return { title: e.title, note: skipped ? e.note.slice(skipped[0].length) : e.note, detail: e.detail, skipped: !!skipped, itemId: t.textIds[e.text] };
+    });
+    const last = step.entries[step.entries.length - 1];
+    if (!last || !marks.has(i + 1)) return;
+    step.note = last.note || null;
+    step.skipped = last.skipped;
     if (step.key.startsWith('text:')) step.status = 'completed';
   });
   // The steps are worked in order, so a written plan's step that has a later one checked is done too, even when

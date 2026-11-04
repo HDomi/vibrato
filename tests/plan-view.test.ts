@@ -245,3 +245,31 @@ test('a written plan gets its work filed per step, with stats, time, skipped ste
   assert.deepEqual(turn.commits, ['854020d']);
   assert.equal(turn.pushed, true);
 });
+
+test('rounds that re-plan the same step stack up as a., b., c. under it, and every plan step is kept', () => {
+  const notice = (id: string): ChatItem => ({ kind: 'user', id, text: '<task-notification>done</task-notification>', attachments: [], injected: 'task' as never });
+  const [turn] = buildPlan([
+    user('u1', 'make all the sounds'),
+    say('a1', '진행 계획\n1. 상태 확인\n2. 배치 실행\n3. 보고 연결\n4. 마무리'),
+    say('a2', '✓ 1. 전원 연결\n✓ 2. 배치 시작\n✓ 3. watch 연결\n✓ 4. Not done: 아직 도는 중\n\n결과: 진행 중'),
+    notice('n1'),
+    say('a3', '진행 계획\n1. #10 결과 보고\n\n**#10 `flood_rush`(홍수)**\n- 파일: a.ogg\n\n✓ 1. 알림 결과로 보고\n\n결과: 1개 완료'),
+    notice('n2'),
+    say('a4', '진행 계획\n1. #11 결과 보고\n2. 정리\n\n**#11 `tsunami_rush`(해일)**\n\n✓ 1. 알림 결과로 보고\n✓ 2. 다 끝남\n\n결과: 전부 완료됐어. #10~11 다 만들었어.'),
+  ]);
+  assert.deepEqual(turn.steps.map((s) => s.content), ['#11 결과 보고', '정리', '보고 연결', '마무리']);
+  assert.deepEqual(turn.steps[0].entries.map((e) => [e.title, e.note, e.detail]), [
+    ['상태 확인', '전원 연결', null],
+    ['#10 결과 보고', '알림 결과로 보고', '#10 flood_rush(홍수)'],
+    ['#11 결과 보고', '알림 결과로 보고', '#11 tsunami_rush(해일)'],
+  ]);
+  assert.deepEqual(turn.steps[0].entries.map((e) => e.itemId), ['a2', 'a3', 'a4']);
+  assert.equal(turn.steps[3].entries[0].skipped, true);
+  assert.equal(turn.answer, '전부 완료됐어. #10~11 다 만들었어.');
+});
+
+test('a ✓ line takes the title of the plan above it, not of the next round planned in the same message', async () => {
+  const { stepEntries } = await import('../web/src/lib/textPlan');
+  const entries = stepEntries(['진행 계획\n1. #1 보고', '**#1 a**\n✓ 1. 됨\n\n진행 계획\n1. #2 보고', '**#2 b**\n✓ 1. 됨']);
+  assert.deepEqual(entries.map((e) => [e.title, e.detail, e.text]), [['#1 보고', '#1 a', 1], ['#2 보고', '#2 b', 2]]);
+});

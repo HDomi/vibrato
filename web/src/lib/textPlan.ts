@@ -10,26 +10,79 @@ const DONE_AFTER = /^\s*(\d{1,2})[.)]\s*(?:✓|✔|✅)\s*(.*)$/;
 const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|result)\s*(?:\*\*|__)?\s*[:：]\s*(.*)$/i;
 const plainLine = (s: string) => s.replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
 
-/** The last numbered list under a plan heading in these messages. */
-export function textPlan(texts: string[]): string[] | null {
+/** The last plan in one message: the numbered list under a plan heading (one step is a plan too). */
+export function planIn(text: string): string[] | null {
   let found: string[] | null = null;
-  for (const text of texts) {
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (!PLAN_HEAD.test(lines[i])) continue;
-      const steps: string[] = [];
-      for (let j = i + 1; j < lines.length; j++) {
-        const m = lines[j].match(PLAN_ITEM);
-        if (m && !DONE_AFTER.test(lines[j])) { steps[Number(m[1]) - 1] = plainLine(m[2]); continue; }
-        if (!lines[j].trim() && !steps.length) continue;
-        if (!lines[j].trim() || /^\s{2,}\S/.test(lines[j])) continue; // blank lines and indented details inside the list
-        break;
-      }
-      const list = steps.filter(Boolean);
-      if (list.length >= 2) found = list;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!PLAN_HEAD.test(lines[i])) continue;
+    const steps: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const m = lines[j].match(PLAN_ITEM);
+      if (m && !DONE_AFTER.test(lines[j])) { steps[Number(m[1]) - 1] = plainLine(m[2]); continue; }
+      if (!lines[j].trim() && !steps.length) continue;
+      if (!lines[j].trim() || /^\s{2,}\S/.test(lines[j])) continue; // blank lines and indented details inside the list
+      break;
     }
+    const list = steps.filter(Boolean);
+    if (list.length) found = list;
   }
   return found;
+}
+
+/** The last plan in these messages. */
+export function textPlan(texts: string[]): string[] | null {
+  let found: string[] | null = null;
+  for (const text of texts) found = planIn(text) ?? found;
+  return found;
+}
+
+/**
+ * Every plan's steps merged by number: a long task often re-plans each round (a background job reporting in,
+ * "1. #12 결과 보고"), and the rounds are the same step done again. Each number takes its latest title; there
+ * are as many steps as the longest plan had.
+ */
+export function mergedPlan(texts: string[]): string[] | null {
+  const titles: string[] = [];
+  let any = false;
+  for (const text of texts) {
+    const plan = planIn(text);
+    if (!plan) continue;
+    any = true;
+    plan.forEach((title, i) => { titles[i] = title; });
+  }
+  return any ? titles.map((x) => x ?? '') : null;
+}
+
+/** One "✓ n." line: which step, the title it had in the plan of that round, the account, and the round's headline. */
+export interface StepEntry {
+  step: number;
+  title: string;
+  note: string;
+  /** The first line of the message that is not plan bookkeeping, as a one-line headline of what it reported. */
+  detail: string | null;
+  /** Index of the message in the texts. */
+  text: number;
+}
+
+const isBookkeeping = (line: string) => PLAN_HEAD.test(line) || PLAN_ITEM.test(line) || DONE_MARK.test(line) || DONE_AFTER.test(line) || RESULT_LINE.test(line);
+
+/** Every "✓ n." line in order, with the plan title it closed at that time. */
+export function stepEntries(texts: string[]): StepEntry[] {
+  const out: StepEntry[] = [];
+  let plan: string[] = [];
+  texts.forEach((text, i) => {
+    const lines = text.split('\n');
+    const head = lines.find((l) => l.trim() && !isBookkeeping(l));
+    const detail = head ? plainLine(head.replace(/^\s*(?:#{1,6}\s+|[-*]\s+|>\s*)/, '')).slice(0, 200) || null : null;
+    // Line by line: a "✓" closes a step of the plan written above it, even when the next round's plan follows.
+    lines.forEach((line, j) => {
+      if (PLAN_HEAD.test(line)) { plan = planIn(lines.slice(j).join('\n')) ?? plan; return; }
+      const m = line.match(DONE_MARK) ?? line.match(DONE_AFTER);
+      if (m) out.push({ step: Number(m[1]), title: plan[Number(m[1]) - 1] ?? '', note: plainLine(m[2]), detail, text: i });
+    });
+  });
+  return out;
 }
 
 /** "✓ 2. how" lines: step number (1-based) -> how it was done. */

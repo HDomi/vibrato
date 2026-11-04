@@ -92,7 +92,8 @@ export default function MarkdownView({ text, baseDir, className }: Props) {
   return (
     <div className={className}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        // "~" alone is a range in prose (#10~105, 23:59~03:26), not strikethrough; "~~x~~" still is.
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], [rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         urlTransform={(url, key) => key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|avif);/i.test(url) || /^file:\/\//i.test(url) ? url : defaultUrlTransform(url)}
         components={{
