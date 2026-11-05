@@ -183,7 +183,7 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-zinc-600 px-6 text-center leading-relaxed">{t('run.empty')}</div>
+        <div className="flex-1 flex items-center justify-center text-zinc-600 px-6 text-center leading-relaxed whitespace-pre-line">{t('run.empty')}</div>
       )}
       {note && <div className="shrink-0 px-3 py-1.5 border-t border-white/10 text-[11px] text-zinc-300">{note}</div>}
     </div>
