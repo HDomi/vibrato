@@ -10,8 +10,20 @@
   --glass-tint: rgb(0 0 0 / .45);
 }
 
+/* Pretendard ships with the app (web/src/assets/fonts) so no network or system install is needed. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations"), url("./assets/fonts/PretendardVariable.woff2") format("woff2");
+}
+
 /* Design tokens: text levels, hairlines, translucent fills, the selected (opaque white) state, agent colors. */
 @theme {
+  /* Pretendard (bundled, OFL) covers both Hangul and Latin. Mono stacks fall back to it for Hangul glyphs. */
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Pretendard Variable", monospace;
   --color-ink: #e6e8ee;
   --color-ink-2: rgb(230 232 238 / .72);
   --color-ink-3: rgb(230 232 238 / .5);
@@ -48,7 +60,7 @@ html, body, #root {
   margin: 0;
   background: #0b0d12;
   color: #e6e8ee;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 

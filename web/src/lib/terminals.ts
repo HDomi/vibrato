@@ -75,7 +75,7 @@ export function ensureStarted(id: number) {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab || tab.term) return;
   const term = new Terminal({
-    fontFamily: 'Menlo, "SF Mono", Monaco, monospace', fontSize: 13, lineHeight: 1.2, cursorBlink: true,
+    fontFamily: 'Menlo, "SF Mono", Monaco, "Pretendard Variable", monospace', fontSize: 13, lineHeight: 1.2, cursorBlink: true,
     theme: { background: '#0b0d12', foreground: '#e6e8ee', cursor: '#e6e8ee', selectionBackground: '#3b4252' },
     allowProposedApi: true, scrollback: 5000, macOptionIsMeta: true,
   });

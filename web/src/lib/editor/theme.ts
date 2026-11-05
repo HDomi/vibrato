@@ -36,7 +36,7 @@ export const M = {
 const chrome = EditorView.theme({
   '&': { color: M.fg, backgroundColor: M.bg, height: '100%', fontSize: '12.5px' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '1.55' },
+  '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, "Pretendard Variable", monospace', lineHeight: '1.55' },
   '.cm-content': { caretColor: M.cursor, padding: '4px 0' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: M.cursor, borderLeftWidth: '2px' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: M.selection },
