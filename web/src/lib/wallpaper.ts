@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, type Wallpaper } from './api';
+import { api, type Gradient, type Wallpaper } from './api';
 
 /**
- * App wallpaper: a solid color or an image. Glass surfaces show a pre-blurred copy of the image pinned to
+ * App wallpaper: a solid color, a linear gradient or an image. Glass surfaces show a pre-blurred copy of the image pinned to
  * the viewport (see .glass in index.css), so the blur is computed once here instead of every frame by
  * backdrop-filter. Both images are made in this renderer with a canvas and stored by the server.
  */
@@ -16,14 +16,38 @@ const BLUR_SCALE = 0.25;
 let current: Wallpaper | null = null;
 const listeners = new Set<(w: Wallpaper) => void>();
 
+export const DEFAULT_GRADIENT: Gradient = { angle: 135, stops: [{ color: '#1e2a4a', pos: 0 }, { color: '#0b0d12', pos: 100 }] };
+
+/** CSS for a gradient; stops may be out of order while a handle is dragged past another. */
+export function gradientCss(g: Gradient, angle = g.angle): string {
+  const stops = [...g.stops].sort((a, b) => a.pos - b.pos).map((s) => `${s.color} ${s.pos}%`).join(', ');
+  return `linear-gradient(${angle}deg, ${stops})`;
+}
+
+/**
+ * Points the backdrop at a gradient without storing it (live preview while editing). A gradient is already
+ * smooth, so the glass copy is the same gradient: both are pinned to the viewport and line up.
+ */
+export function previewGradient(g: Gradient) {
+  const root = document.documentElement.style;
+  const css = gradientCss(g);
+  root.setProperty('--wall-color', g.stops[g.stops.length - 1]?.color ?? '#0b0d12');
+  root.setProperty('--wall-image', css);
+  root.setProperty('--wall-blur', css);
+}
+
 /** Sets the CSS variables the app background and glass surfaces read. */
 export function applyWallpaper(w: Wallpaper) {
   current = w;
   const root = document.documentElement.style;
-  const image = w.kind === 'image' && w.hasImage;
-  root.setProperty('--wall-color', w.color);
-  root.setProperty('--wall-image', image ? `url("${api.wallpaperUrl('original', w.version)}")` : 'none');
-  root.setProperty('--wall-blur', image ? `url("${api.wallpaperUrl('blur', w.version)}")` : 'none');
+  if (w.kind === 'gradient' && w.gradient) {
+    previewGradient(w.gradient);
+  } else {
+    const image = w.kind === 'image' && w.hasImage;
+    root.setProperty('--wall-color', w.color);
+    root.setProperty('--wall-image', image ? `url("${api.wallpaperUrl('original', w.version)}")` : 'none');
+    root.setProperty('--wall-blur', image ? `url("${api.wallpaperUrl('blur', w.version)}")` : 'none');
+  }
   root.setProperty('--glass-tint', `rgb(0 0 0 / ${w.dim / 100})`);
   try { localStorage.setItem(LS_KEY, JSON.stringify(w)); } catch { /* ignore */ }
   for (const l of listeners) l(w);
@@ -115,7 +139,7 @@ export async function setWallpaperBlur(w: Wallpaper, radius: number): Promise<Wa
   return next;
 }
 
-export async function updateWallpaper(patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'blur' | 'dim'>>): Promise<Wallpaper> {
+export async function updateWallpaper(patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'gradient' | 'blur' | 'dim'>>): Promise<Wallpaper> {
   const w = await api.setWallpaper(patch);
   applyWallpaper(w);
   return w;

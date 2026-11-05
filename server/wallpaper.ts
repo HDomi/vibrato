@@ -13,9 +13,22 @@ const FILES = { original: 'wall.jpg', blur: 'wall-blur.jpg' } as const;
 export type WallFile = keyof typeof FILES;
 export const WALL_MAX_BYTES = 24 * 1024 * 1024;
 
-export interface Wallpaper {
-  kind: 'color' | 'image';
+export interface GradientStop {
   color: string;
+  /** 0-100 (%). The first stop is pinned at 0 and the last at 100. */
+  pos: number;
+}
+
+export interface Gradient {
+  /** CSS linear-gradient angle in degrees, 0-359. */
+  angle: number;
+  stops: GradientStop[];
+}
+
+export interface Wallpaper {
+  kind: 'color' | 'image' | 'gradient';
+  color: string;
+  gradient: Gradient;
   /** Blur radius in CSS px at full size (the stored copy is smaller and blurred proportionally). */
   blur: number;
   /** Darkening over glass surfaces, 0-90 (%). */
@@ -25,17 +38,40 @@ export interface Wallpaper {
   hasImage: boolean;
 }
 
-export const DEFAULT_WALLPAPER: Wallpaper = { kind: 'color', color: '#0b0d12', blur: 40, dim: 45, version: 0, hasImage: false };
+export const DEFAULT_GRADIENT: Gradient = { angle: 135, stops: [{ color: '#1e2a4a', pos: 0 }, { color: '#0b0d12', pos: 100 }] };
+export const GRADIENT_MAX_STOPS = 12;
+
+export const DEFAULT_WALLPAPER: Wallpaper = { kind: 'color', color: '#0b0d12', gradient: DEFAULT_GRADIENT, blur: 40, dim: 45, version: 0, hasImage: false };
 
 export class WallpaperError extends Error {}
 
 const clampInt = (v: unknown, min: number, max: number, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback;
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** Stops sorted by position with the ends pinned to 0 and 100; anything malformed keeps `base`. */
+export function cleanGradient(raw: unknown, base: Gradient): Gradient {
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Partial<Gradient>;
+  const angle = typeof r.angle === 'number' && Number.isFinite(r.angle) ? ((Math.round(r.angle) % 360) + 360) % 360 : base.angle;
+  if (!Array.isArray(r.stops)) return { angle, stops: base.stops };
+  const stops = r.stops
+    .filter((s): s is GradientStop => !!s && typeof s === 'object' && typeof s.color === 'string' && HEX_COLOR.test(s.color)
+      && typeof s.pos === 'number' && Number.isFinite(s.pos))
+    .map((s) => ({ color: s.color.toLowerCase(), pos: Math.round(Math.min(100, Math.max(0, s.pos)) * 10) / 10 }))
+    .sort((a, b) => a.pos - b.pos);
+  if (stops.length < 2 || stops.length > GRADIENT_MAX_STOPS) return { angle, stops: base.stops };
+  stops[0].pos = 0;
+  stops[stops.length - 1].pos = 100;
+  return { angle, stops };
+}
+
 function clean(raw: Partial<Wallpaper>, base: Wallpaper): Wallpaper {
   return {
-    kind: raw.kind === 'image' || raw.kind === 'color' ? raw.kind : base.kind,
-    color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color) ? raw.color.toLowerCase() : base.color,
+    kind: raw.kind === 'image' || raw.kind === 'color' || raw.kind === 'gradient' ? raw.kind : base.kind,
+    color: typeof raw.color === 'string' && HEX_COLOR.test(raw.color) ? raw.color.toLowerCase() : base.color,
+    gradient: raw.gradient === undefined ? base.gradient : cleanGradient(raw.gradient, base.gradient),
     blur: clampInt(raw.blur, 0, 120, base.blur),
     dim: clampInt(raw.dim, 0, 90, base.dim),
     version: clampInt(raw.version, 0, Number.MAX_SAFE_INTEGER, base.version),
@@ -47,7 +83,7 @@ export async function loadWallpaper(): Promise<Wallpaper> {
   try {
     const w = clean(JSON.parse(await fs.readFile(META_FILE, 'utf8')) as Partial<Wallpaper>, DEFAULT_WALLPAPER);
     // A meta file that outlived its images (folder cleaned by hand) falls back to the color.
-    if (w.hasImage && !(await exists(wallpaperPath('original')))) return { ...w, kind: 'color', hasImage: false };
+    if (w.hasImage && !(await exists(wallpaperPath('original')))) return { ...w, kind: w.kind === 'image' ? 'color' : w.kind, hasImage: false };
     return w;
   } catch {
     return { ...DEFAULT_WALLPAPER };
@@ -61,7 +97,7 @@ async function writeMeta(w: Wallpaper) {
   await fs.rename(tmp, META_FILE);
 }
 
-/** Color, blur, dim and kind. Choosing "image" without an uploaded image is refused. */
+/** Color, gradient, blur, dim and kind. Choosing "image" without an uploaded image is refused. */
 export async function updateWallpaper(patch: Partial<Wallpaper>): Promise<Wallpaper> {
   const cur = await loadWallpaper();
   const next = clean({ ...patch, version: cur.version, hasImage: cur.hasImage }, cur);

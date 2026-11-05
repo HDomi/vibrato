@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
-import { setWallpaperBlur, setWallpaperImage, updateWallpaper, useWallpaper } from '../lib/wallpaper';
+import type { Gradient } from '../lib/api';
+import { DEFAULT_GRADIENT, previewGradient, setWallpaperBlur, setWallpaperImage, updateWallpaper, useWallpaper } from '../lib/wallpaper';
+import GradientEditor from './GradientEditor';
 
-/** Settings > Wallpaper: a solid color or an image, the blur of its glass copy and how dark panels are. */
+/** Settings > Wallpaper: a solid color, a gradient or an image, the blur of its glass copy and how dark panels are. */
 export default function WallpaperSettings() {
   useLang();
   const w = useWallpaper();
@@ -13,7 +15,14 @@ export default function WallpaperSettings() {
   const [dim, setDim] = useState(w?.dim ?? 45);
   const file = useRef<HTMLInputElement>(null);
   const colorTimer = useRef<number | undefined>(undefined);
+  const gradTimer = useRef<number | undefined>(undefined);
+  const gradient = w?.gradient ?? DEFAULT_GRADIENT;
+  const [angle, setAngle] = useState(gradient.angle);
+  // The latest edited gradient, so an angle change keeps unsaved stops and the other way round.
+  const gradDraft = useRef<Gradient>(gradient);
   useEffect(() => { if (w) { setBlur(w.blur); setDim(w.dim); } }, [w?.blur, w?.dim]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setAngle(gradient.angle); gradDraft.current = { ...gradDraft.current, angle: gradient.angle }; }, [gradient.angle]);
+  useEffect(() => { gradDraft.current = { ...gradDraft.current, stops: gradient.stops }; }, [gradient.stops]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -28,6 +37,15 @@ export default function WallpaperSettings() {
     window.clearTimeout(colorTimer.current);
     colorTimer.current = window.setTimeout(() => void run(() => updateWallpaper({ color: v })), 350);
   };
+  // Gradient edits preview at once; stops are stored once they settle, the angle on release.
+  const editGradient = (g: Gradient, commit: boolean) => {
+    gradDraft.current = { ...g, angle };
+    previewGradient(gradDraft.current);
+    window.clearTimeout(gradTimer.current);
+    if (commit) gradTimer.current = window.setTimeout(() => void run(() => updateWallpaper({ gradient: gradDraft.current })), 350);
+  };
+  const previewAngle = (v: number) => { setAngle(v); gradDraft.current = { ...gradDraft.current, angle: v }; previewGradient(gradDraft.current); };
+  const commitAngle = () => { if (w && angle !== w.gradient?.angle) void run(() => updateWallpaper({ gradient: gradDraft.current })); };
   const commitBlur = () => { if (w && blur !== w.blur) void run(() => (w.hasImage ? setWallpaperBlur(w, blur) : updateWallpaper({ blur }))); };
 
   if (!w) return null;
@@ -36,11 +54,11 @@ export default function WallpaperSettings() {
     <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-4">
       <div className="font-medium">{t('wall.title')}</div>
       <div className="flex items-center gap-1 rounded-full bg-white/5 p-1 w-fit text-xs">
-        {(['color', 'image'] as const).map((k) => (
+        {(['color', 'gradient', 'image'] as const).map((k) => (
           <button key={k} disabled={busy}
             onClick={() => { if (k === kind) return; if (k === 'image' && !w.hasImage) file.current?.click(); else void run(() => updateWallpaper({ kind: k })); }}
             className={`rounded-full px-3 py-1 transition-colors ${kind === k ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-zinc-200'}`}>
-            {t(k === 'color' ? 'wall.color' : 'wall.image')}
+            {t(k === 'color' ? 'wall.color' : k === 'gradient' ? 'wall.gradient' : 'wall.image')}
           </button>
         ))}
       </div>
@@ -52,6 +70,17 @@ export default function WallpaperSettings() {
             className="w-10 h-7 rounded-md bg-transparent border border-white/15 cursor-pointer" />
           <span className="font-mono text-xs text-zinc-500">{w.color}</span>
         </label>
+      ) : kind === 'gradient' ? (
+        <div className="space-y-3">
+          <GradientEditor value={{ ...gradient, angle }} onChange={editGradient} />
+          <div className="text-xs text-zinc-500">{t('wall.gradientHint')}</div>
+          <label className="flex items-center gap-3 text-sm">
+            <span className="w-28 text-zinc-400">{t('wall.angle')}</span>
+            <input type="range" min={0} max={359} value={angle} onChange={(e) => previewAngle(Number(e.target.value))}
+              onPointerUp={commitAngle} onKeyUp={commitAngle} className="flex-1 accent-white" />
+            <span className="w-10 text-right text-xs text-zinc-500 tabular-nums">{angle}°</span>
+          </label>
+        </div>
       ) : (
         <div className="flex items-center gap-3">
           <div className="w-40 h-24 rounded-xl border border-white/15 bg-cover bg-center shrink-0"

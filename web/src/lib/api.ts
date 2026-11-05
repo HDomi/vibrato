@@ -38,7 +38,9 @@ export interface ToolStatus {
 }
 export interface ToolsInfo { tools: ToolStatus[]; installers: { brew: string | null; npm: string | null; node: string | null } }
 
-export interface Wallpaper { kind: 'color' | 'image'; color: string; blur: number; dim: number; version: number; hasImage: boolean }
+export interface GradientStop { color: string; pos: number }
+export interface Gradient { angle: number; stops: GradientStop[] }
+export interface Wallpaper { kind: 'color' | 'image' | 'gradient'; color: string; gradient: Gradient; blur: number; dim: number; version: number; hasImage: boolean }
 
 export interface UsageWindow { usedPct: number; resetsAt: number | null }
 export interface UsageSnapshot {
@@ -193,7 +195,7 @@ export const api = {
   alwaysPlan: () => req<{ on: boolean }>('/api/settings/always-plan'),
   setAlwaysPlan: (on: boolean) => req<{ on: boolean }>('/api/settings/always-plan', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) }),
   wallpaper: () => req<Wallpaper>('/api/wallpaper'),
-  setWallpaper: (patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'blur' | 'dim'>>) =>
+  setWallpaper: (patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'gradient' | 'blur' | 'dim'>>) =>
     req<Wallpaper>('/api/wallpaper', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }),
   /** `original` is omitted when only the blurred copy was remade (blur changed). */
   uploadWallpaper: (images: { original?: Blob; blur: Blob }, radius: number) => {
@@ -230,9 +232,9 @@ export const api = {
   customPrompt: () => req<{ text: string }>('/api/custom-prompt'),
   saveCustomPrompt: (text: string) => req<{ text: string }>('/api/custom-prompt', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }),
   envFiles: (cwd: string) => req<{ path: string; rel: string; size: number }[]>(`/api/fs/env-files?cwd=${q(cwd)}`),
+  grep: (cwd: string, query: string, opts: { caseSensitive: boolean; regex: boolean }) => req<{ hits: GrepHit[]; files: number; truncated: boolean }>(`/api/fs/grep?cwd=${q(cwd)}&q=${q(query)}&case=${opts.caseSensitive ? 1 : 0}&regex=${opts.regex ? 1 : 0}`),
   search: (cwd: string, query: string) => req<{ path: string; rel: string; isDir: boolean }[]>(`/api/fs/search?cwd=${q(cwd)}&q=${q(query)}`),
   health: () => req<{ ok: boolean; version: string; commit: string; builtAt: string | null }>('/api/health'),
-  grep: (cwd: string, query: string, opts: { caseSensitive: boolean; regex: boolean }) => req<{ hits: GrepHit[]; files: number; truncated: boolean }>(`/api/fs/grep?cwd=${q(cwd)}&q=${q(query)}&case=${opts.caseSensitive ? 1 : 0}&regex=${opts.regex ? 1 : 0}`),
   updateStatus: (force = false) => req<UpdateStatus>(`/api/update/status${force ? '?force=1' : ''}`),
   updateApplyUrl: (force = false, version?: string) => `/api/update/apply?${[force ? 'force=1' : '', version ? `version=${q(version)}` : ''].filter(Boolean).join('&')}`,
   open: (path: string, app: 'terminal' | 'iterm' | 'finder' | 'vscode' | 'cursor' = 'terminal') =>
