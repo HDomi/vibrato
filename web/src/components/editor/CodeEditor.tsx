@@ -34,6 +34,20 @@ export default function CodeEditor({ doc, hidden, focusKey }: { doc: Doc | null;
     shown.current = doc;
   });
 
+  // A pending ⇧⌘F jump: select the match and center it, once this doc's state is in the view.
+  useLayoutEffect(() => {
+    const v = view.current;
+    const at = doc?.reveal;
+    if (!v || !doc || !at || !doc.state || v.state !== doc.state) return;
+    doc.reveal = undefined;
+    const text = v.state.doc;
+    const line = text.line(Math.min(Math.max(1, at.line), text.lines));
+    const from = Math.min(line.from + at.col, line.to);
+    const to = Math.min(from + at.len, line.to);
+    v.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
+    if (!hidden) requestAnimationFrame(() => v.focus());
+  });
+
   // Focus when a file is opened or its tab picked, not on every re-render.
   useEffect(() => {
     if (!hidden && focusKey) requestAnimationFrame(() => view.current?.focus());

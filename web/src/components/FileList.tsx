@@ -5,6 +5,7 @@ import { t, useLang } from '../lib/i18n';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
 import { editor } from '../lib/editor/store';
+import { shortcutKey } from '../lib/keys';
 
 interface Props {
   listing: Listing | null;
@@ -57,7 +58,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
   }, [query, listing?.path]); // eslint-disable-line react-hooks/exhaustive-deps
   // ⌘F inside the file panel searches files instead of the chat.
   const onFind = (ev: React.KeyboardEvent) => {
-    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'f') { ev.preventDefault(); searchInput.current?.focus(); searchInput.current?.select(); return true; }
+    if ((ev.metaKey || ev.ctrlKey) && shortcutKey(ev) === 'f') { ev.preventDefault(); searchInput.current?.focus(); searchInput.current?.select(); return true; }
     return false;
   };
   const openHit = (h: SearchHit) => {
@@ -154,14 +155,14 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
     else if (mod && ev.key === 'ArrowDown') { ev.preventDefault(); const e = selectedEntries[0]; if (e) open(e); }
     else if (mod && ev.key === 'ArrowUp') { ev.preventDefault(); if (listing?.parent) onNavigate(listing.parent); }
     else if (ev.key === ' ') { ev.preventDefault(); const e = selectedEntries[0]; if (e && !e.isDir) onPreview(e); }
-    else if (mod && ev.key.toLowerCase() === 'a') { ev.preventDefault(); setSelected(new Set(entries.map((e) => e.path))); }
-    else if (mod && ev.key.toLowerCase() === 'c') { ev.preventDefault(); copy(false); }
-    else if (mod && ev.key.toLowerCase() === 'x') { ev.preventDefault(); copy(true); }
-    else if (mod && ev.key.toLowerCase() === 'v') { ev.preventDefault(); void paste(); }
-    else if (mod && ev.key.toLowerCase() === 'd') { ev.preventDefault(); duplicate(); }
+    else if (mod && shortcutKey(ev) === 'a') { ev.preventDefault(); setSelected(new Set(entries.map((e) => e.path))); }
+    else if (mod && shortcutKey(ev) === 'c') { ev.preventDefault(); copy(false); }
+    else if (mod && shortcutKey(ev) === 'x') { ev.preventDefault(); copy(true); }
+    else if (mod && shortcutKey(ev) === 'v') { ev.preventDefault(); void paste(); }
+    else if (mod && shortcutKey(ev) === 'd') { ev.preventDefault(); duplicate(); }
     else if (mod && ev.key === 'Backspace') { ev.preventDefault(); trash(); }
     else if (ev.key === 'Backspace' && !mod) { ev.preventDefault(); if (listing?.parent) onNavigate(listing.parent); }
-    else if (mod && ev.shiftKey && ev.key.toLowerCase() === 'n') { ev.preventDefault(); newFolder(); }
+    else if (mod && ev.shiftKey && shortcutKey(ev) === 'n') { ev.preventDefault(); newFolder(); }
     else if (ev.key === 'Escape') setSelected(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, anchor, selectedEntries, listing, renaming, creating, searching]);

@@ -34,6 +34,7 @@ import { EMPTY_BACKLOG, useBacklogs } from './lib/backlog';
 import Icon, { type IconName } from './components/Icon';
 import { IDE_CHANNEL, openIde, type IdeMessage } from './lib/ide';
 import { ViewActiveContext } from './lib/viewActive';
+import { shortcutKey } from './lib/keys';
 
 // The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
@@ -408,7 +409,7 @@ function AppInner() {
       if (document.querySelector('[data-update-locked="true"]')) return;
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-      const k = e.key.toLowerCase();
+      const k = shortcutKey(e);
       const inText = (e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]');
       // The editor owns ⌘W (close tab), ⌘/ (toggle comment), ⌘S and ⇧⌘K (delete line) while it has focus.
       const inEditor = !!(e.target as HTMLElement)?.closest?.('[data-editor-scope]');

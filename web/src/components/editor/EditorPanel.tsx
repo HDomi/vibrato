@@ -14,6 +14,7 @@ import MediaView from './MediaView';
 import Splitter, { usePaneWidth } from '../Splitter';
 import CodeEditor from './CodeEditor';
 import FileTree from './FileTree';
+import { shortcutKey } from '../../lib/keys';
 
 interface Props { root: string | null; visible: boolean; onAttach?: (entries: Entry[]) => void }
 
@@ -41,8 +42,8 @@ export default function EditorPanel({ root, visible, onAttach }: Props) {
   const onKey = (e: React.KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
     if (!mod || e.defaultPrevented) return;
-    // ⌥ turns "s" into "ß" in e.key; the physical key is what matters for ⌥⌘S.
-    const k = e.code === 'KeyS' ? 's' : e.key.toLowerCase();
+    // Physical key for non-ASCII e.key: Korean input (⌘ㄴ) and ⌥ ("ß" for ⌥⌘S).
+    const k = shortcutKey(e);
     if (k === 'w') { e.preventDefault(); if (ed.active) ed.close(ed.active); }
     else if (k === 's' && e.altKey) { e.preventDefault(); void ed.saveAll(); }
     else if (k === 's') { e.preventDefault(); if (ed.active) void ed.save(ed.active); }

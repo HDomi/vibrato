@@ -266,6 +266,71 @@ export async function searchFiles(root: string, query: string, limit = 200): Pro
   return out.sort((a, b) => b.score - a.score || a.rel.length - b.rel.length).slice(0, limit).map(({ path: p, rel, isDir }) => ({ path: p, rel, isDir }));
 }
 
+export interface GrepHit { path: string; rel: string; line: number; col: number; len: number; text: string }
+export interface GrepResult { hits: GrepHit[]; files: number; truncated: boolean }
+
+/**
+ * ⇧⌘F: text search across a project's files (same skipped folders as `searchFiles`). Plain text by default,
+ * case-insensitive unless `caseSensitive`; `regex` takes the query as a JavaScript regular expression.
+ * Skips binaries and files over 1 MB, and stops at `limit` matches, 20000 files or 4 s (`truncated`).
+ */
+export async function grepFiles(root: string, query: string, opts: { caseSensitive?: boolean; regex?: boolean; limit?: number } = {}): Promise<GrepResult> {
+  const base = resolvePath(root);
+  const limit = opts.limit ?? 1000;
+  const hits: GrepHit[] = [];
+  let files = 0;
+  let truncated = false;
+  if (!query) return { hits, files, truncated };
+  const source = opts.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Throws on an invalid pattern; the route turns that into a 400.
+  const re = new RegExp(source, opts.caseSensitive ? 'g' : 'gi');
+  const deadline = Date.now() + 4000;
+  let visited = 0;
+  const stop = () => hits.length >= limit || visited > 20000 || Date.now() > deadline;
+  async function scan(full: string) {
+    let buf: Buffer;
+    try {
+      const st = await fs.stat(full);
+      if (st.size > 1024 * 1024) return;
+      buf = await fs.readFile(full);
+    } catch { return; }
+    if (buf.subarray(0, 8000).includes(0)) return;
+    const lines = buf.toString('utf8').split(/\r\n?|\n/);
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text))) {
+        if (!m[0].length) { re.lastIndex++; continue; }
+        found = true;
+        // Long lines (minified files) are cut to a window around the match; `col` stays the real column.
+        const from = Math.max(0, m.index - 80);
+        hits.push({ path: full, rel: path.relative(base, full), line: i + 1, col: m.index, len: m[0].length, text: (from ? '…' : '') + text.slice(from, m.index + m[0].length + 160) });
+        if (hits.length >= limit) { truncated = true; break; }
+      }
+      if (hits.length >= limit) break;
+    }
+    if (found) files++;
+  }
+  async function walk(dir: string, depth: number) {
+    if (stop() || depth > 12) return;
+    let dirents;
+    try { dirents = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    dirents.sort((a, b) => a.name.localeCompare(b.name));
+    for (const d of dirents) {
+      if (stop()) { truncated = true; return; }
+      visited++;
+      if (d.name.startsWith('.') && d.name !== '.claude' && d.name !== '.github') continue;
+      const full = path.join(dir, d.name);
+      if (d.isDirectory()) { if (!SKIP_DIRS.has(d.name)) await walk(full, depth + 1); }
+      else if (d.isFile()) await scan(full);
+    }
+  }
+  await walk(base, 0);
+  return { hits, files, truncated };
+}
+
 /** `.env`, `.env.local`, `.env.example`, `app.env` … under a project, a few levels deep (monorepo packages). */
 export async function findEnvFiles(root: string, maxDepth = 4): Promise<{ path: string; rel: string; size: number }[]> {
   const base = resolvePath(root);

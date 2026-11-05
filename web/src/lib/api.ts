@@ -17,6 +17,8 @@ export interface Entry {
   kind: PreviewKind;
 }
 
+/** One ⇧⌘F match: `line` is 1-based, `col` 0-based in the full line; `text` may be cut around long lines (leading …). */
+export interface GrepHit { path: string; rel: string; line: number; col: number; len: number; text: string }
 export interface TextFile { content: string; truncated: boolean; size: number; mtime: number; binary: boolean; lossy: boolean; bom: boolean }
 
 export interface Listing { path: string; parent: string | null; entries: Entry[] }
@@ -230,6 +232,7 @@ export const api = {
   envFiles: (cwd: string) => req<{ path: string; rel: string; size: number }[]>(`/api/fs/env-files?cwd=${q(cwd)}`),
   search: (cwd: string, query: string) => req<{ path: string; rel: string; isDir: boolean }[]>(`/api/fs/search?cwd=${q(cwd)}&q=${q(query)}`),
   health: () => req<{ ok: boolean; version: string; commit: string; builtAt: string | null }>('/api/health'),
+  grep: (cwd: string, query: string, opts: { caseSensitive: boolean; regex: boolean }) => req<{ hits: GrepHit[]; files: number; truncated: boolean }>(`/api/fs/grep?cwd=${q(cwd)}&q=${q(query)}&case=${opts.caseSensitive ? 1 : 0}&regex=${opts.regex ? 1 : 0}`),
   updateStatus: (force = false) => req<UpdateStatus>(`/api/update/status${force ? '?force=1' : ''}`),
   updateApplyUrl: (force = false, version?: string) => `/api/update/apply?${[force ? 'force=1' : '', version ? `version=${q(version)}` : ''].filter(Boolean).join('&')}`,
   open: (path: string, app: 'terminal' | 'iterm' | 'finder' | 'vscode' | 'cursor' = 'terminal') =>

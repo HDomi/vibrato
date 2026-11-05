@@ -36,6 +36,8 @@ export interface Doc {
   scroll?: unknown;
   /** A disk change arrived while loading; look again once loaded. */
   recheck?: boolean;
+  /** Select this range and scroll to it once the editor shows the doc (⇧⌘F results). `line` 1-based, `col` 0-based. */
+  reveal?: { line: number; col: number; len: number };
 }
 
 export interface Tab { path: string; preview: boolean }
@@ -148,8 +150,8 @@ class EditorStore {
 
   /* ── tabs ──────────────────────────────────────────────────────── */
 
-  /** Open a file. A preview (single-click) tab is reused by the next preview, VS Code style. */
-  open(path: string, opts: { preview?: boolean; kind?: PreviewKind } = {}) {
+  /** Open a file. A preview (single-click) tab is reused by the next preview, VS Code style. `at` selects a range in it. */
+  open(path: string, opts: { preview?: boolean; kind?: PreviewKind; at?: Doc['reveal'] } = {}) {
     const preview = opts.preview ?? false;
     const existing = this.tabs.find((x) => x.path === path);
     if (existing) {
@@ -163,7 +165,8 @@ class EditorStore {
         this.tabs.splice(at || this.tabs.length, 0, tab);
       }
     }
-    this.ensureDoc(path, opts.kind ?? null);
+    const doc = this.ensureDoc(path, opts.kind ?? null);
+    if (opts.at) { doc.reveal = opts.at; if (doc.kind === 'markdown' || doc.lang === 'markdown') doc.mdMode = 'edit'; }
     this.activate(path);
     this.syncWatchers();
   }

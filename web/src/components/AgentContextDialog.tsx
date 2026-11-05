@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, type AgentContext, type ContextDoc } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
+import { shortcutKey } from '../lib/keys';
 
 type Tab = 'docs' | 'skills' | 'hooks' | 'mcp';
 
@@ -31,7 +32,7 @@ function DocEditor({ doc, value, onChange, onSaved, label }: { doc: ContextDoc; 
       </div>
       {error && <div className="px-3 py-1 text-[11px] text-red-300 border-b border-white/5">{error}</div>}
       <textarea value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} placeholder={t('context.emptyDoc')}
-        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); if (dirty) void save(); } }}
+        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && shortcutKey(e) === 's') { e.preventDefault(); if (dirty) void save(); } }}
         className="flex-1 min-h-0 w-full resize-none bg-black/30 px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-zinc-200 outline-none" />
     </div>
   );

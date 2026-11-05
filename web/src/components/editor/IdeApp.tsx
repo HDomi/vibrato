@@ -7,8 +7,10 @@ import { IDE_CHANNEL, type IdeMessage } from '../../lib/ide';
 import { ContextMenuProvider } from '../ContextMenu';
 import Lightbox from '../Lightbox';
 import QuickOpen from '../QuickOpen';
+import TextSearch from '../TextSearch';
 import Toaster from '../Toast';
 import EditorPanel from './EditorPanel';
+import { shortcutKey } from '../../lib/keys';
 
 /**
  * The IDE window (`/?ide=<root>[&file=<path>]`, opened by electron/main.cts `open-ide`). One project per
@@ -17,6 +19,8 @@ import EditorPanel from './EditorPanel';
 export default function IdeApp({ root, file }: { root: string; file: string | null }) {
   useLang();
   const [quickOpen, setQuickOpen] = useState(false);
+  // ⇧⌘F; the string prefills the query (the editor's one-line selection).
+  const [textSearch, setTextSearch] = useState<string | null>(null);
   const name = root.split('/').filter(Boolean).pop() ?? root;
   useEffect(() => {
     document.title = `${name} — IDE`;
@@ -27,13 +31,20 @@ export default function IdeApp({ root, file }: { root: string; file: string | nu
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      const k = e.key.toLowerCase();
+      const k = shortcutKey(e);
       // The editor owns ⌘W, ⌘/, ⌘S and ⇧⌘K while it has focus.
       if ((e.target as HTMLElement)?.closest?.('[data-editor-scope]') && (k === 'w' || k === '/' || k === 's' || k === 'k')) return;
       if (k === 'w') { e.preventDefault(); if (editor.active) editor.close(editor.active); }
       else if (k === 's') { e.preventDefault(); if (editor.active) void editor.save(editor.active); }
       else if (k === 'b') { e.preventDefault(); window.dispatchEvent(new Event('vibe:toggle-tree')); }
-      else if (k === 'p' && !e.shiftKey) { e.preventDefault(); setQuickOpen((v) => !v); }
+      else if (k === 'p' && !e.shiftKey) { e.preventDefault(); setTextSearch(null); setQuickOpen((v) => !v); }
+      else if (k === 'f' && e.shiftKey) {
+        e.preventDefault();
+        const sel = editor.view?.state.selection.main;
+        const picked = sel && !sel.empty ? editor.view!.state.sliceDoc(sel.from, sel.to) : '';
+        setQuickOpen(false);
+        setTextSearch(picked.includes('\n') ? '' : picked);
+      }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -57,6 +68,10 @@ export default function IdeApp({ root, file }: { root: string; file: string | nu
         <div className="flex-1 min-h-0 flex">
           <EditorPanel root={root} visible onAttach={attach} />
         </div>
+        {textSearch !== null && (
+          <TextSearch cwd={root} initial={textSearch} onClose={() => setTextSearch(null)}
+            onOpen={(h) => editor.open(h.path, { at: { line: h.line, col: h.col, len: h.len } })} />
+        )}
         {quickOpen && (
           <QuickOpen cwd={root} onClose={() => setQuickOpen(false)}
             onOpen={(h) => { if (!h.isDir) editor.open(h.path); }}

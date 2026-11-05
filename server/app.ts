@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createFile, duplicate, findEnvFiles, FsError, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
+import { createFile, duplicate, findEnvFiles, FsError, grepFiles, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
 import { CUSTOM_PROMPT_MAX, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
@@ -420,6 +420,12 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return c.json({ ok: true });
   });
   app.get('/api/fs/env-files', async (c) => c.json(await findEnvFiles(c.req.query('cwd') ?? '~')));
+  app.get('/api/fs/grep', async (c) => {
+    const q = c.req.query('q') ?? '';
+    const opts = { caseSensitive: c.req.query('case') === '1', regex: c.req.query('regex') === '1', limit: Math.max(1, Math.min(5000, Number(c.req.query('limit')) || 1000)) };
+    try { new RegExp(opts.regex ? q : ''); } catch (e) { return c.json({ error: (e as Error).message, code: 'BAD_REGEX' }, 400); }
+    return c.json(await grepFiles(c.req.query('cwd') ?? '~', q, opts));
+  });
   app.get('/api/fs/search', async (c) => c.json(await searchFiles(c.req.query('cwd') ?? '~', c.req.query('q') ?? '', Math.max(1, Math.min(500, Number(c.req.query('limit')) || 200)))));
   app.get('/api/history/:id', async (c) => {
     const dir = resolvePath(c.req.query('cwd') ?? '~');

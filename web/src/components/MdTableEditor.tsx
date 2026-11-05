@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { emptyTable, findTables, formatTable, parseDelimited, replaceRange, toCsv, toHtml, type Align, type MdTable } from '../lib/mdtable';
 import { t } from '../lib/i18n';
+import { shortcutKey } from '../lib/keys';
 
 type Grid = Pick<MdTable, 'header' | 'align' | 'rows'>;
 interface Draft { grid: Grid; origin: { start: number; end: number } | null; deleted: boolean; dirty: boolean }
@@ -50,7 +51,7 @@ export default function MdTableEditor({ text, onSave }: { text: string; onSave: 
   };
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 's') return;
+      if (!(e.metaKey || e.ctrlKey) || shortcutKey(e) !== 's') return;
       const el = root.current;
       if (!el || el.closest('.invisible') || !el.offsetParent) return;
       e.preventDefault(); void save();
