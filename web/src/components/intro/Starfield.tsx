@@ -1,0 +1,150 @@
+import { useEffect, useRef } from 'react';
+
+/**
+ * Intro backdrop: a field of twinkling stars drifting slowly sideways. Stars near the pointer are pushed
+ * away and spring back to their place once it has passed. One canvas, redrawn per animation frame while the
+ * window is visible; with reduced motion the stars are drawn once and stay put.
+ */
+
+interface Star {
+  /** Resting place (drifts slowly) and current position / velocity, in CSS pixels. */
+  hx: number; hy: number; x: number; y: number; vx: number; vy: number;
+  /** Depth 0..1: nearer stars are bigger, brighter, drift faster and react more. */
+  z: number;
+  r: number; alpha: number; phase: number; speed: number; color: string;
+}
+
+const COLORS = ['255 255 255', '255 255 255', '214 228 255', '190 210 255', '255 236 214'];
+/** Pointer influence radius, push strength, pull back to the resting place, and velocity damping per 60 Hz frame. */
+const RADIUS = 170;
+const PUSH = 5;
+const SPRING = 0.011;
+const DAMP = 0.9;
+
+function makeStars(w: number, h: number): Star[] {
+  const n = Math.round(Math.min(1400, Math.max(260, (w * h) / 1700)));
+  return Array.from({ length: n }, () => {
+    const z = Math.random() ** 2;
+    const x = Math.random() * w;
+    const y = Math.random() * h;
+    return {
+      hx: x, hy: y, x, y, vx: 0, vy: 0, z,
+      r: 0.35 + z * 1.25 + (Math.random() < 0.03 ? 0.7 : 0),
+      alpha: 0.42 + z * 0.55 + Math.random() * 0.1,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.6 + Math.random() * 1.8,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    };
+  });
+}
+
+export default function Starfield({ className = '' }: { className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let w = 0, h = 0;
+    let stars: Star[] = [];
+    const pointer = { x: -1e4, y: -1e4 };
+
+    const resize = () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      const nw = Math.max(1, rect.width), nh = Math.max(1, rect.height);
+      // Keep the stars on a resize, scaled into the new size; make them on the first one.
+      if (stars.length && w && h) for (const s of stars) { s.hx *= nw / w; s.x *= nw / w; s.hy *= nh / h; s.y *= nh / h; }
+      else stars = makeStars(nw, nh);
+      w = nw; h = nh;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    // Soft glow around the bright stars: one radial gradient drawn once, then stamped per star.
+    const halo = document.createElement('canvas');
+    halo.width = halo.height = 64;
+    const hctx = halo.getContext('2d')!;
+    const grad = hctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgb(220 230 255 / .55)');
+    grad.addColorStop(0.35, 'rgb(200 215 255 / .14)');
+    grad.addColorStop(1, 'rgb(200 215 255 / 0)');
+    hctx.fillStyle = grad;
+    hctx.fillRect(0, 0, 64, 64);
+
+    const draw = (time: number) => {
+      ctx.clearRect(0, 0, w, h);
+      for (const s of stars) {
+        const twinkle = still ? 1 : 0.62 + 0.38 * Math.sin(time * 0.001 * s.speed + s.phase);
+        // A star still moving from a push glows a little brighter.
+        const glow = Math.min(0.45, Math.hypot(s.vx, s.vy) * 0.12);
+        const a = Math.min(1, s.alpha * twinkle + glow);
+        if (s.r > 1.25) {
+          const g = s.r * 5;
+          ctx.globalAlpha = a * 0.5;
+          ctx.drawImage(halo, s.x - g, s.y - g, g * 2, g * 2);
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = `rgb(${s.color} / ${a})`;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+      }
+    };
+
+    const step = (dt: number) => {
+      const r2 = RADIUS * RADIUS;
+      const damp = DAMP ** dt;
+      for (const s of stars) {
+        // Slow sideways drift of the resting place, wrapping at the edge (the star jumps along with it).
+        const drift = (0.02 + s.z * 0.09) * dt;
+        s.hx += drift; s.x += drift;
+        if (s.hx > w + 6) { s.hx -= w + 12; s.x -= w + 12; }
+        const dx = s.x - pointer.x, dy = s.y - pointer.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < r2) {
+          const d = Math.sqrt(d2) || 1;
+          const f = (1 - d / RADIUS) ** 2 * PUSH * (0.55 + s.z * 0.9) * dt;
+          s.vx += (dx / d) * f; s.vy += (dy / d) * f;
+        }
+        s.vx += (s.hx - s.x) * SPRING * dt; s.vy += (s.hy - s.y) * SPRING * dt;
+        s.vx *= damp; s.vy *= damp;
+        s.x += s.vx * dt; s.y += s.vy * dt;
+      }
+    };
+
+    resize();
+    let raf = 0;
+    let last = 0;
+    const frame = (time: number) => {
+      raf = 0;
+      if (document.hidden) return;
+      const dt = last ? Math.min(3, (time - last) / (1000 / 60)) : 1;
+      last = time;
+      step(dt);
+      draw(time);
+      raf = requestAnimationFrame(frame);
+    };
+    const start = () => { if (!raf && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } };
+
+    const onMove = (e: PointerEvent) => { pointer.x = e.clientX - canvas.getBoundingClientRect().left; pointer.y = e.clientY - canvas.getBoundingClientRect().top; };
+    const onLeave = () => { pointer.x = -1e4; pointer.y = -1e4; };
+    const onResize = () => { resize(); if (still) draw(0); };
+    window.addEventListener('resize', onResize);
+    if (still) { draw(0); return () => window.removeEventListener('resize', onResize); }
+    window.addEventListener('pointermove', onMove);
+    document.documentElement.addEventListener('pointerleave', onLeave);
+    window.addEventListener('blur', onLeave);
+    document.addEventListener('visibilitychange', start);
+    start();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('pointermove', onMove);
+      document.documentElement.removeEventListener('pointerleave', onLeave);
+      window.removeEventListener('blur', onLeave);
+      document.removeEventListener('visibilitychange', start);
+    };
+  }, []);
+
+  return <canvas ref={ref} className={`block w-full h-full ${className}`} aria-hidden />;
+}

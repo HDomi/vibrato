@@ -4,6 +4,7 @@ import { LANGS, setLang, t, useLang } from '../../lib/i18n';
 import { folderReady, foldersToAsk, INTRO_FOLDERS, type IntroFolder } from '../../lib/intro';
 import AgentIcon from '../AgentIcon';
 import Icon, { type IconName } from '../Icon';
+import Starfield from './Starfield';
 
 type Stage = 'welcome' | 'perms' | 'ready';
 const STAGES: Stage[] = ['welcome', 'perms', 'ready'];
@@ -38,11 +39,15 @@ export default function Intro({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="relative h-full flex flex-col items-center justify-center px-8 select-none">
+      {/* Deep space behind the card; it fades out with the card so the app comes in on its own wallpaper. */}
+      <div className="intro-space absolute inset-0 transition-opacity duration-700 ease-out" style={{ opacity: leaving ? 0 : 1 }} aria-hidden>
+        <Starfield />
+      </div>
       <div className="titlebar-drag absolute inset-x-0 top-0 h-14" />
       <div className="titlebar-nodrag absolute top-5 right-6 flex items-center gap-0.5 rounded-full glass-ctl p-0.5 text-xs">
         {LANGS.map((l) => <LangButton key={l.id} id={l.id} label={l.label} />)}
       </div>
-      <div className="glass w-full max-w-[620px] transition-opacity ease-out"
+      <div className="intro-card relative w-full max-w-[620px] transition-opacity ease-out"
         style={{ opacity: shown ? 1 : 0, transitionDuration: `${leaving ? 500 : STAGE_FADE_MS}ms` }}>
         <div key={stage} className="intro-rise px-11 py-10">
           {stage === 'welcome' ? <Welcome onNext={() => go('perms')} />
@@ -50,7 +55,7 @@ export default function Intro({ onDone }: { onDone: () => void }) {
             : <Ready onStart={finish} />}
         </div>
       </div>
-      <div className="mt-6 flex items-center gap-2 transition-opacity duration-300" style={{ opacity: leaving ? 0 : 1 }} aria-hidden>
+      <div className="relative mt-6 flex items-center gap-2 transition-opacity duration-300" style={{ opacity: leaving ? 0 : 1 }} aria-hidden>
         {STAGES.map((s) => <span key={s} className={`h-1.5 rounded-full transition-all duration-300 ${s === stage ? 'w-5 bg-zinc-100' : 'w-1.5 bg-white/25'}`} />)}
       </div>
     </div>
