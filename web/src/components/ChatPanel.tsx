@@ -297,7 +297,7 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
       {scope === 'home' && <div className="text-xs text-zinc-500 -mt-4 mb-6">{t('chat.freeHint', { cwd })}</div>}
       <div className="flex items-center gap-1 mb-4 rounded-full bg-black/20 border border-line p-1 w-fit text-sm">
         {(['claude', 'codex'] as AgentId[]).map((a) => (
-          <button key={a} onClick={() => { setAgent(a); setCompare(false); }} className={`px-4 py-1.5 rounded-full transition-colors duration-150 ${agent === a && !compare ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-white'}`}>{a === 'claude' ? t('chat.claudeCode') : 'Codex'}</button>
+          <button key={a} onClick={() => { setAgent(a); setCompare(false); }} className={`px-4 py-1.5 rounded-full transition-colors duration-150 ${agent === a && !compare ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-white'}`}>{a === 'claude' ? t('chat.claude') : 'Codex'}</button>
         ))}
         {isGit && onStartPair && <button onClick={() => setCompare(true)} className={`px-4 py-1.5 rounded-full flex items-center gap-1.5 transition-colors duration-150 ${compare ? 'bg-violet-300 text-violet-950' : 'text-zinc-400 hover:text-white'}`} title={t('pair.hint')}><Icon name="branch" size={13} />{t('pair.tab')}</button>}
       </div>
