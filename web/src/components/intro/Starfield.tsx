@@ -22,7 +22,7 @@ const SPRING = 0.011;
 const DAMP = 0.9;
 
 function makeStars(w: number, h: number): Star[] {
-  const n = Math.round(Math.min(1400, Math.max(260, (w * h) / 1700)));
+  const n = Math.round(Math.min(3200, Math.max(500, (w * h) / 720)));
   return Array.from({ length: n }, () => {
     const z = Math.random() ** 2;
     const x = Math.random() * w;
