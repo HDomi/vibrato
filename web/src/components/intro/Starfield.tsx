@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
+import { makePlanetSprite, PLANETS, type PlanetSprite } from './planets';
 
 /**
- * Intro backdrop: a field of twinkling stars drifting slowly sideways. Stars near the pointer are pushed
- * away and spring back to their place once it has passed. One canvas, redrawn per animation frame while the
- * window is visible; with reduced motion the stars are drawn once and stay put.
+ * Intro backdrop: a dense field of twinkling stars drifting slowly sideways, and a few planets floating in
+ * front of it. Stars near the pointer are pushed away and spring back to their place once it has passed;
+ * the planets shift a little against the pointer (parallax). One canvas, redrawn per animation frame while
+ * the window is visible; with reduced motion everything is drawn once and stays put.
  */
 
 interface Star {
@@ -14,6 +16,9 @@ interface Star {
   r: number; alpha: number; phase: number; speed: number; color: string;
 }
 
+/** Planet parallax: pixels per pixel of pointer offset from the centre, at depth 1. */
+const PARALLAX = 0.035;
+
 const COLORS = ['255 255 255', '255 255 255', '214 228 255', '190 210 255', '255 236 214'];
 /** Pointer influence radius, push strength, pull back to the resting place, and velocity damping per 60 Hz frame. */
 const RADIUS = 170;
@@ -22,20 +27,23 @@ const SPRING = 0.011;
 const DAMP = 0.9;
 
 function makeStars(w: number, h: number): Star[] {
-  const n = Math.round(Math.min(3200, Math.max(500, (w * h) / 720)));
-  return Array.from({ length: n }, () => {
-    const z = Math.random() ** 2;
+  const n = Math.round(Math.min(6000, Math.max(900, (w * h) / 400)));
+  const stars = Array.from({ length: n }, () => {
+    // Mostly faint, distant dust; a few near, bright stars.
+    const z = Math.random() ** 2.6;
     const x = Math.random() * w;
     const y = Math.random() * h;
     return {
       hx: x, hy: y, x, y, vx: 0, vy: 0, z,
       r: 0.35 + z * 1.25 + (Math.random() < 0.03 ? 0.7 : 0),
-      alpha: 0.42 + z * 0.55 + Math.random() * 0.1,
+      alpha: 0.32 + z * 0.62 + Math.random() * 0.12,
       phase: Math.random() * Math.PI * 2,
       speed: 0.6 + Math.random() * 1.8,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
     };
   });
+  // Grouped by colour so a frame changes the fill only a handful of times.
+  return stars.sort((a, b) => (a.color < b.color ? -1 : a.color > b.color ? 1 : 0));
 }
 
 export default function Starfield({ className = '' }: { className?: string }) {
@@ -48,7 +56,10 @@ export default function Starfield({ className = '' }: { className?: string }) {
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let w = 0, h = 0;
     let stars: Star[] = [];
+    let planets: PlanetSprite[] = [];
     const pointer = { x: -1e4, y: -1e4 };
+    /** Smoothed pointer offset from the centre, for the planets' parallax. */
+    const lean = { x: 0, y: 0 };
 
     const resize = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -60,6 +71,7 @@ export default function Starfield({ className = '' }: { className?: string }) {
       w = nw; h = nh;
       canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      planets = PLANETS.map((p) => makePlanetSprite(p, w, h, dpr));
     };
 
     // Soft glow around the bright stars: one radial gradient drawn once, then stamped per star.
@@ -75,6 +87,7 @@ export default function Starfield({ className = '' }: { className?: string }) {
 
     const draw = (time: number) => {
       ctx.clearRect(0, 0, w, h);
+      let fill = '';
       for (const s of stars) {
         const twinkle = still ? 1 : 0.62 + 0.38 * Math.sin(time * 0.001 * s.speed + s.phase);
         // A star still moving from a push glows a little brighter.
@@ -84,16 +97,31 @@ export default function Starfield({ className = '' }: { className?: string }) {
           const g = s.r * 5;
           ctx.globalAlpha = a * 0.5;
           ctx.drawImage(halo, s.x - g, s.y - g, g * 2, g * 2);
-          ctx.globalAlpha = 1;
         }
-        ctx.fillStyle = `rgb(${s.color} / ${a})`;
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+        if (s.color !== fill) { fill = s.color; ctx.fillStyle = `rgb(${fill})`; }
+        ctx.globalAlpha = a;
+        // Dust is too small for a round shape to show; a square is much cheaper to fill.
+        if (s.r < 0.9) ctx.fillRect(s.x - s.r, s.y - s.r, s.r * 2, s.r * 2);
+        else { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); }
+      }
+      ctx.globalAlpha = 1;
+      for (const p of planets) {
+        const { spec } = p;
+        const bob = still ? 0 : Math.sin((time / 1000 / spec.period) * Math.PI * 2 + spec.fx * 10) * spec.float;
+        const x = spec.fx * w - lean.x * PARALLAX * spec.depth - p.size / 2;
+        const y = spec.fy * h + bob - lean.y * PARALLAX * spec.depth - p.size / 2;
+        if (p.back) ctx.drawImage(p.back, x, y, p.size, p.size);
+        ctx.drawImage(p.front, x, y, p.size, p.size);
       }
     };
 
     const step = (dt: number) => {
       const r2 = RADIUS * RADIUS;
       const damp = DAMP ** dt;
+      const away = pointer.x < -1e3;
+      const k = 1 - 0.96 ** dt;
+      lean.x += ((away ? 0 : pointer.x - w / 2) - lean.x) * k;
+      lean.y += ((away ? 0 : pointer.y - h / 2) - lean.y) * k;
       for (const s of stars) {
         // Slow sideways drift of the resting place, wrapping at the edge (the star jumps along with it).
         const drift = (0.02 + s.z * 0.09) * dt;
