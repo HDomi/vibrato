@@ -7,6 +7,7 @@ import { keepAwakeEnabled, workInProgress } from './lib/power';
 import { lockSummary } from './lib/lockScreen';
 import { requestNotificationPermission, useSessions, setOnScreenSession } from './lib/useSessions';
 import Dock from './components/Dock';
+import SpaceBackdrop from './components/SpaceBackdrop';
 import FileList from './components/FileList';
 import Preview, { PreviewDialog } from './components/Preview';
 import ToolsPanel from './components/ToolsPanel';
@@ -449,7 +450,9 @@ function AppInner() {
   const tabIcons: Record<typeof rightTabs[number][0], IconName> = { files: 'list', preview: 'file', terminal: 'terminal', git: 'branch', run: 'play' };
 
   return (
-      <div className="app-wall h-full flex flex-col overflow-hidden">
+      // isolate: the space wallpaper's canvas (z -10) then paints above this background and below the content.
+      <div className="app-wall isolate h-full flex flex-col overflow-hidden">
+        <SpaceBackdrop />
         <Lightbox />
         <Toaster />
         {previewPopup && <PreviewDialog entry={previewPopup} onClose={() => setPreviewPopup(null)} />}

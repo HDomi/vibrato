@@ -26,7 +26,8 @@ export interface Gradient {
 }
 
 export interface Wallpaper {
-  kind: 'color' | 'image' | 'gradient';
+  /** `space`: a fixed nebula backdrop with the intro's live starfield drawn over it by the renderer. */
+  kind: 'color' | 'image' | 'gradient' | 'space';
   color: string;
   gradient: Gradient;
   /** Blur radius in CSS px at full size (the stored copy is smaller and blurred proportionally). */
@@ -69,7 +70,7 @@ export function cleanGradient(raw: unknown, base: Gradient): Gradient {
 
 function clean(raw: Partial<Wallpaper>, base: Wallpaper): Wallpaper {
   return {
-    kind: raw.kind === 'image' || raw.kind === 'color' || raw.kind === 'gradient' ? raw.kind : base.kind,
+    kind: raw.kind === 'image' || raw.kind === 'color' || raw.kind === 'gradient' || raw.kind === 'space' ? raw.kind : base.kind,
     color: typeof raw.color === 'string' && HEX_COLOR.test(raw.color) ? raw.color.toLowerCase() : base.color,
     gradient: raw.gradient === undefined ? base.gradient : cleanGradient(raw.gradient, base.gradient),
     blur: clampInt(raw.blur, 0, 120, base.blur),

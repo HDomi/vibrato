@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type Gradient, type Wallpaper } from './api';
 
 /**
- * App wallpaper: a solid color, a linear gradient or an image. Glass surfaces show a pre-blurred copy of the image pinned to
+ * App wallpaper: a solid color, a linear gradient, an image or space (nebula + live starfield). Glass surfaces show a pre-blurred copy of the image pinned to
  * the viewport (see .glass in index.css), so the blur is computed once here instead of every frame by
  * backdrop-filter. Both images are made in this renderer with a canvas and stored by the server.
  */
@@ -17,6 +17,18 @@ let current: Wallpaper | null = null;
 const listeners = new Set<(w: Wallpaper) => void>();
 
 export const DEFAULT_GRADIENT: Gradient = { angle: 135, stops: [{ color: '#1e2a4a', pos: 0 }, { color: '#0b0d12', pos: 100 }] };
+
+/**
+ * The "space" wallpaper (and the first-launch intro): deep blue-black with soft nebulae. Only smooth gradients,
+ * so the glass copy is the same CSS. The stars and planets are a live canvas on top (components/intro/Starfield.tsx).
+ */
+export const SPACE_COLOR = '#03050b';
+export const SPACE_BACKGROUND = [
+  'radial-gradient(ellipse 55% 45% at 22% 28%, rgb(88 70 190 / .22), transparent 70%)',
+  'radial-gradient(ellipse 50% 40% at 82% 74%, rgb(30 120 170 / .17), transparent 70%)',
+  'radial-gradient(ellipse 35% 30% at 60% 18%, rgb(170 70 140 / .08), transparent 70%)',
+  'radial-gradient(ellipse at 50% 50%, #0a0e1c, #03050b 75%)',
+].join(', ');
 
 /** CSS for a gradient; stops may be out of order while a handle is dragged past another. */
 export function gradientCss(g: Gradient, angle = g.angle): string {
@@ -42,6 +54,10 @@ export function applyWallpaper(w: Wallpaper) {
   const root = document.documentElement.style;
   if (w.kind === 'gradient' && w.gradient) {
     previewGradient(w.gradient);
+  } else if (w.kind === 'space') {
+    root.setProperty('--wall-color', SPACE_COLOR);
+    root.setProperty('--wall-image', SPACE_BACKGROUND);
+    root.setProperty('--wall-blur', SPACE_BACKGROUND);
   } else {
     const image = w.kind === 'image' && w.hasImage;
     root.setProperty('--wall-color', w.color);

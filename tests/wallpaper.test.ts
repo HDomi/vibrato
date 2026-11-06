@@ -30,3 +30,14 @@ test('wallpaper: gradient kind is stored and survives a reload', async () => {
   await updateWallpaper({ dim: 20 });
   assert.deepEqual((await loadWallpaper()).gradient, { angle: 45, stops });
 });
+
+test('wallpaper: space kind is stored without an image', async () => {
+  const { loadWallpaper, updateWallpaper } = await import('../server/wallpaper');
+  await updateWallpaper({ kind: 'space' });
+  const w = await loadWallpaper();
+  assert.equal(w.kind, 'space');
+  assert.equal(w.hasImage, false);
+  // Unknown kinds keep the stored one.
+  await updateWallpaper({ kind: 'galaxy' as never });
+  assert.equal((await loadWallpaper()).kind, 'space');
+});

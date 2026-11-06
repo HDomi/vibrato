@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import type { Gradient } from '../lib/api';
-import { DEFAULT_GRADIENT, previewGradient, setWallpaperBlur, setWallpaperImage, updateWallpaper, useWallpaper } from '../lib/wallpaper';
+import { DEFAULT_GRADIENT, previewGradient, setWallpaperBlur, setWallpaperImage, SPACE_BACKGROUND, updateWallpaper, useWallpaper } from '../lib/wallpaper';
 import GradientEditor from './GradientEditor';
 
-/** Settings > Wallpaper: a solid color, a gradient or an image, the blur of its glass copy and how dark panels are. */
+/** Settings > Wallpaper: a solid color, a gradient, an image or space, the blur of its glass copy and how dark panels are. */
 export default function WallpaperSettings() {
   useLang();
   const w = useWallpaper();
@@ -54,11 +54,11 @@ export default function WallpaperSettings() {
     <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-4">
       <div className="font-medium">{t('wall.title')}</div>
       <div className="flex items-center gap-1 rounded-full bg-white/5 p-1 w-fit text-xs">
-        {(['color', 'gradient', 'image'] as const).map((k) => (
+        {(['color', 'gradient', 'image', 'space'] as const).map((k) => (
           <button key={k} disabled={busy}
             onClick={() => { if (k === kind) return; if (k === 'image' && !w.hasImage) file.current?.click(); else void run(() => updateWallpaper({ kind: k })); }}
             className={`rounded-full px-3 py-1 transition-colors ${kind === k ? 'bg-selected text-on-selected' : 'text-zinc-400 hover:text-zinc-200'}`}>
-            {t(k === 'color' ? 'wall.color' : k === 'gradient' ? 'wall.gradient' : 'wall.image')}
+            {t(k === 'color' ? 'wall.color' : k === 'gradient' ? 'wall.gradient' : k === 'space' ? 'wall.space' : 'wall.image')}
           </button>
         ))}
       </div>
@@ -80,6 +80,13 @@ export default function WallpaperSettings() {
               onPointerUp={commitAngle} onKeyUp={commitAngle} className="flex-1 accent-white" />
             <span className="w-10 text-right text-xs text-zinc-500 tabular-nums">{angle}°</span>
           </label>
+        </div>
+      ) : kind === 'space' ? (
+        <div className="flex items-center gap-3">
+          <div className="relative w-40 h-24 rounded-xl border border-white/15 shrink-0 overflow-hidden" style={{ background: SPACE_BACKGROUND }}>
+            {SPACE_PREVIEW_STARS.map(([x, y, r], i) => <span key={i} className="absolute rounded-full bg-white" style={{ left: `${x}%`, top: `${y}%`, width: r, height: r, opacity: 0.5 + r * 0.2 }} />)}
+          </div>
+          <div className="text-xs text-zinc-500 leading-relaxed">{t('wall.spaceHint')}</div>
         </div>
       ) : (
         <div className="flex items-center gap-3">
@@ -114,3 +121,9 @@ export default function WallpaperSettings() {
     </div>
   );
 }
+
+/** A few fixed dots for the space swatch (x %, y %, size px); the real stars are the live canvas behind the app. */
+const SPACE_PREVIEW_STARS: [number, number, number][] = [
+  [8, 20, 1.5], [18, 64, 1], [27, 35, 2], [36, 82, 1], [44, 14, 1], [52, 52, 1.5], [61, 28, 1], [68, 72, 2],
+  [76, 40, 1], [84, 16, 1.5], [90, 60, 1], [14, 88, 1.5], [57, 90, 1], [33, 8, 1], [96, 84, 1],
+];

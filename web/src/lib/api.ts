@@ -40,7 +40,7 @@ export interface ToolsInfo { tools: ToolStatus[]; installers: { brew: string | n
 
 export interface GradientStop { color: string; pos: number }
 export interface Gradient { angle: number; stops: GradientStop[] }
-export interface Wallpaper { kind: 'color' | 'image' | 'gradient'; color: string; gradient: Gradient; blur: number; dim: number; version: number; hasImage: boolean }
+export interface Wallpaper { kind: 'color' | 'image' | 'gradient' | 'space'; color: string; gradient: Gradient; blur: number; dim: number; version: number; hasImage: boolean }
 
 export interface UsageWindow { usedPct: number; resetsAt: number | null }
 export interface UsageSnapshot {

@@ -5,6 +5,7 @@ import { folderReady, foldersToAsk, INTRO_FOLDERS, type IntroFolder } from '../.
 import AgentIcon from '../AgentIcon';
 import Icon, { type IconName } from '../Icon';
 import Starfield from './Starfield';
+import { SPACE_BACKGROUND } from '../../lib/wallpaper';
 
 type Stage = 'welcome' | 'perms' | 'ready';
 const STAGES: Stage[] = ['welcome', 'perms', 'ready'];
@@ -40,7 +41,7 @@ export default function Intro({ onDone }: { onDone: () => void }) {
   return (
     <div className="relative h-full flex flex-col items-center justify-center px-8 select-none">
       {/* Deep space behind the card; it fades out with the card so the app comes in on its own wallpaper. */}
-      <div className="intro-space absolute inset-0 transition-opacity duration-700 ease-out" style={{ opacity: leaving ? 0 : 1 }} aria-hidden>
+      <div className="absolute inset-0 transition-opacity duration-700 ease-out" style={{ opacity: leaving ? 0 : 1, background: SPACE_BACKGROUND }} aria-hidden>
         <Starfield />
       </div>
       <div className="titlebar-drag absolute inset-x-0 top-0 h-14" />

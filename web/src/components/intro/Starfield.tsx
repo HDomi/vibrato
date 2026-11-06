@@ -46,7 +46,11 @@ function makeStars(w: number, h: number): Star[] {
   return stars.sort((a, b) => (a.color < b.color ? -1 : a.color > b.color ? 1 : 0));
 }
 
-export default function Starfield({ className = '' }: { className?: string }) {
+/**
+ * `fps` caps the redraw rate (the app's wallpaper runs all day, the intro only briefly). `pauseInactive` holds the
+ * last frame while the window is not focused.
+ */
+export default function Starfield({ className = '', fps = 60, pauseInactive = false }: { className?: string; fps?: number; pauseInactive?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -143,26 +147,34 @@ export default function Starfield({ className = '' }: { className?: string }) {
     resize();
     let raf = 0;
     let last = 0;
+    const minGap = 1000 / fps - 2;
+    const paused = () => document.hidden || (pauseInactive && !document.hasFocus());
     const frame = (time: number) => {
       raf = 0;
-      if (document.hidden) return;
-      const dt = last ? Math.min(3, (time - last) / (1000 / 60)) : 1;
-      last = time;
-      step(dt);
-      draw(time);
+      if (paused()) return;
+      if (!last || time - last >= minGap) {
+        const dt = last ? Math.min(3, (time - last) / (1000 / 60)) : 1;
+        last = time;
+        step(dt);
+        draw(time);
+      }
       raf = requestAnimationFrame(frame);
     };
-    const start = () => { if (!raf && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } };
+    const start = () => { if (!raf && !paused()) { last = 0; raf = requestAnimationFrame(frame); } };
 
     const onMove = (e: PointerEvent) => { pointer.x = e.clientX - canvas.getBoundingClientRect().left; pointer.y = e.clientY - canvas.getBoundingClientRect().top; };
     const onLeave = () => { pointer.x = -1e4; pointer.y = -1e4; };
-    const onResize = () => { resize(); if (still) draw(0); };
+    // Resizing clears the canvas: redraw at once, also while paused.
+    const onResize = () => { resize(); draw(still ? 0 : performance.now()); };
     window.addEventListener('resize', onResize);
     if (still) { draw(0); return () => window.removeEventListener('resize', onResize); }
     window.addEventListener('pointermove', onMove);
     document.documentElement.addEventListener('pointerleave', onLeave);
     window.addEventListener('blur', onLeave);
+    window.addEventListener('focus', start);
     document.addEventListener('visibilitychange', start);
+    // The first frame is drawn even when starting unfocused, so the backdrop is never empty.
+    draw(0);
     start();
     return () => {
       if (raf) cancelAnimationFrame(raf);
@@ -170,9 +182,10 @@ export default function Starfield({ className = '' }: { className?: string }) {
       window.removeEventListener('pointermove', onMove);
       document.documentElement.removeEventListener('pointerleave', onLeave);
       window.removeEventListener('blur', onLeave);
+      window.removeEventListener('focus', start);
       document.removeEventListener('visibilitychange', start);
     };
-  }, []);
+  }, [fps, pauseInactive]);
 
   return <canvas ref={ref} className={`block w-full h-full ${className}`} aria-hidden />;
 }
