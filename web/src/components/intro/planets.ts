@@ -21,7 +21,7 @@ export interface PlanetSpec {
 
 export const PLANETS: PlanetSpec[] = [
   {
-    fx: 0.14, fy: 0.26, r: 0.064, base: '#c08a66', tilt: -0.38, glow: 'rgb(255 190 140 / .2)',
+    fx: 0.14, fy: 0.26, r: 0.0213, base: '#c08a66', tilt: -0.38, glow: 'rgb(255 190 140 / .2)',
     bands: [
       { y: -0.62, h: 0.14, color: 'rgb(240 205 165 / .55)' },
       { y: -0.32, h: 0.2, color: 'rgb(120 72 52 / .45)' },
@@ -30,21 +30,21 @@ export const PLANETS: PlanetSpec[] = [
       { y: 0.52, h: 0.12, color: 'rgb(230 190 150 / .4)' },
     ],
     ring: { tilt: -0.38, inner: 1.38, outer: 2.2, color: '232 205 175' },
-    depth: 0.55, float: 7, period: 23,
+    depth: 0.55, float: 3, period: 23,
   },
   {
-    fx: 0.86, fy: 0.75, r: 0.04, base: '#3a86ad', tilt: 0.25, glow: 'rgb(110 200 255 / .26)',
+    fx: 0.86, fy: 0.75, r: 0.0133, base: '#3a86ad', tilt: 0.25, glow: 'rgb(110 200 255 / .26)',
     bands: [
       { y: -0.45, h: 0.18, color: 'rgb(140 215 235 / .35)' },
       { y: 0.05, h: 0.12, color: 'rgb(30 80 120 / .4)' },
       { y: 0.35, h: 0.16, color: 'rgb(120 200 225 / .3)' },
     ],
-    depth: 0.4, float: 5, period: 31,
+    depth: 0.4, float: 2, period: 31,
   },
   {
-    fx: 0.79, fy: 0.16, r: 0.017, base: '#968cb2', glow: 'rgb(190 170 255 / .16)',
+    fx: 0.79, fy: 0.16, r: 0.0057, base: '#968cb2', glow: 'rgb(190 170 255 / .16)',
     spots: [{ x: -0.3, y: -0.2, r: 0.22 }, { x: 0.25, y: 0.3, r: 0.16 }, { x: 0.35, y: -0.35, r: 0.1 }],
-    depth: 0.22, float: 4, period: 19,
+    depth: 0.22, float: 1.5, period: 19,
   },
 ];
 
@@ -88,7 +88,7 @@ function drawRing(ctx: CanvasRenderingContext2D, c: number, R: number, ring: Non
 }
 
 export function makePlanetSprite(spec: PlanetSpec, viewW: number, viewH: number, dpr: number): PlanetSprite {
-  const R = Math.max(6, Math.min(viewW, viewH) * spec.r);
+  const R = Math.max(3, Math.min(viewW, viewH) * spec.r);
   const size = Math.ceil(2 * Math.max(R * 1.6, spec.ring ? R * spec.ring.outer + 4 : 0));
   const c = size / 2;
 
