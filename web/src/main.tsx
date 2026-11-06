@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import 'highlight.js/styles/github-dark.css';
 import './index.css';
 import { initWallpaper } from './lib/wallpaper';
+import { initStyle } from './lib/style';
 import { finishIntro, needsIntro } from './lib/intro';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -13,6 +14,7 @@ const params = new URLSearchParams(location.search);
 const lock = params.get('lock');
 // IDE windows load it with ?ide=<project root>; likewise without the chat app.
 const ide = params.get('ide');
+initStyle();
 if (lock === 'main' || lock === 'sub') {
   initWallpaper();
   void import('./components/lock/LockScreen').then(({ default: LockScreen }) => root.render(<LockScreen />));

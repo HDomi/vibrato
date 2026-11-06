@@ -48,7 +48,7 @@ export function applyWallpaper(w: Wallpaper) {
     root.setProperty('--wall-image', image ? `url("${api.wallpaperUrl('original', w.version)}")` : 'none');
     root.setProperty('--wall-blur', image ? `url("${api.wallpaperUrl('blur', w.version)}")` : 'none');
   }
-  root.setProperty('--glass-tint', `rgb(0 0 0 / ${w.dim / 100})`);
+  root.setProperty('--glass-tint', `rgb(var(--panel-rgb, 0 0 0) / ${w.dim / 100})`);
   try { localStorage.setItem(LS_KEY, JSON.stringify(w)); } catch { /* ignore */ }
   for (const l of listeners) l(w);
 }

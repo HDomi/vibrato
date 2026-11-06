@@ -23,7 +23,7 @@ export default function Toaster() {
   return (
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
       {items.map((x) => (
-        <div key={x.id} className={`pop-in rounded-full border px-4 py-2 text-[12.5px] shadow-2xl backdrop-blur-xl ${x.kind === 'error' ? 'border-red-500/30 bg-red-950/80 text-red-100' : 'border-white/12 bg-[#181a21]/80 text-zinc-100'}`}>{x.text}</div>
+        <div key={x.id} className={`pop-in rounded-full border px-4 py-2 text-[12.5px] shadow-2xl backdrop-blur-xl ${x.kind === 'error' ? 'border-red-500/30 bg-red-950/80 text-red-100' : 'border-white/12 bg-panel-toast text-zinc-100'}`}>{x.text}</div>
       ))}
     </div>
   );

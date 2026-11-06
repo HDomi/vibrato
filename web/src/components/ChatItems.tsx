@@ -84,7 +84,7 @@ export function UserItem({ item, onRewind }: { item: Extract<ChatItem, { kind: '
           className="mt-2 shrink-0 opacity-0 group-hover/user:opacity-100 rounded-md px-2 py-1 text-[11px] text-zinc-400 hover:text-amber-200 hover:bg-white/5">⟲ {t('rewind.button')}</button>
       )}
       <div ref={bubble} onContextMenu={(e) => { const sel = selectionIn(bubble.current); menu.open(e, transferMenu(sel ? { text: sel, attachments: [] } : { text: item.text, attachments: item.attachments }, sel || item.text)); }}
-        className={`max-w-[80%] rounded-[20px] rounded-br-md bg-sky-400/[0.18] border border-sky-200/15 shadow-[0_6px_20px_rgb(0_0_0/.18)] px-4 py-2.5 text-[14px] whitespace-pre-wrap ${item.pending ? 'opacity-60' : ''}`}>
+        className={`user-bubble max-w-[80%] rounded-[20px] rounded-br-md bg-sky-400/[0.18] border border-sky-200/15 shadow-[0_6px_20px_rgb(0_0_0/.18)] px-4 py-2.5 text-[14px] whitespace-pre-wrap ${item.pending ? 'opacity-60' : ''}`}>
         {item.attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
             {item.attachments.map((a) => a.kind === 'image'

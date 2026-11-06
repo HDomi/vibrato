@@ -87,7 +87,7 @@ export default function TextSearch({ cwd, initial, onClose, onOpen }: Props) {
         <div ref={listRef} className="max-h-[56vh] overflow-y-auto py-1">
           {groups.map((g) => (
             <Fragment key={g.start}>
-              <div className="sticky top-0 z-10 px-4 py-1 flex items-center gap-2 text-[12px] text-zinc-300 bg-[#15171d]/95">
+              <div className="sticky top-0 z-10 px-4 py-1 flex items-center gap-2 text-[12px] text-zinc-300 bg-panel-bar">
                 <FileIcon name={g.rel.split('/').pop() ?? g.rel} isDir={false} />
                 <span className="truncate font-mono">{g.rel}</span>
                 <span className="shrink-0 text-zinc-500">{g.count}</span>

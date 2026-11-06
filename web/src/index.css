@@ -7,7 +7,8 @@
   --wall-color: #0b0d12;
   --wall-image: none;
   --wall-blur: none;
-  --glass-tint: rgb(0 0 0 / .45);
+  /* `--panel-rgb` (lib/style.ts, Settings > Style) recolors the dark panels; unset, each keeps its original shade. */
+  --glass-tint: rgb(var(--panel-rgb, 0 0 0) / .45);
 }
 
 /* Pretendard ships with the app (web/src/assets/fonts) so no network or system install is needed. */
@@ -128,27 +129,30 @@ select:disabled { opacity: .5; }
 /* Title bar controls: small and nearly static, so a real backdrop blur is cheap. One border, no filter
    (a filter would trap the usage tooltips under the cards). */
 .glass-ctl {
-  background-color: rgb(16 18 24 / .42);
+  background-color: rgb(var(--panel-rgb, 16 18 24) / .42);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
   backdrop-filter: blur(18px) saturate(150%);
   border: 1px solid rgb(255 255 255 / .16);
   box-shadow: 0 6px 18px rgb(0 0 0 / .22);
   transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
-.glass-ctl:hover { background-color: rgb(40 43 52 / .55); border-color: rgb(255 255 255 / .24); }
+.glass-ctl:hover { background-color: rgb(var(--panel-hover-rgb, 40 43 52) / .55); border-color: rgb(255 255 255 / .24); }
 .glass-ctl-claude { background-color: rgb(217 119 87 / .3); border-color: rgb(240 160 130 / .45); }
 .glass-ctl-claude:hover { background-color: rgb(217 119 87 / .42); }
 .glass-ctl-codex { background-color: rgb(150 175 205 / .24); border-color: rgb(215 229 245 / .4); }
 .glass-ctl-codex:hover { background-color: rgb(150 175 205 / .36); }
 /* Floating layers (menus, popovers, tooltips) sit over live content, so they use a real backdrop blur: small and short-lived. */
 .glass-pop {
-  background: rgb(24 26 33 / .78);
+  background: rgb(var(--panel-rgb, 24 26 33) / .78);
   -webkit-backdrop-filter: blur(22px) saturate(150%);
   backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgb(255 255 255 / .12);
   border-radius: 16px;
   box-shadow: 0 18px 50px rgb(0 0 0 / .45);
 }
+/* Toasts and the text search sticky headers: dark panel fills that follow the panel color too. */
+.bg-panel-toast { background-color: rgb(var(--panel-rgb, 24 26 33) / .8); }
+.bg-panel-bar { background-color: rgb(var(--panel-rgb, 21 23 29) / .95); }
 /* First-launch intro: deep space with a starfield canvas (components/intro/Starfield.tsx), and a card that
    blurs the moving stars behind it (real backdrop blur: the stars are live, a fixed wallpaper copy would not match). */
 .intro-space {
@@ -187,6 +191,13 @@ select:disabled { opacity: .5; }
 @media (prefers-reduced-motion: reduce) {
   .pop-in, .fade-in, .intro-rise, .app-enter { animation: none; }
 }
+}
+
+/* The user's chat bubble in a custom color (lib/style.ts): unlayered, so it beats the Tailwind classes on the bubble.
+   Same alphas as those classes, so it stays as translucent as the default. */
+:root[data-bubble] .user-bubble {
+  background-color: rgb(var(--bubble-rgb) / .18);
+  border-color: rgb(var(--bubble-border-rgb) / .15);
 }
 
 /* Selects draw their own chevron. Chromium's menulist fallback (used once a select has a border or background)
@@ -244,7 +255,7 @@ select {
 /* Lock screen (components/lock/LockScreen.tsx) */
 .lock-card {
   border-radius: 34px;
-  background: rgb(18 20 26 / .42);
+  background: rgb(var(--panel-rgb, 18 20 26) / .42);
   border: 1px solid rgb(255 255 255 / .14);
   -webkit-backdrop-filter: blur(30px) saturate(140%);
   backdrop-filter: blur(30px) saturate(140%);

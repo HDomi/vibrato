@@ -29,7 +29,7 @@ export default function WallpaperSettings() {
     try { await fn(); } catch (e) { setError(t('wall.failed', { reason: (e as Error).message })); } finally { setBusy(false); }
   };
   // Darkness is a CSS variable: preview while dragging, store on release. Blur needs a new image, so only on release.
-  const previewDim = (v: number) => { setDim(v); document.documentElement.style.setProperty('--glass-tint', `rgb(0 0 0 / ${v / 100})`); };
+  const previewDim = (v: number) => { setDim(v); document.documentElement.style.setProperty('--glass-tint', `rgb(var(--panel-rgb, 0 0 0) / ${v / 100})`); };
   const commitDim = () => { if (w && dim !== w.dim) void run(() => updateWallpaper({ dim })); };
   // The picker fires on every move: preview at once, store once it settles.
   const pickColor = (v: string) => {
