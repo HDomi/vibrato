@@ -163,8 +163,13 @@ select:disabled { opacity: .5; }
 .item-flash { border-radius: 14px; animation: item-flash 1.6s ease-out both; }
 .pop-in { animation: pop-in .18s var(--ease-glass) both; }
 .fade-in { animation: fade-in .16s ease-out both; }
+/* First-launch intro: each step's content rises in; then the app fades in behind the faded-out card.
+   Only opacity on .app-enter: it wraps glass surfaces, which a transform would misalign. */
+@keyframes intro-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.intro-rise { animation: intro-rise .42s var(--ease-glass) both; }
+.app-enter { animation: fade-in .7s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .pop-in, .fade-in { animation: none; }
+  .pop-in, .fade-in, .intro-rise, .app-enter { animation: none; }
 }
 }
 

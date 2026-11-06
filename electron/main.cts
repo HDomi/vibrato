@@ -138,6 +138,10 @@ async function startServer(): Promise<void> {
   if (quitting) return;
   const env: NodeJS.ProcessEnv = { ...process.env, VIBRATO_DEV: DEV ? '1' : '0', VIBRATO_ELECTRON_EXEC_PATH: process.execPath, VIBRATO_ELECTRON_VERSION: process.versions.electron, VIBRATO_UPDATE_DIR: UPDATE_DIR };
   delete env.ELECTRON_RUN_AS_NODE;
+  // A file call into a privacy-protected folder (Desktop, Documents, ...) blocks its libuv worker until the user
+  // answers the macOS prompt. With the default 4 workers a few of those stall every other file read, static
+  // files included, and the window goes blank; more workers keep the server answering meanwhile.
+  if (!env.UV_THREADPOOL_SIZE) env.UV_THREADPOOL_SIZE = '32';
   Object.assign(env, runtime.env);
   console.log(`[vibrato] server runtime: ${runtime.label}`);
   server = spawn(runtime.exe, [entry], { cwd: REPO_ROOT, env, stdio: ['ignore', 'inherit', 'inherit'] });
