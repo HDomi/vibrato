@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import UsageBar, { UsageChip, untilReset } from '../web/src/components/UsageBar';
 import { normalizeClaudeUsage, queryClaudeUsage, type UsageQuery } from '../server/claudeUsage';
+import { normalizeCodexRateLimits } from '../server/usage';
 
 test('usage buttons distinguish zero usage, exhausted quota and unavailable data', () => {
   const zero = renderToStaticMarkup(<UsageChip agent="claude" label="5h" win={{ usedPct: 0, resetsAt: null }} loading={false} />);
@@ -88,4 +89,16 @@ test('battery reset countdown shows days, hours and minutes, dropping leading ze
   assert.equal(untilReset(at(7), now), '7m');
   assert.equal(untilReset((now + 20000) / 1000, now), '1m');
   assert.equal(untilReset(at(0), now), null);
+});
+
+test('Codex app-server rate limits map to 5h / weekly windows', () => {
+  const usage = normalizeCodexRateLimits({ rateLimits: { limitId: 'codex', planType: 'pro',
+    primary: { usedPercent: 42.4, windowDurationMins: 300, resetsAt: 1793000000 },
+    secondary: { usedPercent: 7, windowDurationMins: 10080, resetsAt: null } }, rateLimitsByLimitId: null });
+  assert.deepEqual(usage, { fiveHour: { usedPct: 42, resetsAt: 1793000000 }, weekly: { usedPct: 7, resetsAt: null }, plan: 'pro' });
+  // Swapped order is matched by window length; missing duration falls back to primary / secondary.
+  const swapped = normalizeCodexRateLimits({ rateLimits: { primary: { usedPercent: 3, windowDurationMins: 10080, resetsAt: null }, secondary: { usedPercent: 50, windowDurationMins: 300, resetsAt: null } } });
+  assert.equal(swapped?.fiveHour?.usedPct, 50); assert.equal(swapped?.weekly?.usedPct, 3);
+  assert.equal(normalizeCodexRateLimits({ rateLimits: { primary: null, secondary: null } }), null);
+  assert.equal(normalizeCodexRateLimits(null), null);
 });

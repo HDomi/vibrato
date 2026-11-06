@@ -530,6 +530,18 @@ export async function listCodexExtensions(codexPath: string): Promise<{ skills: 
   }
 }
 
+/** Account rate-limit snapshot (`account/rateLimits/read`). Reads the account state only; no model turn starts. */
+export async function readCodexRateLimits(codexPath: string, timeoutMs = 20000): Promise<Json> {
+  const c = new AppServerClient(codexPath, process.env.HOME ?? '/');
+  try {
+    await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null }, timeoutMs);
+    c.notify('initialized');
+    return await c.request<Json>('account/rateLimits/read', {}, timeoutMs);
+  } finally {
+    c.kill();
+  }
+}
+
 /** Rename / archive Codex threads through a short-lived app-server. */
 export async function codexThreadOp(codexPath: string, op: 'rename' | 'delete', threadId: string, name?: string): Promise<void> {
   const c = new AppServerClient(codexPath, process.env.HOME ?? '/');
