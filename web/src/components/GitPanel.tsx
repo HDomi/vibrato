@@ -66,6 +66,8 @@ export default function GitPanel({ cwd, visible }: Props) {
   const [commitView, setCommitView] = useState<{ commit: GitCommit; files: GitCommitFile[] | null; error?: string } | null>(null);
   const [commitFile, setCommitFile] = useState<string | null>(null);
   const [commitDiff, setCommitDiff] = useState('');
+  // Must stay above the early returns below: a hook after them breaks the hook order when cwd appears.
+  const [suggesting, setSuggesting] = useState(false);
   useEffect(() => { logRef.current = log; }, [log]);
 
   const refresh = useCallback(() => {
@@ -160,7 +162,6 @@ export default function GitPanel({ cwd, visible }: Props) {
     operationRef.current = true; setBusy(true);
     api.gitStage(cwd, files.map((f) => f.path), action).then(() => { if (projectRef.current === project) refresh(); }).catch((e) => { if (projectRef.current === project) setNote(e.message); }).finally(() => { if (projectRef.current === project) { operationRef.current = false; setBusy(false); } });
   };
-  const [suggesting, setSuggesting] = useState(false);
   // Commit message from the staged diff, written by the local CLI following the repo's conventions.
   const suggest = () => {
     if (!cwd || suggesting) return;
