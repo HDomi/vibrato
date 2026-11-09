@@ -10,6 +10,9 @@ directories:
 asar: false
 # node-pty ships N-API prebuilds that load under both Electron and system Node; nothing to recompile.
 npmRebuild: false
+# Package the Electron that npm ci already installed (same version, from package-lock) instead of downloading it
+# and its SHASUMS256.txt from GitHub again; those downloads failed releases with 504s (2026-11-09).
+electronDist: node_modules/electron/dist
 files:
   - package.json
   - dist/**/*

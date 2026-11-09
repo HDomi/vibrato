@@ -30,11 +30,14 @@ jobs:
           node-version: 24
           cache: npm
 
-      # Electron's postinstall (and electron-builder) download the Electron binary from GitHub into this cache.
+      # Electron's postinstall downloads the Electron binary from GitHub into this cache; electron-builder's own
+      # tools (dmgbuild, 7zip) go to the second one. GitHub release downloads sometimes answer 504 for a while.
       - name: Cache Electron download
         uses: actions/cache@v4
         with:
-          path: ~/Library/Caches/electron
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: electron-${{ runner.os }}-
 
@@ -57,7 +60,15 @@ jobs:
         # The in-app browser's native module (native/webview) must be in every release.
         env:
           VIBRATO_NATIVE_REQUIRED: '1'
-        run: npm run dist
+        run: |
+          # Packaging still downloads small tools from GitHub releases, which sometimes answer 504: retry.
+          for i in 1 2 3; do
+            npm run dist && exit 0
+            echo "::warning::npm run dist failed (attempt $i of 3)"
+            rm -rf release
+            [ "$i" -lt 3 ] && sleep $((i * 60))
+          done
+          exit 1
 
       - name: Checksums
         working-directory: release
