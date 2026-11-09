@@ -7,6 +7,6 @@
       "MACOSX_DEPLOYMENT_TARGET": "13.3",
       "OTHER_CPLUSPLUSFLAGS": ["-std=c++20", "-fobjc-arc"]
     },
-    "link_settings": { "libraries": ["-framework WebKit", "-framework AppKit"] }
+    "link_settings": { "libraries": ["-framework WebKit", "-framework AppKit", "-framework QuartzCore"] }
   }]
 }

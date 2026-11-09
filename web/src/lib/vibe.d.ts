@@ -13,15 +13,21 @@ export interface AppPermissionInfo {
   loginItem: boolean;
 }
 /** In-app browser (electron/browser.cts). */
-export interface BrowserTab { id: number; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; progress: number; opener?: number; agent?: boolean; zoom: number }
+export interface BrowserSessionInfo { key: string; label: string; color: string }
+export interface BrowserDevice { width: number; height: number; preset?: string; mobile: boolean }
+export interface BrowserDevicePreset { id: string; label: string; width: number; height: number; tablet?: boolean }
+export interface BrowserMock { id: number; url: string; method?: string; status: number; body: string; contentType?: string }
+export interface BrowserFlags { paused: boolean; picking: boolean; refs: boolean; mocks: BrowserMock[] }
+export interface BrowserNetBody { reqBody?: string; resBody?: string; reqHeaders?: Record<string, string>; resHeaders?: Record<string, string> }
+export interface BrowserTab { id: number; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; progress: number; opener?: number; owner?: BrowserSessionInfo; zoom: number; device?: BrowserDevice | null }
 export interface BrowserConsoleEntry { seq: number; t: number; tab: number; level: string; text: string; source?: string }
-export interface BrowserNetEntry { seq: number; t: number; tab: number; via: string; method: string; url: string; status?: number; type?: string; size?: number; ms?: number; error?: string }
-export interface BrowserAgentEntry { seq: number; t: number; tool: string; summary: string; ok: boolean; ms: number; result?: string; image?: string }
+export interface BrowserNetEntry { seq: number; t: number; tab: number; via: string; method: string; url: string; status?: number; type?: string; size?: number; ms?: number; error?: string; rid?: string; mocked?: number }
+export interface BrowserAgentEntry { seq: number; t: number; tool: string; summary: string; ok: boolean; ms: number; result?: string; image?: string; session?: BrowserSessionInfo; pw?: string[]; url?: string }
 export type BrowserStorageArea = 'local' | 'session' | 'cookies';
 export interface BrowserCookie { name: string; value: string; domain: string; path: string; expires?: number; httpOnly: boolean; secure: boolean; session: boolean; sameSite?: string }
 export interface BrowserStorageResult { origin: string; items?: [string, string][]; cookies?: BrowserCookie[]; changed?: number }
 export interface BrowserBridge {
-  info: () => Promise<{ available: boolean; error: string; tabs: BrowserTab[]; active: number | null; console: BrowserConsoleEntry[]; net: BrowserNetEntry[]; agent: BrowserAgentEntry[] } | null>;
+  info: () => Promise<{ available: boolean; error: string; tabs: BrowserTab[]; active: number | null; console: BrowserConsoleEntry[]; net: BrowserNetEntry[]; agent: BrowserAgentEntry[]; flags: BrowserFlags; devices: BrowserDevicePreset[] } | null>;
   /** Where the page goes, in window coordinates; null hides it. */
   frame: (rect: { x: number; y: number; w: number; h: number } | null) => void;
   open: (url: string) => Promise<number>;
@@ -31,6 +37,18 @@ export interface BrowserBridge {
   nav: (action: 'back' | 'forward' | 'reload' | 'stop' | 'focus') => void;
   zoom: (factor: number) => void;
   clear: (kind: 'console' | 'net' | 'agent') => void;
+  /** Mobile view of the active tab; null restores the desktop view. */
+  device: (d: BrowserDevice | null) => void;
+  /** Hold every agent tool call until resumed. */
+  pause: (on: boolean) => void;
+  /** Element picker: the next click in the page picks an element (sent to the main window's composer). */
+  pick: (on: boolean) => void;
+  /** Boxes with ref labels over the elements of the latest snapshot. */
+  refs: (on: boolean) => void;
+  netDetail: (seq: number) => Promise<BrowserNetBody | null>;
+  mockRemove: (id?: number) => Promise<BrowserMock[]>;
+  /** Saves the agent log to ~/Downloads and reveals it; resolves to the path. */
+  export: (format: 'playwright' | 'html') => Promise<string | null>;
   /** Active tab's storage: list, set, remove or clear. Null when no tab is open. */
   storage: (op: { action: 'get' | 'set' | 'remove' | 'clear'; area: BrowserStorageArea; key?: string; value?: string; cookie?: Partial<BrowserCookie> }) => Promise<BrowserStorageResult | null>;
   on(channel: 'tabs', cb: (p: { tabs: BrowserTab[]; active: number | null }) => void): () => void;
@@ -39,6 +57,8 @@ export interface BrowserBridge {
   on(channel: 'agent', cb: (e: BrowserAgentEntry) => void): () => void;
   /** An agent changed storage of this tab. */
   on(channel: 'storage-changed', cb: (e: { tab: number }) => void): () => void;
+  on(channel: 'flags', cb: (f: BrowserFlags) => void): () => void;
+  on(channel: 'picked', cb: (p: { text: string; image?: string; ref: string; tab: number }) => void): () => void;
 }
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;

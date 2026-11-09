@@ -8,7 +8,8 @@ Claude 는 Agent SDK 에 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를
 
 ```
 electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts)
-            앱 안 브라우저(browser.cts, browserScripts.cts): `/?browser=1` 창, 페이지는 네이티브 WKWebView
+            앱 안 브라우저(browser.cts, browserScripts.cts): `/?browser=1` 창, 페이지는 네이티브 WKWebView.
+            에이전트 도구 실행 · 세션별 커서(네이티브 오버레이) · 자동 대기 · 구조화된 에러(agent-desktop 참고)
 native/     네이티브 모듈(N-API, node-gyp). webview: Electron 창에 WKWebView 를 붙인다 → dist/native (scripts/build-native.cjs)
 server/     Hono 서버 · 에이전트 어댑터 · PTY · git · 업데이트(updater.ts, releaseUpdate.ts) · 잠금 감시(lockWatch.ts)
             예약 실행(scheduler.ts, schedule.ts, schedulePower.ts: caffeinate · pmset 깨우기 helper)

@@ -34,6 +34,7 @@ import AgentContextDialog from './components/AgentContextDialog';
 import { EMPTY_BACKLOG, useBacklogs } from './lib/backlog';
 import Icon, { type IconName } from './components/Icon';
 import { IDE_CHANNEL, openIde, type IdeMessage } from './lib/ide';
+import { BROWSER_CHANNEL, type BrowserChannelMessage } from './lib/browserChannel';
 import { ViewActiveContext } from './lib/viewActive';
 import { shortcutKey } from './lib/keys';
 
@@ -397,6 +398,27 @@ function AppInner() {
       show('vibe');
       if (cur !== m.root) open(m.root);
       attachRef.current(m.files.map((f) => ({ path: f.path, name: f.name, isDir: false, size: 0, mtime: 0, ext: '', hidden: false, kind: 'binary' as const })));
+      window.focus();
+    };
+    return () => ch.close();
+  }, []);
+
+  // "Pick an element" in the browser window: its screenshot joins the composer's attachments, its details the text.
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel(BROWSER_CHANNEL);
+    ch.onmessage = async (ev: MessageEvent<BrowserChannelMessage>) => {
+      const m = ev.data;
+      if (m?.kind !== 'pick') return;
+      ideTarget.current.setView('vibe');
+      if (m.image) {
+        try {
+          const blob = await (await fetch(m.image)).blob();
+          const saved = await api.attach([new File([blob], `element-${Date.now()}.png`, { type: 'image/png' })]);
+          setPendingAttachments((prev) => [...prev, ...saved.map((a) => ({ path: a.path, name: a.name, kind: a.kind }))]);
+        } catch { /* text only */ }
+      }
+      window.dispatchEvent(new CustomEvent('vibe:insert-composer', { detail: { text: m.text, handled: false } }));
       window.focus();
     };
     return () => ch.close();

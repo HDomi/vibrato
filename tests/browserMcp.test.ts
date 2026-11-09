@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BROWSER_TOOLS, browserMcpUrl, codexBrowserArgs, handleMcpBody, handleRpc, MCP_SERVER_NAME } from '../server/browserMcp.ts';
+import { BROWSER_TOOLS, browserMcpUrl, browserSession, codexBrowserArgs, handleMcpBody, handleRpc, MCP_SERVER_NAME, registerBrowserSession } from '../server/browserMcp.ts';
 
 test('initialize answers with tools capability and instructions', async () => {
   const r = await handleRpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
@@ -58,4 +58,16 @@ test('batches reply to requests only', async () => {
 test('session wiring points both CLIs at the loopback endpoint', () => {
   assert.equal(browserMcpUrl(11398), 'http://127.0.0.1:11398/mcp/browser');
   assert.deepEqual(codexBrowserArgs(11398), ['-c', 'mcp_servers.vibrato.url="http://127.0.0.1:11398/mcp/browser"']);
+});
+
+test('session tokens carry a label and a colour into the MCP URL', () => {
+  const token = registerBrowserSession('Claude · vibrato');
+  const s = browserSession(token)!;
+  assert.equal(s.label, 'Claude · vibrato');
+  assert.match(s.color, /^#[0-9A-F]{6}$/i);
+  assert.equal(browserMcpUrl(11398, token), `http://127.0.0.1:11398/mcp/browser?s=${token}`);
+  assert.deepEqual(codexBrowserArgs(1, token), ['-c', `mcp_servers.vibrato.url="http://127.0.0.1:1/mcp/browser?s=${token}"`]);
+  assert.equal(browserSession('nope'), undefined);
+  const other = browserSession(registerBrowserSession('Codex · x'))!;
+  assert.notEqual(other.color, s.color);
 });

@@ -31,7 +31,7 @@ import { convertImage, imageInfo, renderPng, writeImageBytes } from './image.js'
 import { allBacklogs, cleanBacklog, projectSettings, suggestVerifyCommands, updateProjectSettings } from './verify.js';
 import { revertTurn, turnDiff } from './turns.js';
 import { agentContext } from './agentContext.js';
-import { handleMcpBody } from './browserMcp.js';
+import { browserSession, handleMcpBody } from './browserMcp.js';
 import { listExtensions, sanitizeExtensions } from './agentExtensions.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
@@ -238,7 +238,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   });
   // Vibrato browser tools for agent sessions (server/browserMcp.ts): MCP Streamable HTTP, JSON replies, no SSE stream.
   app.post('/mcp/browser', async (c) => {
-    const reply = await handleMcpBody(await c.req.json());
+    const reply = await handleMcpBody(await c.req.json(), undefined, browserSession(c.req.query('s')));
     return reply === null ? c.body(null, 202) : c.json(reply);
   });
   app.get('/mcp/browser', (c) => c.body(null, 405));

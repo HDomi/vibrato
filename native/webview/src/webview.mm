@@ -2,6 +2,7 @@
 // N-API only (no node-addon-api), so one build works for any Electron version.
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
 #include <node_api.h>
 #include <string>
@@ -72,13 +73,23 @@ static void finish(Completion* c) {
 
 @class VBHost;
 struct Entry { WKWebView* __strong web; VBHost* __strong host; };
+@class VBOverlay;
+static VBOverlay* g_overlay = nil;
+static void raiseOverlay();
 static std::unordered_map<int, Entry> g_views;
 
 static NSString* g_userAgent = nil; // one user agent for every view, popups included
 
-@interface VBHost : NSObject <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
+@interface VBHost : NSObject <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate>
 @property(nonatomic) int vid;
 @property(nonatomic, weak) WKWebView* web;
+/** Files the next <input type=file> picker receives (set by an agent); nil shows the real open panel. */
+@property(nonatomic, strong) NSArray<NSURL*>* pendingUploads;
+/** How the next alert/confirm/prompt is answered: accept (default YES) and the prompt text. */
+@property(nonatomic) BOOL dialogAccept;
+@property(nonatomic, copy) NSString* dialogText;
+@property(nonatomic) BOOL dialogOnce;
+@property(nonatomic, strong) NSMapTable<WKDownload*, NSString*>* downloads;
 @end
 
 static int adopt(WKWebView* web, int openerId);
@@ -108,7 +119,9 @@ static int adopt(WKWebView* web, int openerId);
   NSHTTPURLResponse* http = [r.response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse*)r.response : nil;
   emit(@{ @"type": @"response", @"id": @(self.vid), @"url": r.response.URL.absoluteString ?: @"", @"status": @(http ? http.statusCode : 0),
           @"mime": r.response.MIMEType ?: @"", @"mainFrame": @(r.isForMainFrame) });
-  h(WKNavigationResponsePolicyAllow);
+  NSString* disposition = http ? [http valueForHTTPHeaderField:@"Content-Disposition"] : nil;
+  BOOL attachment = disposition && [disposition.lowercaseString hasPrefix:@"attachment"];
+  h(!r.canShowMIMEType || attachment ? WKNavigationResponsePolicyDownload : WKNavigationResponsePolicyAllow);
 }
 - (void)webViewWebContentProcessDidTerminate:(WKWebView*)w {
   emit(@{ @"type": @"crashed", @"id": @(self.vid) });
@@ -119,6 +132,8 @@ static int adopt(WKWebView* web, int openerId);
   child.hidden = YES;
   [w.superview addSubview:child positioned:NSWindowAbove relativeTo:w];
   int cid = adopt(child, self.vid);
+  if (w.customUserAgent.length) child.customUserAgent = w.customUserAgent;
+  raiseOverlay();
   emit(@{ @"type": @"popup", @"id": @(cid), @"opener": @(self.vid), @"url": a.request.URL.absoluteString ?: @"" });
   return child;
 }
@@ -131,14 +146,61 @@ static int adopt(WKWebView* web, int openerId);
   emit(@{ @"type": @"message", @"id": @(self.vid), @"body": body ?: NSNull.null });
 }
 // alert/confirm/prompt: answered right away so pages never block; the app is told.
+- (void)usedDialog { if (self.dialogOnce) { self.dialogAccept = YES; self.dialogText = nil; self.dialogOnce = NO; } }
 - (void)webView:(WKWebView*)w runJavaScriptAlertPanelWithMessage:(NSString*)msg initiatedByFrame:(WKFrameInfo*)fr completionHandler:(void (^)(void))h {
-  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"alert", @"message": msg ?: @"" }); h();
+  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"alert", @"message": msg ?: @"", @"accepted": @YES }); h();
 }
 - (void)webView:(WKWebView*)w runJavaScriptConfirmPanelWithMessage:(NSString*)msg initiatedByFrame:(WKFrameInfo*)fr completionHandler:(void (^)(BOOL))h {
-  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"confirm", @"message": msg ?: @"" }); h(YES);
+  BOOL ok = self.dialogAccept;
+  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"confirm", @"message": msg ?: @"", @"accepted": @(ok) });
+  [self usedDialog]; h(ok);
 }
 - (void)webView:(WKWebView*)w runJavaScriptTextInputPanelWithPrompt:(NSString*)p defaultText:(NSString*)d initiatedByFrame:(WKFrameInfo*)fr completionHandler:(void (^)(NSString*))h {
-  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"prompt", @"message": p ?: @"" }); h(d);
+  BOOL ok = self.dialogAccept;
+  NSString* answer = ok ? (self.dialogText ?: d) : nil;
+  emit(@{ @"type": @"dialog", @"id": @(self.vid), @"kind": @"prompt", @"message": p ?: @"", @"accepted": @(ok), @"text": answer ?: NSNull.null });
+  [self usedDialog]; h(answer);
+}
+// <input type=file>: files an agent queued, else the normal open panel.
+- (void)webView:(WKWebView*)w runOpenPanelWithParameters:(WKOpenPanelParameters*)params initiatedByFrame:(WKFrameInfo*)fr completionHandler:(void (^)(NSArray<NSURL*>*))h {
+  if (self.pendingUploads) {
+    NSArray<NSURL*>* files = self.pendingUploads;
+    self.pendingUploads = nil;
+    if (!params.allowsMultipleSelection && files.count > 1) files = @[ files.firstObject ];
+    NSMutableArray* names = [NSMutableArray array]; for (NSURL* u in files) [names addObject:u.path];
+    emit(@{ @"type": @"upload", @"id": @(self.vid), @"files": names, @"auto": @YES });
+    h(files);
+    return;
+  }
+  NSOpenPanel* panel = [NSOpenPanel openPanel];
+  panel.allowsMultipleSelection = params.allowsMultipleSelection;
+  panel.canChooseDirectories = params.allowsDirectories;
+  panel.canChooseFiles = YES;
+  void (^done)(NSModalResponse) = ^(NSModalResponse r) { h(r == NSModalResponseOK ? panel.URLs : nil); };
+  if (w.window) [panel beginSheetModalForWindow:w.window completionHandler:done]; else done([panel runModal]);
+}
+// ---------- downloads: saved to ~/Downloads ----------
+- (void)webView:(WKWebView*)w decidePolicyForNavigationAction:(WKNavigationAction*)a decisionHandler:(void (^)(WKNavigationActionPolicy))h {
+  h(a.shouldPerformDownload ? WKNavigationActionPolicyDownload : WKNavigationActionPolicyAllow);
+}
+- (void)webView:(WKWebView*)w navigationAction:(WKNavigationAction*)a didBecomeDownload:(WKDownload*)d { d.delegate = self; }
+- (void)webView:(WKWebView*)w navigationResponse:(WKNavigationResponse*)r didBecomeDownload:(WKDownload*)d { d.delegate = self; }
+- (void)download:(WKDownload*)d decideDestinationUsingResponse:(NSURLResponse*)resp suggestedFilename:(NSString*)name completionHandler:(void (^)(NSURL*))h {
+  NSURL* dir = [NSFileManager.defaultManager URLsForDirectory:NSDownloadsDirectory inDomains:NSUserDomainMask].firstObject;
+  NSString* base = name.length ? name.lastPathComponent : @"download";
+  NSURL* url = [dir URLByAppendingPathComponent:base];
+  for (int i = 1; [NSFileManager.defaultManager fileExistsAtPath:url.path] && i < 1000; i++)
+    url = [dir URLByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d)%@", base.stringByDeletingPathExtension, i, base.pathExtension.length ? [@"." stringByAppendingString:base.pathExtension] : @""]];
+  if (!self.downloads) self.downloads = [NSMapTable weakToStrongObjectsMapTable];
+  [self.downloads setObject:url.path forKey:d];
+  emit(@{ @"type": @"download", @"id": @(self.vid), @"state": @"started", @"path": url.path, @"url": resp.URL.absoluteString ?: @"" });
+  h(url);
+}
+- (void)downloadDidFinish:(WKDownload*)d {
+  emit(@{ @"type": @"download", @"id": @(self.vid), @"state": @"finished", @"path": [self.downloads objectForKey:d] ?: @"" });
+}
+- (void)download:(WKDownload*)d didFailWithError:(NSError*)e resumeData:(NSData*)data {
+  emit(@{ @"type": @"download", @"id": @(self.vid), @"state": @"failed", @"path": [self.downloads objectForKey:d] ?: @"", @"error": e.localizedDescription ?: @"" });
 }
 @end
 
@@ -147,7 +209,7 @@ static NSArray<NSString*>* kObserved = @[ @"URL", @"title", @"loading", @"canGoB
 static int adopt(WKWebView* web, int openerId) {
   int vid = g_next_id++;
   VBHost* host = [VBHost new];
-  host.vid = vid; host.web = web;
+  host.vid = vid; host.web = web; host.dialogAccept = YES;
   web.navigationDelegate = host; web.UIDelegate = host;
   if (g_userAgent) web.customUserAgent = g_userAgent;
   if (@available(macOS 13.3, *)) web.inspectable = YES;
@@ -268,7 +330,7 @@ static napi_value SetVisible(napi_env env, napi_callback_info info) {
   VIEW_OR_THROW(0);
   bool visible = bool_arg(env, argv[1]);
   web.hidden = !visible;
-  if (visible) [web.superview addSubview:web positioned:NSWindowAbove relativeTo:nil]; // stay above the Electron view
+  if (visible) { [web.superview addSubview:web positioned:NSWindowAbove relativeTo:nil]; raiseOverlay(); } // above the Electron view, under the agent overlay
   else if (web.window.firstResponder == web || ([web.window.firstResponder isKindOfClass:NSView.class] && [(NSView*)web.window.firstResponder isDescendantOf:web]))
     [web.window makeFirstResponder:web.superview];
   return undef(env);
@@ -478,6 +540,364 @@ static napi_value Key(napi_env env, napi_callback_info info) {
   return undef(env);
 }
 
+// ---------- more input: generic mouse, hover, drag ----------
+
+// mouse(id, type, x, y, clickCount): "move" | "down" | "drag" | "up" at a point (top-left based, points), delivered
+// straight to the view under it (see Click).
+static napi_value Mouse(napi_env env, napi_callback_info info) {
+  ARGS(5);
+  VIEW_OR_THROW(0);
+  std::string type = str_arg(env, argv[1]);
+  double x = num_arg(env, argv[2]), y = num_arg(env, argv[3]);
+  int clicks = (int)num_arg(env, argv[4]);
+  NSWindow* win = web.window;
+  if (!win) { napi_throw_error(env, nullptr, "view has no window"); return nullptr; }
+  NSPoint p = NSMakePoint(x, web.isFlipped ? y : web.bounds.size.height - y);
+  NSPoint wp = [web convertPoint:p toView:nil];
+  NSView* target = [web hitTest:[web.superview convertPoint:wp fromView:nil]];
+  if (!target || ![target isDescendantOf:web]) target = web;
+  NSEventType t = type == "down" ? NSEventTypeLeftMouseDown : type == "up" ? NSEventTypeLeftMouseUp : type == "drag" ? NSEventTypeLeftMouseDragged : NSEventTypeMouseMoved;
+  NSEvent* e = [NSEvent mouseEventWithType:t location:wp modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:win.windowNumber context:nil eventNumber:0 clickCount:(t == NSEventTypeMouseMoved || t == NSEventTypeLeftMouseDragged) ? 0 : MAX(1, clicks) pressure:t == NSEventTypeLeftMouseUp ? 0 : 1.0];
+  if (t == NSEventTypeLeftMouseDown) [target mouseDown:e];
+  else if (t == NSEventTypeLeftMouseUp) [target mouseUp:e];
+  else if (t == NSEventTypeLeftMouseDragged) [target mouseDragged:e];
+  else [target mouseMoved:e];
+  return undef(env);
+}
+
+// setUserAgent(id, ua): "" restores the default; takes effect on the next load.
+static napi_value SetUserAgent(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  VIEW_OR_THROW(0);
+  NSString* ua = ns(str_arg(env, argv[1]));
+  web.customUserAgent = ua.length ? ua : g_userAgent;
+  return undef(env);
+}
+
+// setUploadFiles(id, json array of absolute paths | "null"): what the next file picker receives.
+static napi_value SetUploadFiles(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  int vid = (int)num_arg(env, argv[0]);
+  auto it = g_views.find(vid);
+  if (it == g_views.end()) { napi_throw_error(env, nullptr, "no such view"); return nullptr; }
+  NSData* raw = [ns(str_arg(env, argv[1])) dataUsingEncoding:NSUTF8StringEncoding];
+  id list = raw ? [NSJSONSerialization JSONObjectWithData:raw options:0 error:nil] : nil;
+  NSMutableArray<NSURL*>* urls = nil;
+  if ([list isKindOfClass:NSArray.class]) {
+    urls = [NSMutableArray array];
+    for (id p in (NSArray*)list) if ([p isKindOfClass:NSString.class]) [urls addObject:[NSURL fileURLWithPath:p]];
+  }
+  it->second.host.pendingUploads = urls;
+  return undef(env);
+}
+
+// setDialogPolicy(id, accept, text, once): how alert/confirm/prompt are answered.
+static napi_value SetDialogPolicy(napi_env env, napi_callback_info info) {
+  ARGS(4);
+  int vid = (int)num_arg(env, argv[0]);
+  auto it = g_views.find(vid);
+  if (it == g_views.end()) { napi_throw_error(env, nullptr, "no such view"); return nullptr; }
+  VBHost* h = it->second.host;
+  h.dialogAccept = bool_arg(env, argv[1]);
+  napi_valuetype tt; napi_typeof(env, argv[2], &tt);
+  h.dialogText = tt == napi_string ? ns(str_arg(env, argv[2])) : nil;
+  h.dialogOnce = bool_arg(env, argv[3]);
+  return undef(env);
+}
+
+// setScripts(id, pageScript, isolatedScript): replaces the injected scripts (next navigation).
+static napi_value SetScripts(napi_env env, napi_callback_info info) {
+  ARGS(3);
+  VIEW_OR_THROW(0);
+  WKUserContentController* u = web.configuration.userContentController;
+  [u removeAllUserScripts];
+  [u addUserScript:[[WKUserScript alloc] initWithSource:ns(str_arg(env, argv[1])) injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO inContentWorld:WKContentWorld.pageWorld]];
+  [u addUserScript:[[WKUserScript alloc] initWithSource:ns(str_arg(env, argv[2])) injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO inContentWorld:[WKContentWorld worldWithName:@"vibrato"]]];
+  return undef(env);
+}
+
+// ---------- agent overlay: cursors, click ripples, highlights, ref boxes ----------
+// A transparent, click-through layer above the page. It is a sibling of the web views, so WKWebView snapshots
+// (what agents see) never contain it.
+
+static NSColor* colorFrom(NSString* hex, NSColor* fallback) {
+  if (![hex isKindOfClass:NSString.class] || hex.length < 7 || ![hex hasPrefix:@"#"]) return fallback;
+  unsigned v = 0; [[NSScanner scannerWithString:[hex substringFromIndex:1]] scanHexInt:&v];
+  return [NSColor colorWithSRGBRed:((v >> 16) & 255) / 255.0 green:((v >> 8) & 255) / 255.0 blue:(v & 255) / 255.0 alpha:1];
+}
+
+@interface VBCursor : NSObject
+@property(nonatomic, strong) CALayer* root;
+@property(nonatomic, strong) CAShapeLayer* arrow;
+@property(nonatomic, strong) CALayer* pill;
+@property(nonatomic, strong) CATextLayer* text;
+@property(nonatomic) NSUInteger generation;
+@end
+@implementation VBCursor
+@end
+
+@interface VBOverlay : NSView
+@property(nonatomic, strong) NSMutableDictionary<NSString*, VBCursor*>* cursors;
+@property(nonatomic, strong) CALayer* boxes;
+@end
+
+@implementation VBOverlay
+- (instancetype)initWithFrame:(NSRect)r {
+  if ((self = [super initWithFrame:r])) {
+    self.wantsLayer = YES;
+    self.layer.masksToBounds = YES;
+    self.cursors = [NSMutableDictionary dictionary];
+    self.boxes = [CALayer layer];
+    [self.layer addSublayer:self.boxes];
+  }
+  return self;
+}
+- (BOOL)isFlipped { return YES; }
+- (NSView*)hitTest:(NSPoint)p { return nil; } // never takes clicks
+- (CGFloat)scale { return self.window.backingScaleFactor ?: 2; }
+
+- (VBCursor*)cursorFor:(NSString*)key color:(NSColor*)color label:(NSString*)label {
+  VBCursor* c = self.cursors[key];
+  if (!c) {
+    c = [VBCursor new];
+    c.root = [CALayer layer];
+    c.root.bounds = CGRectMake(0, 0, 1, 1);
+    c.root.anchorPoint = CGPointZero;
+    c.root.zPosition = 10;
+    c.arrow = [CAShapeLayer layer];
+    CGMutablePathRef path = CGPathCreateMutable();
+    // Classic pointer, tip at (0,0), drawn in a flipped (top-left) space.
+    CGPathMoveToPoint(path, NULL, 0, 0);
+    CGPathAddLineToPoint(path, NULL, 0, 17);
+    CGPathAddLineToPoint(path, NULL, 4.4, 13.2);
+    CGPathAddLineToPoint(path, NULL, 7.4, 19.6);
+    CGPathAddLineToPoint(path, NULL, 10.2, 18.4);
+    CGPathAddLineToPoint(path, NULL, 7.3, 12.2);
+    CGPathAddLineToPoint(path, NULL, 12.6, 12.2);
+    CGPathCloseSubpath(path);
+    c.arrow.path = path; CGPathRelease(path);
+    c.arrow.lineWidth = 1.6;
+    c.arrow.strokeColor = NSColor.whiteColor.CGColor;
+    c.arrow.lineJoin = kCALineJoinRound;
+    c.arrow.shadowColor = NSColor.blackColor.CGColor;
+    c.arrow.shadowOpacity = 0.35; c.arrow.shadowRadius = 2.5; c.arrow.shadowOffset = CGSizeMake(0, 1.5);
+    c.pill = [CALayer layer];
+    c.pill.cornerRadius = 9;
+    c.pill.shadowColor = NSColor.blackColor.CGColor;
+    c.pill.shadowOpacity = 0.3; c.pill.shadowRadius = 4; c.pill.shadowOffset = CGSizeMake(0, 2);
+    c.text = [CATextLayer layer];
+    c.text.fontSize = 11;
+    c.text.font = (__bridge CFTypeRef)[NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+    c.text.foregroundColor = NSColor.whiteColor.CGColor;
+    c.text.contentsScale = self.scale;
+    [c.pill addSublayer:c.text];
+    [c.root addSublayer:c.pill];
+    [c.root addSublayer:c.arrow];
+    c.root.opacity = 0;
+    [self.layer addSublayer:c.root];
+    self.cursors[key] = c;
+  }
+  [CATransaction begin]; [CATransaction setDisableActions:YES];
+  c.arrow.fillColor = color.CGColor;
+  c.pill.backgroundColor = color.CGColor;
+  if (![c.text.string isEqual:label]) {
+    c.text.string = label ?: @"";
+    NSSize sz = [label ?: @"" sizeWithAttributes:@{ NSFontAttributeName: [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold] }];
+    CGFloat w = MIN(220, ceil(sz.width) + 16);
+    c.pill.frame = CGRectMake(14, 19, w, 18);
+    c.text.frame = CGRectMake(8, 2, w - 16, 14);
+    c.text.truncationMode = kCATruncationEnd;
+    c.pill.hidden = label.length == 0;
+  }
+  [CATransaction commit];
+  return c;
+}
+
+- (void)restLater:(VBCursor*)c {
+  NSUInteger gen = ++c.generation;
+  __weak VBCursor* weak = c;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    VBCursor* cur = weak;
+    if (!cur || cur.generation != gen) return;
+    [CATransaction begin]; [CATransaction setAnimationDuration:0.16];
+    cur.root.opacity = 0;
+    [CATransaction commit];
+  });
+}
+@end
+
+static void raiseOverlay() {
+  if (g_overlay && g_overlay.superview) [g_overlay.superview addSubview:g_overlay positioned:NSWindowAbove relativeTo:nil];
+}
+
+static NSDictionary* json_arg(napi_env env, napi_value v) {
+  NSData* raw = [ns(str_arg(env, v)) dataUsingEncoding:NSUTF8StringEncoding];
+  id o = raw ? [NSJSONSerialization JSONObjectWithData:raw options:0 error:nil] : nil;
+  return [o isKindOfClass:NSDictionary.class] ? o : @{};
+}
+
+// overlayAttach(parentHandle): one overlay, in the browser window.
+static napi_value OverlayAttach(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  void* data; size_t len;
+  CHECK(napi_get_buffer_info(env, argv[0], &data, &len));
+  NSView* parent = (__bridge NSView*)(*reinterpret_cast<void**>(data));
+  if (!g_overlay) g_overlay = [[VBOverlay alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+  if (g_overlay.superview != parent) { [g_overlay removeFromSuperview]; [parent addSubview:g_overlay positioned:NSWindowAbove relativeTo:nil]; }
+  g_overlay.hidden = YES;
+  return undef(env);
+}
+
+// overlayFrame(x, y, w, h, visible): the page area, top-left based like setFrame.
+static napi_value OverlayFrame(napi_env env, napi_callback_info info) {
+  ARGS(5);
+  if (!g_overlay || !g_overlay.superview) return undef(env);
+  double x = num_arg(env, argv[0]), y = num_arg(env, argv[1]), w = num_arg(env, argv[2]), h = num_arg(env, argv[3]);
+  NSView* parent = g_overlay.superview;
+  double top = parent.isFlipped ? y : parent.bounds.size.height - y - h;
+  g_overlay.autoresizingMask = parent.isFlipped ? NSViewNotSizable : NSViewMinYMargin;
+  g_overlay.frame = NSMakeRect(x, top, w, h);
+  g_overlay.hidden = !bool_arg(env, argv[4]);
+  raiseOverlay();
+  return undef(env);
+}
+
+// cursorMove(json { key, color, label, points: [[x,y]...], ms }) -> Promise once the cursor arrives.
+static napi_value CursorMove(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  NSDictionary* j = json_arg(env, argv[0]);
+  napi_deferred d; napi_value promise;
+  CHECK(napi_create_promise(env, &d, &promise));
+  NSArray* pts = j[@"points"];
+  if (!g_overlay || ![pts isKindOfClass:NSArray.class] || !pts.count) { finish(new Completion{ d, true, "false", nil }); return promise; }
+  VBCursor* c = [g_overlay cursorFor:j[@"key"] ?: @"agent" color:colorFrom(j[@"color"], [NSColor systemBlueColor]) label:j[@"label"]];
+  NSMutableArray* values = [NSMutableArray arrayWithCapacity:pts.count];
+  for (NSArray* p in pts) [values addObject:[NSValue valueWithPoint:NSMakePoint([p[0] doubleValue], [p[1] doubleValue])]];
+  NSPoint last = [values.lastObject pointValue];
+  double ms = MAX(0, [j[@"ms"] doubleValue]);
+  BOOL wasHidden = c.root.opacity < 0.5;
+  [CATransaction begin];
+  [CATransaction setCompletionBlock:^{ finish(new Completion{ d, true, "true", nil }); }];
+  if (wasHidden) {
+    // Appear where the path starts, with a small pop.
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    c.root.position = [values.firstObject pointValue];
+    [CATransaction commit];
+    CABasicAnimation* pop = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    pop.fromValue = @0.6; pop.toValue = @1; pop.duration = 0.18;
+    pop.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    [c.root addAnimation:pop forKey:@"pop"];
+  }
+  c.root.opacity = 1;
+  if (ms > 0 && values.count > 1) {
+    CAKeyframeAnimation* a = [CAKeyframeAnimation animationWithKeyPath:@"position"];
+    a.values = values;
+    a.duration = ms / 1000.0;
+    a.calculationMode = kCAAnimationLinear;
+    a.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.3 :0.05 :0.25 :1];
+    [c.root addAnimation:a forKey:@"move"];
+  }
+  [CATransaction begin]; [CATransaction setDisableActions:YES];
+  c.root.position = last;
+  [CATransaction commit];
+  [CATransaction commit];
+  [g_overlay restLater:c];
+  return promise;
+}
+
+// cursorEffect(json { key, color, kind: "ripple" | "hide", x, y })
+static napi_value CursorEffect(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  NSDictionary* j = json_arg(env, argv[0]);
+  if (!g_overlay) return undef(env);
+  NSString* kind = j[@"kind"];
+  if ([kind isEqual:@"hide"]) {
+    VBCursor* c = g_overlay.cursors[j[@"key"] ?: @""];
+    if (c) { [c.root removeFromSuperlayer]; [g_overlay.cursors removeObjectForKey:j[@"key"]]; }
+    return undef(env);
+  }
+  NSColor* color = colorFrom(j[@"color"], [NSColor systemBlueColor]);
+  CGFloat x = [j[@"x"] doubleValue], y = [j[@"y"] doubleValue];
+  CAShapeLayer* ring = [CAShapeLayer layer];
+  CGPathRef circle = CGPathCreateWithEllipseInRect(CGRectMake(-14, -14, 28, 28), NULL);
+  ring.path = circle; CGPathRelease(circle);
+  ring.position = CGPointMake(x, y);
+  ring.fillColor = [color colorWithAlphaComponent:0.22].CGColor;
+  ring.strokeColor = color.CGColor;
+  ring.lineWidth = 2;
+  ring.opacity = 0;
+  [g_overlay.layer addSublayer:ring];
+  CABasicAnimation* scale = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+  scale.fromValue = @0.3; scale.toValue = @1.6;
+  CABasicAnimation* fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+  fade.fromValue = @0.9; fade.toValue = @0;
+  CAAnimationGroup* g = [CAAnimationGroup animation];
+  g.animations = @[ scale, fade ]; g.duration = 0.45;
+  g.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+  [CATransaction begin];
+  [CATransaction setCompletionBlock:^{ [ring removeFromSuperlayer]; }];
+  [ring addAnimation:g forKey:@"ripple"];
+  [CATransaction commit];
+  return undef(env);
+}
+
+// highlight(json { x, y, w, h, color, ms }): a rounded outline around an element that fades away.
+static napi_value Highlight(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  NSDictionary* j = json_arg(env, argv[0]);
+  if (!g_overlay) return undef(env);
+  NSColor* color = colorFrom(j[@"color"], [NSColor systemBlueColor]);
+  CALayer* box = [CALayer layer];
+  box.frame = CGRectMake([j[@"x"] doubleValue] - 3, [j[@"y"] doubleValue] - 3, [j[@"w"] doubleValue] + 6, [j[@"h"] doubleValue] + 6);
+  box.cornerRadius = 6;
+  box.borderWidth = 2;
+  box.borderColor = color.CGColor;
+  box.backgroundColor = [color colorWithAlphaComponent:0.10].CGColor;
+  [g_overlay.layer insertSublayer:box below:g_overlay.boxes];
+  double hold = MAX(100, [j[@"ms"] doubleValue] ?: 900) / 1000.0;
+  CABasicAnimation* fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+  fade.fromValue = @1; fade.toValue = @0; fade.beginTime = CACurrentMediaTime() + hold; fade.duration = 0.25;
+  fade.fillMode = kCAFillModeForwards; fade.removedOnCompletion = NO;
+  [box addAnimation:fade forKey:@"fade"];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((hold + 0.3) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [box removeFromSuperlayer]; });
+  return undef(env);
+}
+
+// boxes(json { color, items: [{ x, y, w, h, label }] }): labelled element boxes (ref overlay, element picker). [] clears.
+static napi_value Boxes(napi_env env, napi_callback_info info) {
+  ARGS(1);
+  NSDictionary* j = json_arg(env, argv[0]);
+  if (!g_overlay) return undef(env);
+  [CATransaction begin]; [CATransaction setDisableActions:YES];
+  for (CALayer* l in [g_overlay.boxes.sublayers copy]) [l removeFromSuperlayer];
+  NSArray* items = j[@"items"];
+  NSColor* color = colorFrom(j[@"color"], [NSColor systemOrangeColor]);
+  CGFloat scale = g_overlay.scale;
+  if ([items isKindOfClass:NSArray.class]) for (NSDictionary* it in items) {
+    CALayer* b = [CALayer layer];
+    b.frame = CGRectMake([it[@"x"] doubleValue], [it[@"y"] doubleValue], [it[@"w"] doubleValue], [it[@"h"] doubleValue]);
+    b.borderWidth = 1.5; b.borderColor = [color colorWithAlphaComponent:0.9].CGColor;
+    b.backgroundColor = [color colorWithAlphaComponent:0.07].CGColor;
+    b.cornerRadius = 3;
+    [g_overlay.boxes addSublayer:b];
+    NSString* label = it[@"label"];
+    if ([label isKindOfClass:NSString.class] && label.length) {
+      NSFont* f = [NSFont monospacedSystemFontOfSize:9.5 weight:NSFontWeightSemibold];
+      CGFloat w = ceil([label sizeWithAttributes:@{ NSFontAttributeName: f }].width) + 8;
+      CALayer* tag = [CALayer layer];
+      tag.frame = CGRectMake(b.frame.origin.x, MAX(0, b.frame.origin.y - 14), w, 14);
+      tag.backgroundColor = color.CGColor; tag.cornerRadius = 3;
+      CATextLayer* t = [CATextLayer layer];
+      t.string = label; t.font = (__bridge CFTypeRef)f; t.fontSize = 9.5; t.contentsScale = scale;
+      t.foregroundColor = NSColor.whiteColor.CGColor; t.frame = CGRectMake(4, 1, w - 8, 12);
+      [tag addSublayer:t];
+      [g_overlay.boxes addSublayer:tag];
+    }
+  }
+  [CATransaction commit];
+  return undef(env);
+}
+
 static napi_value Init(napi_env env, napi_value exports) {
   napi_value name; napi_create_string_utf8(env, "vibrato-webview-done", NAPI_AUTO_LENGTH, &name);
   if (napi_create_threadsafe_function(env, nullptr, nullptr, name, 0, 1, nullptr, nullptr, nullptr, call_done, &g_done) == napi_ok)
@@ -499,6 +919,17 @@ static napi_value Init(napi_env env, napi_value exports) {
     { "cookies", nullptr, Cookies, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "setCookie", nullptr, SetCookie, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "deleteCookies", nullptr, DeleteCookies, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "mouse", nullptr, Mouse, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "setUserAgent", nullptr, SetUserAgent, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "setUploadFiles", nullptr, SetUploadFiles, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "setDialogPolicy", nullptr, SetDialogPolicy, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "setScripts", nullptr, SetScripts, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "overlayAttach", nullptr, OverlayAttach, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "overlayFrame", nullptr, OverlayFrame, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cursorMove", nullptr, CursorMove, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "cursorEffect", nullptr, CursorEffect, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "highlight", nullptr, Highlight, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "boxes", nullptr, Boxes, nullptr, nullptr, nullptr, napi_default, nullptr },
   };
   napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props);
   return exports;

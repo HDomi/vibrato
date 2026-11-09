@@ -6,7 +6,7 @@ import { ClaudeSession } from './agents/claude.js';
 import { CodexSession } from './agents/codex.js';
 import { which } from './shell.js';
 import { loadConfig, PORT } from './config.js';
-import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME } from './browserMcp.js';
+import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME, registerBrowserSession } from './browserMcp.js';
 import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agentExtensions.js';
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
@@ -96,15 +96,17 @@ export class SessionRegistry {
     const instructions = sessionInstructions(cfg);
     const off = sanitizeExtensions(cfg?.extensionsOff);
     const browserTools = cfg?.browserTools !== false;
+    // Each session's browser cursor and tabs carry its own colour and label ("Claude · project").
+    const browserToken = browserTools ? registerBrowserSession(`${cmd.agent === 'claude' ? 'Claude' : 'Codex'} · ${path.basename(cmd.cwd) || cmd.cwd}`) : undefined;
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
       session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, planGuard: cfg?.alwaysPlan !== false, settings: claudeFlagSettings(off.claude),
-        ...(browserTools ? { mcpServers: { [MCP_SERVER_NAME]: { type: 'http' as const, url: browserMcpUrl(PORT) } } } : {}) });
+        ...(browserTools ? { mcpServers: { [MCP_SERVER_NAME]: { type: 'http' as const, url: browserMcpUrl(PORT, browserToken) } } } : {}) });
     } else if (cmd.agent === 'codex') {
       const codexPath = await which('codex');
       if (!codexPath) throw new Error('codex CLI not found. Install it from Settings.');
-      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: [...codexConfigArgs(off.codex), ...(browserTools ? codexBrowserArgs(PORT) : [])] });
+      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: [...codexConfigArgs(off.codex), ...(browserTools ? codexBrowserArgs(PORT, browserToken) : [])] });
     } else {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }
