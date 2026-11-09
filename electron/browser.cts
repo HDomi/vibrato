@@ -46,6 +46,8 @@ interface Native {
   cursorEffect(json: string): void;
   highlight(json: string): void;
   boxes(json: string): void;
+  setCorners(id: number, radius: number, mask: number): void;
+  overlayCorners(radius: number, mask: number): void;
 }
 
 export interface SessionInfo { key: string; label: string; color: string }
@@ -62,6 +64,8 @@ type McpContent = { type: 'text'; text: string } | { type: 'image'; data: string
 interface Ctx { session?: SessionInfo }
 interface NetBody { reqBody?: string; resBody?: string; reqHeaders?: Record<string, string>; resHeaders?: Record<string, string> }
 type Rect = { x: number; y: number; w: number; h: number };
+/** The page area from the renderer: its rect and the corner rounding of the card or phone screen around it. */
+type Frame = Rect & { r?: number; corners?: number };
 
 /** A failure the agent can act on: a code, whether retrying is safe, and what to do next. */
 class ToolError extends Error {
@@ -118,7 +122,7 @@ let windowReady: Promise<void> | null = null;
 const tabs = new Map<number, TabState>();
 let order: number[] = [];
 let active: number | null = null;
-let frame: Rect | null = null;
+let frame: Frame | null = null;
 let seq = 0;
 const consoleLog: ConsoleEntry[] = [];
 const netLog: NetEntry[] = [];
@@ -244,10 +248,10 @@ function placeActive() {
   const visible = !!frame && !!win && win.isVisible() && !win.isMinimized() && !deps.isLocked();
   for (const id of order) {
     const show = id === active && visible;
-    if (show && frame) native.setFrame(id, frame.x, frame.y, frame.w, frame.h);
+    if (show && frame) { native.setFrame(id, frame.x, frame.y, frame.w, frame.h); native.setCorners(id, frame.r ?? 0, frame.corners ?? 0); }
     native.setVisible(id, show);
   }
-  if (frame) native.overlayFrame(frame.x, frame.y, frame.w, frame.h, visible && active !== null);
+  if (frame) { native.overlayFrame(frame.x, frame.y, frame.w, frame.h, visible && active !== null); native.overlayCorners(frame.r ?? 0, frame.corners ?? 0); }
   else native.overlayFrame(0, 0, 1, 1, false);
 }
 
@@ -257,7 +261,13 @@ function activate(id: number) {
   active = id;
   placeActive();
   publishTabs();
-  if (changed) { if (picking) setPicking(false); void drawRefs(); }
+  if (changed) {
+    if (picking) setPicking(false);
+    // Cursors point into the page that was showing; they come back from where they enter in the new one.
+    for (const key of cursorAt.keys()) native?.cursorEffect(JSON.stringify({ key, kind: 'hide' }));
+    cursorAt.clear();
+    void drawRefs();
+  }
 }
 
 function closeTab(id: number) {
@@ -470,7 +480,8 @@ export function initBrowser(d: Deps) {
   ipcMain.on('browser:frame', (e, r: unknown) => {
     if (!fromBrowserWindow(e)) return;
     const ok = r && typeof r === 'object' && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite((r as Record<string, number>)[k]));
-    frame = ok ? { ...(r as Rect) } : null;
+    const f = r as Frame;
+    frame = ok ? { x: f.x, y: f.y, w: f.w, h: f.h, ...(Number.isFinite(f.r) ? { r: Math.max(0, Math.min(60, f.r!)) } : {}), ...(Number.isInteger(f.corners) ? { corners: f.corners! & 15 } : {}) } : null;
     if (frame && (frame.w < 1 || frame.h < 1)) frame = null;
     placeActive();
   });
@@ -548,7 +559,12 @@ async function waitUnpaused() {
 
 function setMocks(next: MockRule[]) {
   mocks = next;
-  for (const id of order) native?.setScripts(id, pageHooks(mocks), RELAY);
+  // Next loads get the rules from the injected script; pages already open get them swapped in right away.
+  for (const id of order) {
+    native?.setScripts(id, pageHooks(mocks), RELAY);
+    const tab = tabs.get(id);
+    if (tab) void evalIn(tab, `if (window.__vbMocks) window.__vbMocks(${JSON.stringify(mocks)}); return true;`, false).catch(() => {});
+  }
   publishFlags();
 }
 
@@ -893,7 +909,27 @@ const tools: Record<string, Tool> = {
       const b = toSel ? (await actionable(tab, toSel, 'hover', Number(args.timeout) || 5000)).point : { x: a.point.x + Number(args.dx ?? 0), y: a.point.y + Number(args.dy ?? 0) };
       await cursorTo(tab, ctx, a.point);
       const z = tab.zoom, steps = 14, s = sessionOf(ctx);
+      // WebKit starts HTML5 drag-and-drop only from a real OS drag session, so draggable sources get its DOM events.
+      const html5 = await evalIn(tab, `const el = __vb.find(${JSON.stringify(from)}); return !!(el.closest('[draggable="true"]') || (el.tagName === 'IMG' && el.draggable) || (el.tagName === 'A' && el.draggable));`) as boolean;
       const { report } = await observe(tab, undefined, async () => {
+        if (html5) {
+          const dropped = await evalIn(tab, `
+            const src = __vb.find(${JSON.stringify(from)}).closest('[draggable="true"]') || __vb.find(${JSON.stringify(from)});
+            const dst = ${toSel ? `__vb.find(${JSON.stringify(toSel)})` : `document.elementFromPoint(${b.x}, ${b.y})`} || document.body;
+            const dt = new DataTransfer();
+            const fire = (el, type, x, y) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: dt, clientX: x, clientY: y }));
+            fire(src, 'dragstart', ${a.point.x}, ${a.point.y});
+            fire(src, 'drag', ${a.point.x}, ${a.point.y});
+            fire(dst, 'dragenter', ${b.x}, ${b.y});
+            const accepted = !fire(dst, 'dragover', ${b.x}, ${b.y});
+            if (accepted) fire(dst, 'drop', ${b.x}, ${b.y}); else fire(dst, 'dragleave', ${b.x}, ${b.y});
+            fire(src, 'dragend', ${b.x}, ${b.y});
+            return accepted;`) as boolean;
+          if (tab.id === active) await native!.cursorMove(JSON.stringify({ key: s.key, color: s.color, label: s.label, points: handPath({ x: a.point.x * z, y: a.point.y * z }, { x: b.x * z, y: b.y * z }, 7).points, ms: 300 })).catch(() => {});
+          cursorAt.set(s.key, { x: b.x * z, y: b.y * z });
+          if (!dropped) throw new ToolError('NOT_ACCEPTED', 'the drop target did not accept the drop (no dragover handler called preventDefault)', 'unsafe', 'check the target; dragstart/dragend already ran');
+          return;
+        }
         native!.mouse(tab.id, 'move', a.point.x * z, a.point.y * z, 0);
         native!.mouse(tab.id, 'down', a.point.x * z, a.point.y * z, 1);
         for (let i = 1; i <= steps; i++) {
@@ -907,7 +943,7 @@ const tools: Record<string, Tool> = {
       });
       pwSteps.push(toSel ? `await ${await locatorOf(tab, from)}.dragTo(${await locatorOf(tab, toSel)});` : `// drag ${from} by (${args.dx ?? 0}, ${args.dy ?? 0})`);
       await traceShot(tab);
-      return text(`Dragged ${from} to ${toSel ?? `(${Math.round(b.x)}, ${Math.round(b.y)})`} (pointer events; HTML5 drag-and-drop may not react)\n${report}`);
+      return text(`Dragged ${from} to ${toSel ?? `(${Math.round(b.x)}, ${Math.round(b.y)})`} (${html5 ? 'HTML5 drag-and-drop events' : 'mouse drag'})\n${report}`);
     });
   },
   async browser_upload(args, ctx) {
@@ -1032,17 +1068,18 @@ const tools: Record<string, Tool> = {
   },
   async browser_mock(args, ctx) {
     const action = str(args.action, 'action') ?? 'add';
-    if (action === 'list') return text(mocks.length ? mocks.map((m) => `#${m.id} ${m.method ?? '*'} ${m.url} → ${m.status} ${m.contentType ?? 'application/json'} (${m.body.length} chars)`).join('\n') : 'No mocks.');
-    if (action === 'clear') { setMocks([]); return text('Removed every mock; reload the page for it to take effect.'); }
-    if (action === 'remove') { const id = Number(args.id); setMocks(mocks.filter((m) => m.id !== id)); return text(`Removed mock #${id}; reload the page for it to take effect.`); }
+    if (action === 'list') return text(mocks.length ? mocks.map((m) => `#${m.id} ${m.method ?? '*'} ${m.regex ? `/${m.url}/` : m.url} → ${m.status} ${m.contentType ?? 'application/json'} (${m.body.length} chars)`).join('\n') : 'No mocks.');
+    if (action === 'clear') { setMocks([]); return text('Removed every mock.'); }
+    if (action === 'remove') { const id = Number(args.id); setMocks(mocks.filter((m) => m.id !== id)); return text(`Removed mock #${id}.`); }
     const url = str(args.url, 'url', true)!;
-    const rule: MockRule = { id: ++mockSeq, url, status: Number(args.status) || 200, body: typeof args.body === 'string' ? args.body : JSON.stringify(args.body ?? {}),
+    if (args.regex) { try { new RegExp(url); } catch (e) { throw new ToolError('INVALID_ARGS', `bad regular expression: ${(e as Error).message}`, 'no'); } }
+    const rule: MockRule = { id: ++mockSeq, url, ...(args.regex ? { regex: true } : {}), status: Number(args.status) || 200, body: typeof args.body === 'string' ? args.body : JSON.stringify(args.body ?? {}),
       ...(typeof args.method === 'string' ? { method: args.method.toUpperCase() } : {}), ...(typeof args.contentType === 'string' ? { contentType: args.contentType } : {}),
       ...(args.headers && typeof args.headers === 'object' ? { headers: args.headers as Record<string, string> } : {}) };
     setMocks([...mocks, rule]);
-    if (args.reload !== false && order.length) { const tab = tabFor(args, ctx); native!.nav(tab.id, 'reload'); await sleep(300); if (tab.loading) await waitFor(tab.id, 'loaded', 15000); }
-    pwSteps.push(`await page.route(${JSON.stringify(url.startsWith('/') ? url : `**${url}**`)}, (route) => route.fulfill({ status: ${rule.status}, contentType: ${JSON.stringify(rule.contentType ?? 'application/json')}, body: ${JSON.stringify(rule.body)} }));`);
-    return text(`Mock #${rule.id}: ${rule.method ?? 'any method'} ${url} → ${rule.status}. fetch and XHR requests matching it get this response${args.reload !== false ? '; the page was reloaded' : ' after the next reload'}.`);
+    if (args.reload === true && order.length) { const tab = tabFor(args, ctx); native!.nav(tab.id, 'reload'); await sleep(300); if (tab.loading) await waitFor(tab.id, 'loaded', 15000); }
+    pwSteps.push(`await page.route(${rule.regex ? `new RegExp(${JSON.stringify(url)})` : JSON.stringify(`**${url}**`)}, (route) => route.fulfill({ status: ${rule.status}, contentType: ${JSON.stringify(rule.contentType ?? 'application/json')}, body: ${JSON.stringify(rule.body)} }));`);
+    return text(`Mock #${rule.id}: ${rule.method ?? 'any method'} ${url} → ${rule.status}. From now on fetch and XHR requests matching it get this response${args.reload === true ? ' (the page was reloaded)' : ''}; images, scripts and styles are not mocked.`);
   },
   async browser_storage(args, ctx) {
     const action = (str(args.action, 'action') ?? 'get') as StorageOp['action'];

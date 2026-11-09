@@ -616,6 +616,31 @@ static napi_value SetScripts(napi_env env, napi_callback_info info) {
   return undef(env);
 }
 
+// ---------- rounded corners: the page sits inside a rounded glass card (or a phone screen) ----------
+
+// Corner mask in top-left terms: 1 top-left, 2 top-right, 4 bottom-left, 8 bottom-right.
+static void roundView(NSView* v, double radius, int mask) {
+  v.wantsLayer = YES;
+  CALayer* l = v.layer;
+  l.cornerRadius = radius;
+  l.masksToBounds = radius > 0;
+  BOOL flipped = l.geometryFlipped || v.isFlipped;
+  CACornerMask m = 0;
+  if (mask & 1) m |= flipped ? kCALayerMinXMinYCorner : kCALayerMinXMaxYCorner;
+  if (mask & 2) m |= flipped ? kCALayerMaxXMinYCorner : kCALayerMaxXMaxYCorner;
+  if (mask & 4) m |= flipped ? kCALayerMinXMaxYCorner : kCALayerMinXMinYCorner;
+  if (mask & 8) m |= flipped ? kCALayerMaxXMaxYCorner : kCALayerMaxXMinYCorner;
+  l.maskedCorners = m;
+}
+
+// setCorners(id, radius, mask)
+static napi_value SetCorners(napi_env env, napi_callback_info info) {
+  ARGS(3);
+  VIEW_OR_THROW(0);
+  roundView(web, num_arg(env, argv[1]), (int)num_arg(env, argv[2]));
+  return undef(env);
+}
+
 // ---------- agent overlay: cursors, click ripples, highlights, ref boxes ----------
 // A transparent, click-through layer above the page. It is a sibling of the web views, so WKWebView snapshots
 // (what agents see) never contain it.
@@ -759,6 +784,13 @@ static napi_value OverlayFrame(napi_env env, napi_callback_info info) {
   g_overlay.frame = NSMakeRect(x, top, w, h);
   g_overlay.hidden = !bool_arg(env, argv[4]);
   raiseOverlay();
+  return undef(env);
+}
+
+// overlayCorners(radius, mask): same rounding as the page under it.
+static napi_value OverlayCorners(napi_env env, napi_callback_info info) {
+  ARGS(2);
+  if (g_overlay) roundView(g_overlay, num_arg(env, argv[0]), (int)num_arg(env, argv[1]));
   return undef(env);
 }
 
@@ -930,6 +962,8 @@ static napi_value Init(napi_env env, napi_value exports) {
     { "cursorEffect", nullptr, CursorEffect, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "highlight", nullptr, Highlight, nullptr, nullptr, nullptr, napi_default, nullptr },
     { "boxes", nullptr, Boxes, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "setCorners", nullptr, SetCorners, nullptr, nullptr, nullptr, napi_default, nullptr },
+    { "overlayCorners", nullptr, OverlayCorners, nullptr, nullptr, nullptr, napi_default, nullptr },
   };
   napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props);
   return exports;

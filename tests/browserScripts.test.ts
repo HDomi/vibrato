@@ -13,7 +13,7 @@ test('cookie domains match their host and subdomains only', () => {
 });
 
 test('injected scripts are valid JavaScript', () => {
-  for (const src of [pageHooks(), pageHooks([{ id: 1, url: '/api\\/users/i', status: 500, body: '{"error":"x"}' }]), RELAY]) assert.doesNotThrow(() => new vm.Script(src));
+  for (const src of [pageHooks(), pageHooks([{ id: 1, url: '/api/users', status: 500, body: '{"error":"x"}' }, { id: 2, url: 'users/\\d+$', regex: true, status: 404, body: '' }]), RELAY]) assert.doesNotThrow(() => new vm.Script(src));
   // Agent helpers run inside an async function body (callAsyncJavaScript).
   assert.doesNotThrow(() => new vm.Script(`(async () => { ${AGENT_HELPERS}\nreturn 1; })`));
 });

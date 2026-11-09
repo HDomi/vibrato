@@ -16,7 +16,7 @@ export interface AppPermissionInfo {
 export interface BrowserSessionInfo { key: string; label: string; color: string }
 export interface BrowserDevice { width: number; height: number; preset?: string; mobile: boolean }
 export interface BrowserDevicePreset { id: string; label: string; width: number; height: number; tablet?: boolean }
-export interface BrowserMock { id: number; url: string; method?: string; status: number; body: string; contentType?: string }
+export interface BrowserMock { id: number; url: string; regex?: boolean; method?: string; status: number; body: string; contentType?: string }
 export interface BrowserFlags { paused: boolean; picking: boolean; refs: boolean; mocks: BrowserMock[] }
 export interface BrowserNetBody { reqBody?: string; resBody?: string; reqHeaders?: Record<string, string>; resHeaders?: Record<string, string> }
 export interface BrowserTab { id: number; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; progress: number; opener?: number; owner?: BrowserSessionInfo; zoom: number; device?: BrowserDevice | null }
@@ -29,7 +29,7 @@ export interface BrowserStorageResult { origin: string; items?: [string, string]
 export interface BrowserBridge {
   info: () => Promise<{ available: boolean; error: string; tabs: BrowserTab[]; active: number | null; console: BrowserConsoleEntry[]; net: BrowserNetEntry[]; agent: BrowserAgentEntry[]; flags: BrowserFlags; devices: BrowserDevicePreset[] } | null>;
   /** Where the page goes, in window coordinates; null hides it. */
-  frame: (rect: { x: number; y: number; w: number; h: number } | null) => void;
+  frame: (rect: { x: number; y: number; w: number; h: number; r?: number; corners?: number } | null) => void;
   open: (url: string) => Promise<number>;
   activate: (id: number) => void;
   close: (id: number) => void;

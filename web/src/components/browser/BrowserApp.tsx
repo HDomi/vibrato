@@ -82,7 +82,10 @@ export default function BrowserApp() {
     const el = hole.current;
     if (!bridge || !el || !tab) { bridge?.frame(null); return; }
     const r = el.getBoundingClientRect();
-    bridge.frame({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+    // Round the native page like the box it sits in: the card's bottom corners, or the whole phone screen.
+    const radius = parseFloat(getComputedStyle(el).borderBottomLeftRadius) || 0;
+    const corners = el.dataset.corners === 'all' ? 15 : 12;
+    bridge.frame({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), r: radius, corners });
   }, [bridge, tab]);
   useLayoutEffect(() => {
     report();
@@ -174,7 +177,7 @@ export default function BrowserApp() {
           <div ref={area} className="flex-1 min-h-0 relative">
             {device && tab
               ? <DeviceFrame device={device} areaRef={area} holeRef={hole} onResize={(w, h) => setDevice({ ...device, width: w, height: h, preset: undefined })} />
-              : <div ref={hole} className="absolute inset-0 bg-white/[.03]" />}
+              : <div ref={hole} data-corners="bottom" className="absolute inset-0 bg-white/[.03] rounded-b-[var(--radius-card)]" />}
             {available === false && <Empty title={t('browser.unavailable')} body={error} />}
             {available && !tab && <Empty title={t('browser.empty')} body={t('browser.emptyNote')} action={t('browser.newTab')} onAction={() => open()} />}
           </div>
@@ -335,7 +338,7 @@ function DeviceFrame({ device, areaRef, holeRef, onResize }: { device: BrowserDe
   return (
     <div className="absolute inset-0 flex items-center justify-center">
       <div className="relative rounded-[42px] bg-black/75 shadow-[0_20px_60px_rgb(0_0_0/.45)] ring-1 ring-white/15" style={{ padding: bezel }}>
-        <div ref={holeRef} className="rounded-[30px] bg-white/[.04] overflow-hidden" style={{ width: w, height: h }} />
+        <div ref={holeRef} data-corners="all" className="rounded-[30px] bg-white/[.04] overflow-hidden" style={{ width: w, height: h }} />
         <div onPointerDown={drag('x')} className="absolute top-1/2 -right-3 -translate-y-1/2 w-2 h-14 rounded-full bg-white/30 hover:bg-white/60 cursor-ew-resize" />
         <div onPointerDown={drag('y')} className="absolute left-1/2 -bottom-3 -translate-x-1/2 h-2 w-14 rounded-full bg-white/30 hover:bg-white/60 cursor-ns-resize" />
         <div onPointerDown={drag('xy')} className="absolute -right-3 -bottom-3 w-4 h-4 rounded-full bg-white/40 hover:bg-white/70 cursor-nwse-resize" />

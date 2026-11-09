@@ -11,8 +11,8 @@
  * WeakMap of that world and never touch the DOM.
  */
 
-/** A mocked response for fetch/XHR requests whose URL contains `url` (or matches it as /regex/flags). */
-export interface MockRule { id: number; url: string; method?: string; status: number; body: string; contentType?: string; headers?: Record<string, string> }
+/** A mocked response for fetch/XHR requests whose URL contains `url` (a regular expression when `regex` is set). */
+export interface MockRule { id: number; url: string; regex?: boolean; method?: string; status: number; body: string; contentType?: string; headers?: Record<string, string> }
 
 const BODY_MAX = 65536;
 
@@ -21,6 +21,8 @@ export function pageHooks(mocks: MockRule[] = []): string {
   if (/(^|\.)accounts\.google\.com$/.test(location.hostname) || window.__vbHooked) return;
   Object.defineProperty(window, '__vbHooked', { value: true });
   const MOCKS = ${JSON.stringify(mocks)};
+  // The app swaps the rules in place, so a new mock applies without a reload.
+  Object.defineProperty(window, '__vbMocks', { value: (m) => { MOCKS.length = 0; MOCKS.push(...m); } });
   const BODY_MAX = ${BODY_MAX};
   const send = (kind, data) => { try { document.dispatchEvent(new CustomEvent('__vb_hook', { detail: JSON.stringify({ kind, t: Date.now(), frame: window === top ? '' : location.href, ...data }) })); } catch {} };
   const fmt = (a) => {
@@ -39,7 +41,7 @@ export function pageHooks(mocks: MockRule[] = []): string {
   const textish = (type) => /json|text|xml|javascript|x-www-form-urlencoded|graphql/i.test(type || '');
   const bodyText = (b) => { if (b == null) return undefined; if (typeof b === 'string') return b.slice(0, BODY_MAX); if (b instanceof URLSearchParams) return String(b).slice(0, BODY_MAX); if (b instanceof FormData) { const o = []; for (const [k, v] of b) o.push(k + '=' + (typeof v === 'string' ? v : '[file ' + v.name + ']')); return o.join('&').slice(0, BODY_MAX); } return '[' + (b.constructor && b.constructor.name || 'binary') + ']'; };
   const headerObj = (h) => { const o = {}; try { h.forEach((v, k) => { o[k] = v; }); } catch {} return o; };
-  const matches = (m, url) => { if (m.url.startsWith('/') && m.url.lastIndexOf('/') > 0) { try { const i = m.url.lastIndexOf('/'); return new RegExp(m.url.slice(1, i), m.url.slice(i + 1)).test(url); } catch { return false; } } return url.includes(m.url); };
+  const matches = (m, url) => { if (m.regex) { try { return new RegExp(m.url).test(url); } catch { return false; } } return url.includes(m.url); };
   const findMock = (method, url) => MOCKS.find((m) => (!m.method || m.method.toUpperCase() === method) && matches(m, url));
   let seq = 0;
   const origFetch = window.fetch;
