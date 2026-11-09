@@ -136,7 +136,9 @@ const sessionTab = new Map<string, number>();
 const cursorAt = new Map<string, { x: number; y: number }>();
 const lastSnapshot = new Map<number, string[]>();
 const leases = new Map<number, Promise<unknown>>();
-let mocks: MockRule[] = [];
+/** A mock with its scope: the tabs it was set on (and their popups), or every tab. Only the rule goes into pages. */
+type MockEntry = MockRule & { tabs: number[]; all?: boolean; by?: string };
+let mocks: MockEntry[] = [];
 let mockSeq = 0;
 let paused = false;
 const pauseWaiters = new Set<() => void>();
@@ -148,6 +150,12 @@ function send(channel: string, payload: unknown) { if (win && !win.isDestroyed()
 const pushRing = <T,>(arr: T[], v: T) => { arr.push(v); if (arr.length > LOG_MAX) arr.splice(0, arr.length - LOG_MAX); };
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const flags = () => ({ paused, picking, refs: showRefs, mocks });
+const pageRule = ({ tabs: _t, all: _a, by: _b, ...rule }: MockEntry): MockRule => rule;
+/** The mocks that apply in a tab: rules set on it or on the tab that opened it, and the all-tabs ones. */
+function mocksFor(id: number): MockRule[] {
+  const opener = tabs.get(id)?.opener;
+  return mocks.filter((m) => m.all || m.tabs.includes(id) || (opener !== undefined && m.tabs.includes(opener))).map(pageRule);
+}
 function publishTabs() { send('browser:tabs', { tabs: order.map((id) => tabs.get(id)).filter(Boolean), active }); }
 function publishFlags() { send('browser:flags', flags()); }
 const cropRect = (r: Rect, z: number, scale: number, pad: number, size: { width: number; height: number }) => {
@@ -228,6 +236,7 @@ function onNativeEvent(json: string) {
       const parent = tabs.get(opener);
       tabs.set(id, newTabState(id, String(e.url ?? ''), opener, parent?.owner));
       order.splice(order.indexOf(opener) + 1, 0, id);
+      if (mocks.length) native?.setScripts(id, pageHooks(mocksFor(id)), RELAY);
       if (parent?.owner) sessionTab.set(parent.owner.key, id);
       activate(id);
       break;
@@ -275,6 +284,10 @@ function closeTab(id: number) {
   native?.destroy(id);
   tabs.delete(id);
   pendingReq.delete(id); lastSnapshot.delete(id); dialogsSeen.delete(id); downloadsSeen.delete(id);
+  if (mocks.some((m) => m.tabs.includes(id))) {
+    mocks = mocks.map((m) => ({ ...m, tabs: m.tabs.filter((t) => t !== id) })).filter((m) => m.all || m.tabs.length);
+    publishFlags();
+  }
   for (const [k, v] of sessionTab) if (v === id) sessionTab.delete(k);
   const i = order.indexOf(id);
   order = order.filter((x) => x !== id);
@@ -297,7 +310,7 @@ function ensureWindow(focus = true): Promise<void> {
     for (const id of order) native?.destroy(id);
     tabs.clear(); order = []; active = null; frame = null; sessionTab.clear(); lastSnapshot.clear();
     if (paused) { paused = false; for (const r of pauseWaiters) r(); pauseWaiters.clear(); }
-    picking = false; showRefs = false;
+    picking = false; showRefs = false; mocks = []; // mocks belong to the tabs they were set on
     if (refTimer) { clearInterval(refTimer); refTimer = null; }
     if (win === w) { win = null; windowReady = null; }
   });
@@ -320,7 +333,7 @@ function normalizeUrl(input: string): string {
 function openTab(url: string, owner?: SessionInfo): number {
   const nat = loadNative();
   if (!nat || !win) throw new ToolError('UNAVAILABLE', `In-app browser unavailable: ${nativeError || 'no window'}`, 'no');
-  const id = nat.create(win.getNativeWindowHandle(), { userAgent: SAFARI_UA, storeId: STORE_ID, pageScript: pageHooks(mocks), isolatedScript: RELAY });
+  const id = nat.create(win.getNativeWindowHandle(), { userAgent: SAFARI_UA, storeId: STORE_ID, pageScript: pageHooks(mocks.filter((m) => m.all).map(pageRule)), isolatedScript: RELAY });
   tabs.set(id, newTabState(id, url, undefined, owner));
   order.push(id);
   nat.load(id, normalizeUrl(url));
@@ -557,13 +570,14 @@ async function waitUnpaused() {
   if (!ok) throw new ToolError('PAUSED', 'the user paused agent control of the browser', 'safe', 'ask the user to resume, then retry');
 }
 
-function setMocks(next: MockRule[]) {
+function setMocks(next: MockEntry[]) {
   mocks = next;
   // Next loads get the rules from the injected script; pages already open get them swapped in right away.
   for (const id of order) {
-    native?.setScripts(id, pageHooks(mocks), RELAY);
+    const rules = mocksFor(id);
+    native?.setScripts(id, pageHooks(rules), RELAY);
     const tab = tabs.get(id);
-    if (tab) void evalIn(tab, `if (window.__vbMocks) window.__vbMocks(${JSON.stringify(mocks)}); return true;`, false).catch(() => {});
+    if (tab) void evalIn(tab, `if (window.__vbMocks) window.__vbMocks(${JSON.stringify(rules)}); return true;`, false).catch(() => {});
   }
   publishFlags();
 }
@@ -1068,18 +1082,20 @@ const tools: Record<string, Tool> = {
   },
   async browser_mock(args, ctx) {
     const action = str(args.action, 'action') ?? 'add';
-    if (action === 'list') return text(mocks.length ? mocks.map((m) => `#${m.id} ${m.method ?? '*'} ${m.regex ? `/${m.url}/` : m.url} → ${m.status} ${m.contentType ?? 'application/json'} (${m.body.length} chars)`).join('\n') : 'No mocks.');
+    if (action === 'list') return text(mocks.length ? mocks.map((m) => `#${m.id} ${m.method ?? '*'} ${m.regex ? `/${m.url}/` : m.url} → ${m.status} ${m.contentType ?? 'application/json'} (${m.body.length} chars) on ${m.all ? 'every tab' : `tab ${m.tabs.join(', ')}`}${m.by ? ` [${m.by}]` : ''}`).join('\n') : 'No mocks.');
     if (action === 'clear') { setMocks([]); return text('Removed every mock.'); }
     if (action === 'remove') { const id = Number(args.id); setMocks(mocks.filter((m) => m.id !== id)); return text(`Removed mock #${id}.`); }
     const url = str(args.url, 'url', true)!;
     if (args.regex) { try { new RegExp(url); } catch (e) { throw new ToolError('INVALID_ARGS', `bad regular expression: ${(e as Error).message}`, 'no'); } }
-    const rule: MockRule = { id: ++mockSeq, url, ...(args.regex ? { regex: true } : {}), status: Number(args.status) || 200, body: typeof args.body === 'string' ? args.body : JSON.stringify(args.body ?? {}),
+    // A mock applies to the tab it is set on (and its popups) unless allTabs: the user's other tabs stay untouched.
+    const scopeTab = args.allTabs ? undefined : tabFor(args, ctx, false);
+    const rule: MockEntry = { tabs: scopeTab ? [scopeTab.id] : [], ...(args.allTabs ? { all: true } : {}), by: sessionOf(ctx).label, id: ++mockSeq, url, ...(args.regex ? { regex: true } : {}), status: Number(args.status) || 200, body: typeof args.body === 'string' ? args.body : JSON.stringify(args.body ?? {}),
       ...(typeof args.method === 'string' ? { method: args.method.toUpperCase() } : {}), ...(typeof args.contentType === 'string' ? { contentType: args.contentType } : {}),
       ...(args.headers && typeof args.headers === 'object' ? { headers: args.headers as Record<string, string> } : {}) };
     setMocks([...mocks, rule]);
-    if (args.reload === true && order.length) { const tab = tabFor(args, ctx); native!.nav(tab.id, 'reload'); await sleep(300); if (tab.loading) await waitFor(tab.id, 'loaded', 15000); }
+    if (args.reload === true && scopeTab) { native!.nav(scopeTab.id, 'reload'); await sleep(300); if (scopeTab.loading) await waitFor(scopeTab.id, 'loaded', 15000); }
     pwSteps.push(`await page.route(${rule.regex ? `new RegExp(${JSON.stringify(url)})` : JSON.stringify(`**${url}**`)}, (route) => route.fulfill({ status: ${rule.status}, contentType: ${JSON.stringify(rule.contentType ?? 'application/json')}, body: ${JSON.stringify(rule.body)} }));`);
-    return text(`Mock #${rule.id}: ${rule.method ?? 'any method'} ${url} → ${rule.status}. From now on fetch and XHR requests matching it get this response${args.reload === true ? ' (the page was reloaded)' : ''}; images, scripts and styles are not mocked.`);
+    return text(`Mock #${rule.id}: ${rule.method ?? 'any method'} ${url} → ${rule.status} on ${rule.all ? 'every tab' : `tab ${scopeTab!.id} (and its popups)`}. From now on fetch and XHR requests matching it get this response${args.reload === true ? ' (the page was reloaded)' : ''}; images, scripts and styles are not mocked. Never block login or token endpoints, or sign-in loops back to the login page.`);
   },
   async browser_storage(args, ctx) {
     const action = (str(args.action, 'action') ?? 'get') as StorageOp['action'];

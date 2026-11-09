@@ -16,7 +16,7 @@ export interface AppPermissionInfo {
 export interface BrowserSessionInfo { key: string; label: string; color: string }
 export interface BrowserDevice { width: number; height: number; preset?: string; mobile: boolean }
 export interface BrowserDevicePreset { id: string; label: string; width: number; height: number; tablet?: boolean }
-export interface BrowserMock { id: number; url: string; regex?: boolean; method?: string; status: number; body: string; contentType?: string }
+export interface BrowserMock { id: number; url: string; regex?: boolean; method?: string; status: number; body: string; contentType?: string; tabs?: number[]; all?: boolean; by?: string }
 export interface BrowserFlags { paused: boolean; picking: boolean; refs: boolean; mocks: BrowserMock[] }
 export interface BrowserNetBody { reqBody?: string; resBody?: string; reqHeaders?: Record<string, string>; resHeaders?: Record<string, string> }
 export interface BrowserTab { id: number; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; progress: number; opener?: number; owner?: BrowserSessionInfo; zoom: number; device?: BrowserDevice | null }

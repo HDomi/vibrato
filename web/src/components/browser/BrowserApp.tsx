@@ -130,6 +130,8 @@ export default function BrowserApp() {
     document.body.style.cursor = vertical ? 'row-resize' : 'col-resize';
   };
 
+  // Mocks (an agent's write block, say) on the visible tab: shown by the address bar so a failing login has an obvious cause.
+  const tabMocks = tab ? flags.mocks.filter((m) => m.all || m.tabs?.includes(tab.id) || (tab.opener !== undefined && m.tabs?.includes(tab.opener))) : [];
   const errors = logs.filter((l) => l.level === 'error' && (!tab || l.tab === tab.id)).length;
   const failed = nets.filter((n) => (n.error || (n.status ?? 0) >= 400) && (!tab || n.tab === tab.id)).length;
   const vertical = dock === 'top' || dock === 'bottom';
@@ -167,6 +169,10 @@ export default function BrowserApp() {
                 onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); if (e.key === 'Escape') { setEditing(false); (e.target as HTMLInputElement).blur(); } }}
                 className={`w-full h-8 rounded-full ${tab?.owner ? 'pl-6' : 'pl-4'} pr-4 text-[12.5px] bg-black/25 border border-white/10 focus:border-white/30 outline-none`} />
             </div>
+            {tabMocks.length > 0 && (
+              <button onClick={() => { setPane('network'); if (dock === 'hidden') setDock('right'); }} title={tabMocks.map((m) => `${m.method ?? '*'} ${m.regex ? `/${m.url}/` : m.url} → ${m.status}${m.by ? ` (${m.by})` : ''}`).join('\n')}
+                className="h-7 px-2.5 rounded-full text-[11px] bg-amber-400/15 text-amber-200 hover:bg-amber-400/25 shrink-0">{t('browser.mocks', { n: tabMocks.length })}</button>
+            )}
             {tab && tab.zoom !== 1 && <button onClick={() => bridge?.zoom(1)} className="h-7 px-2 rounded-full text-[11px] text-zinc-300 hover:bg-fill">{Math.round(tab.zoom * 100)}%</button>}
             <NavBtn label={t('browser.zoomOut')} disabled={!tab} onClick={() => bridge?.zoom((tab?.zoom ?? 1) - 0.1)} text="−" />
             <NavBtn label={t('browser.zoomIn')} disabled={!tab} onClick={() => bridge?.zoom((tab?.zoom ?? 1) + 0.1)} text="+" />
@@ -407,7 +413,7 @@ function NetworkView({ rows, tab, bridge, flags }: { rows: BrowserNetEntry[]; ta
           <span className="text-amber-200">{t('browser.mocks', { n: flags.mocks.length })}</span>
           {flags.mocks.map((m) => (
             <span key={m.id} className="flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-amber-400/10 text-amber-100 font-mono max-w-full">
-              <span className="truncate">{m.method ?? '*'} {m.url} → {m.status}</span>
+              <span className="truncate">{m.method ?? '*'} {m.regex ? `/${m.url}/` : m.url} → {m.status}{m.by ? ` · ${m.by}` : ''}</span>
               <button onClick={() => void bridge.mockRemove(m.id)} aria-label={t('browser.storage.delete')} className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-white/10"><Icon name="close" size={9} /></button>
             </span>
           ))}
