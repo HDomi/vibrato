@@ -14,6 +14,23 @@ exports.default = async function afterPack(context) {
     const helper = path.join(prebuilds, dir, 'spawn-helper');
     if (fs.existsSync(helper)) fs.chmodSync(helper, 0o755);
   }
+  allowHttpInWebViews(path.join(app, 'Contents/Info.plist'));
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' });
   execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' });
 };
+
+/**
+ * The in-app browser (WKWebView) must open plain-http dev servers (http://localhost:3000, LAN IPs). electron-builder
+ * always adds NSAllowsLocalNetworking plus NSExceptionDomains for localhost and 127.0.0.1 written with the old
+ * NSTemporaryException* keys; current macOS reads those two entries as "secure connections only", so App Transport
+ * Security blocked exactly the dev servers (checked 2026-11-09: removing NSExceptionDomains alone makes them load).
+ * Leave arbitrary loads on, like the stock Electron.app. Electron's own network stack (Chromium) is not subject to ATS.
+ */
+function allowHttpInWebViews(plist) {
+  const buddy = (cmd) => { try { execFileSync('/usr/libexec/PlistBuddy', ['-c', cmd, plist], { stdio: 'pipe' }); return true; } catch { return false; } };
+  buddy('Delete :NSAppTransportSecurity:NSExceptionDomains');
+  buddy('Delete :NSAppTransportSecurity:NSAllowsLocalNetworking');
+  for (const key of ['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsInWebContent']) {
+    if (!buddy(`Set :NSAppTransportSecurity:${key} true`)) buddy(`Add :NSAppTransportSecurity:${key} bool true`);
+  }
+}
