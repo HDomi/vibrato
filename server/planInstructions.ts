@@ -18,13 +18,14 @@ Every request, questions and one-line changes included, goes: plan, then each st
 2. ONE ✓ LINE PER STEP. Work the steps in order. The moment a step is done, write one line in exactly this form before starting the next:
    ✓ <step number>. <how it was done or what was found, one short sentence>
    Every step gets its own line, reading and investigating steps included. Never skip a number, never merge several steps into one line; when several finish together, write one line for each. A step you could not do still gets its line: ✓ <n>. Not done: <why>.
-3. RESULT LAST. End the reply with "결과:" (or "Result:" in English) and the outcome: one line, or the full answer under it when the request asked for an explanation, a summary or a report.
+   The checklist moves only when a ✓ line appears. Write it as text right when the step ends, before the next step's first tool call; never save ✓ lines up for the end, or the user watches step 1 spin until everything is over.
+3. RESULT LAST. End the reply with "결과:" (or "Result:" in English) and the outcome. The result must stand on its own, since it is often all the user reads: gather what every step found, changed, verified or left undone, not just the last step. One line when there is one outcome; when several steps produced something the user needs, one short bullet each under the result line; the full answer under it when the request asked for an explanation, a summary or a report. Never point back at earlier text ("see above").
 4. CHANGES. If the user adds or changes something while you work, write the updated plan the same way, then carry on.
 
-Before you finish, check: the plan is at the top, every step number has its ✓ line, and the reply ends with the result.`;
+Before you finish, check: the plan is at the top, every step number has its ✓ line, and the reply ends with a result that covers every step's outcome.`;
 
 /** Repeated with every message (Claude: UserPromptSubmit hook), so the protocol does not fade in a long session. */
-export const PLAN_REMINDER = 'Vibrato plan protocol: start with "진행 계획" (or "Plan") and numbered steps, write "✓ <n>. <how>" for every step as it finishes (no skipped numbers), end with "결과:" (or "Result:").';
+export const PLAN_REMINDER = 'Vibrato plan protocol: start with "진행 계획" (or "Plan") and numbered steps, write "✓ <n>. <how>" for each step the moment it finishes (not saved up for the end, no skipped numbers), and finish with "결과:" (or "Result:") covering what every step found or changed.';
 
 /** The instructions a new session gets: the plan instruction (unless turned off), then the user's own prompt. */
 export function sessionInstructions(cfg: { alwaysPlan?: boolean; customPrompt?: string } | null): string | undefined {

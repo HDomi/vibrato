@@ -7,7 +7,8 @@ const PLAN_HEAD = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:진행\s*계획|계획|pl
 const PLAN_ITEM = /^\s*(\d{1,2})[.)]\s+(.+?)\s*$/;
 const DONE_MARK = /^\s*(?:[-*]\s+)?(?:✓|✔|✅|☑|\[x\])\s*(\d{1,2})\s*[.):]?\s*(.*)$/i;
 const DONE_AFTER = /^\s*(\d{1,2})[.)]\s*(?:✓|✔|✅)\s*(.*)$/;
-const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|result)\s*(?:\*\*|__)?\s*[:：]\s*(.*)$/i;
+// "결과: …", "**결과:** …", or a heading alone ("## 결과", "**Result**") with the outcome on the lines below.
+const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|results?)\s*(?:\*\*|__)?\s*(?:[:：]\s*(.*)|$)/i;
 const plainLine = (s: string) => s.replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
 
 /** The last plan in one message: the numbered list under a plan heading (one step is a plan too). */
@@ -97,19 +98,46 @@ export function doneMarks(texts: string[]): Map<number, string> {
   return out;
 }
 
-/** What follows the last "Result:" marker: its line, or with more lines under it, all of it (markdown). */
-export function resultOf(texts: string[]): { text: string; full: boolean } | null {
-  for (let i = texts.length - 1; i >= 0; i--) {
+/** The result after one marker line: its own text, and the lines under it up to the end of the message. */
+function resultAt(lines: string[], j: number, m: RegExpMatchArray): { text: string; full: boolean } | null {
+  const head = (m[1] ?? '').replace(/^(?:\*\*|__)\s*/, '').trim();
+  const body = lines.slice(j + 1).join('\n').trim();
+  // Anything under the marker is part of the outcome, even a single line: the result is shown as the reply's answer.
+  if (body) return { text: head ? `${head}\n\n${body}` : body, full: true };
+  const rest = plainLine(head);
+  return rest ? { text: rest, full: false } : null;
+}
+
+/** The last "Result:" marker of these messages, with the index of the message it is in. */
+function lastResult(texts: string[], before = texts.length): { text: string; full: boolean; at: number } | null {
+  for (let i = before - 1; i >= 0; i--) {
     const lines = texts[i].split('\n');
     for (let j = lines.length - 1; j >= 0; j--) {
       const m = lines[j].match(RESULT_LINE);
       if (!m) continue;
-      const head = m[1].replace(/^(?:\*\*|__)\s*/, '').trim();
-      const body = lines.slice(j + 1).join('\n').trim();
-      if (body && (!head || body.includes('\n'))) return { text: head ? `${head}\n\n${body}` : body, full: true };
-      const rest = plainLine(head) || plainLine(body);
-      if (rest) return { text: rest, full: false };
+      const r = resultAt(lines, j, m);
+      if (r) return { ...r, at: i };
     }
   }
   return null;
+}
+
+/**
+ * What follows the last "Result:" marker: its line, or with more lines under it, all of it (markdown). A one-line
+ * result written after a full one in the same turn (a reply sent back to add a missing ✓ line often restates it
+ * in a line) keeps the full one under it, so the outcome is not cut down to its headline.
+ */
+export function resultOf(texts: string[]): { text: string; full: boolean } | null {
+  const last = lastResult(texts);
+  if (!last || last.full) return last && { text: last.text, full: last.full };
+  for (let before = last.at; before > 0;) {
+    const earlier = lastResult(texts, before);
+    if (!earlier) break;
+    if (earlier.full) {
+      const same = plainLine(earlier.text.split('\n')[0]) === last.text;
+      return { text: same ? earlier.text : `${last.text}\n\n${earlier.text}`, full: true };
+    }
+    before = earlier.at;
+  }
+  return { text: last.text, full: false };
 }

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { query, type HookJSONOutput, type HookInput, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { saveToolImage } from '../attachments.js';
-import { planGap } from '../planGuard.js';
+import { PlanProgress, planGap } from '../planGuard.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
 import { MCP_SERVER_NAME } from '../browserMcp.js';
 import { tokenSum, turnCost } from './turnCost.js';
@@ -13,6 +13,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 import { mimeOf } from '../mime.js';
 
 const IMAGE_LIMIT = 5 * 1024 * 1024;
+/** Tools that are housekeeping, not work on a step: they do not count toward the plan progress reminder. */
+const SILENT_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
 
 interface Pending {
   kind: 'approval' | 'question';
@@ -87,6 +89,8 @@ export class ClaudeSession implements AgentSession {
   private lastTotalCost: number | null;
   /** The agent's own text in the current turn (top level only), for the plan check when it stops. */
   private turnTexts: string[] = [];
+  /** Tool calls since the last ✓ line, for the mid-turn reminder to close a finished step (planGuard.ts). */
+  private progress = new PlanProgress();
 
   constructor(private opts: ClaudeSessionOptions) {
     this.cwd = opts.cwd;
@@ -140,6 +144,7 @@ export class ClaudeSession implements AgentSession {
       ...(this.opts.planGuard ? {
         hooks: {
           UserPromptSubmit: [{ hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit' as const, additionalContext: PLAN_REMINDER } })] }],
+          PostToolUse: [{ hooks: [async (input: HookInput) => this.planProgress(input)] }],
           Stop: [{ hooks: [async (input: HookInput) => this.planStop(input)] }],
         },
       } : {}),
@@ -296,6 +301,16 @@ export class ClaudeSession implements AgentSession {
     return gap ? { decision: 'block', reason: gap } : {};
   }
 
+  /**
+   * PostToolUse hook: after a run of tool calls with no new ✓ line, remind the agent to close the step it is on,
+   * so the checklist moves as the work does. Subagent calls and checklist bookkeeping do not count.
+   */
+  private async planProgress(input: HookInput): Promise<HookJSONOutput> {
+    if (input.hook_event_name !== 'PostToolUse' || input.agent_id || SILENT_TOOLS.has(input.tool_name)) return {};
+    const nudge = this.progress.tool(this.turnTexts);
+    return nudge ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: nudge } } : {};
+  }
+
   private handleTask(m: Extract<SDKMessage, { type: 'system' }>) {
     const upsert = (t: TaskInfo) => { this.tasks.set(t.id, t); this.emit({ kind: 'task', task: t }); };
     const now = Date.now();
@@ -422,7 +437,7 @@ export class ClaudeSession implements AgentSession {
     await this.relaunching;
     if (this.closed) throw new Error('Session closed');
     // A message sent while the agent works joins the turn in progress.
-    if (!this.running) this.turnTexts = [];
+    if (!this.running) { this.turnTexts = []; this.progress.reset(); }
     this.running = true;
     this.emit({ kind: 'status', status: 'running' });
     this.input.push({ type: 'user', uuid: uuid as `${string}-${string}-${string}-${string}-${string}`, message: { role: 'user', content: content as never }, parent_tool_use_id: null });

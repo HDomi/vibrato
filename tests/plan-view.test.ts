@@ -273,3 +273,16 @@ test('a ✓ line takes the title of the plan above it, not of the next round pla
   const entries = stepEntries(['진행 계획\n1. #1 보고', '**#1 a**\n✓ 1. 됨\n\n진행 계획\n1. #2 보고', '**#2 b**\n✓ 1. 됨']);
   assert.deepEqual(entries.map((e) => [e.title, e.detail, e.text]), [['#1 보고', '#1 a', 1], ['#2 보고', '#2 b', 2]]);
 });
+
+test('the result keeps every line under its marker, a bare result heading counts, and a later one-liner keeps the full one', () => {
+  const answer = (texts: string[]) => { const t = buildPlan([user('u1', 'x'), ...texts.map((x, i) => say(`a${i}`, x))])[0]; return [t.answer, t.answerFull]; };
+  // A single line under "결과:" used to be dropped.
+  assert.deepEqual(answer(['진행 계획\n1. a\n2. b\n\n✓ 1. a\n✓ 2. b\n\n결과: 둘 다 고쳤어.\n- 검증은 Codex 만 실패']), ['둘 다 고쳤어.\n\n- 검증은 Codex 만 실패', true]);
+  // "## 결과" with no colon, the outcome below it.
+  assert.deepEqual(answer(['진행 계획\n1. a\n\n✓ 1. a\n\n## 결과\n- 설정 삭제\n- 검증 통과']), ['- 설정 삭제\n- 검증 통과', true]);
+  assert.deepEqual(answer(['진행 계획\n1. a\n\n✓ 1. a\n\n**Result**\nAll good.']), ['All good.', true]);
+  // Sent back for a missing ✓ line, the agent restates the result in a line: the full one stays under it.
+  assert.deepEqual(answer(['진행 계획\n1. a\n2. b\n\n✓ 2. b\n\n결과:\n- 설정 삭제\n- 검증 통과', '✓ 1. a\n\n결과: 끝났어.']), ['끝났어.\n\n- 설정 삭제\n- 검증 통과', true]);
+  // Plain prose mentioning the word is not a marker.
+  assert.deepEqual(answer(['진행 계획\n1. a\n\n✓ 1. a\n\n결과 보고는 아래에.\n결과: 됐어.']), ['됐어.', false]);
+});
