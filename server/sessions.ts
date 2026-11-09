@@ -96,17 +96,20 @@ export class SessionRegistry {
     const instructions = sessionInstructions(cfg);
     const off = sanitizeExtensions(cfg?.extensionsOff);
     const browserTools = cfg?.browserTools !== false;
+    // The plan checklist tool (browserMcp.ts PLAN_TOOLS) rides on the same MCP server, so it is attached for either.
+    const groups = { browser: browserTools, plan: cfg?.alwaysPlan !== false };
+    const mcp = groups.browser || groups.plan;
     // Each session's browser cursor and tabs carry its own colour and label ("Claude · project").
     const browserToken = browserTools ? registerBrowserSession(`${cmd.agent === 'claude' ? 'Claude' : 'Codex'} · ${path.basename(cmd.cwd) || cmd.cwd}`) : undefined;
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
       session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, planGuard: cfg?.alwaysPlan !== false, settings: claudeFlagSettings(off.claude),
-        ...(browserTools ? { mcpServers: { [MCP_SERVER_NAME]: { type: 'http' as const, url: browserMcpUrl(PORT, browserToken) } } } : {}) });
+        ...(mcp ? { mcpServers: { [MCP_SERVER_NAME]: { type: 'http' as const, url: browserMcpUrl(PORT, browserToken, groups) } } } : {}) });
     } else if (cmd.agent === 'codex') {
       const codexPath = await which('codex');
       if (!codexPath) throw new Error('codex CLI not found. Install it from Settings.');
-      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: [...codexConfigArgs(off.codex), ...(browserTools ? codexBrowserArgs(PORT, browserToken) : [])] });
+      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: [...codexConfigArgs(off.codex), ...(mcp ? codexBrowserArgs(PORT, browserToken, groups) : [])] });
     } else {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }

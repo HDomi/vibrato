@@ -17,7 +17,7 @@ export function planGap(texts: string[]): string | null {
   if (missing.length) parts.push(`step${missing.length > 1 ? 's' : ''} ${missing.join(', ')} ha${missing.length > 1 ? 've' : 's'} no "✓ <n>. <how>" line`);
   if (!result) parts.push('there is no "결과:" (or "Result:") line');
   const todo = [
-    missing.length ? `the missing ✓ line${missing.length > 1 ? 's' : ''} (one per step, "✓ <n>. Not done: <why>" for a step you did not do)` : '',
+    missing.length ? `the missing ✓ line${missing.length > 1 ? 's' : ''} in this reply (one per step, "✓ <n>. Not done: <why>" for a step you did not do; lines you wrote between tool calls did not reach the user)` : '',
     // The result shown to the user is only what follows the marker: a pointer back to earlier text shows nothing.
     !result ? 'then "결과:" (or "Result:") with the complete outcome, everything the user needs from every step, not a pointer to what you wrote above' : '',
   ].filter(Boolean).join(', ');
@@ -59,6 +59,6 @@ export class PlanProgress {
     const due = this.calls === NUDGE_FIRST || (this.calls > NUDGE_FIRST && (this.calls - NUDGE_FIRST) % NUDGE_EVERY === 0);
     if (!due) return null;
     this.nudges++;
-    return `Vibrato plan check: ${this.calls} tool calls since your last ✓ line, so the user's checklist still shows step ${current} ("${steps[current - 1]}") in progress. If step ${current} (or any later step) is already done, write its "✓ ${current}. <how>" line now, before the next tool call, one line per finished step. If it is still in progress, carry on.`;
+    return `Vibrato plan check: ${this.calls} tool calls since a step was last closed, so the user's checklist still shows step ${current} ("${steps[current - 1]}") in progress. If step ${current} (or any later step) is already done, close it now, before the next tool call: call plan_step if you have it, else write "✓ ${current}. <how>". Text written between tool calls may not have reached the user, so a ✓ line you believe you wrote may be missing. If the step is still in progress, carry on.`;
   }
 }

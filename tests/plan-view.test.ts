@@ -286,3 +286,13 @@ test('the result keeps every line under its marker, a bare result heading counts
   // Plain prose mentioning the word is not a marker.
   assert.deepEqual(answer(['진행 계획\n1. a\n\n✓ 1. a\n\n결과 보고는 아래에.\n결과: 됐어.']), ['됐어.', false]);
 });
+
+test('a plan_step call closes its step like a "✓ n." line, and "✓ 1~3." closes a run of steps', () => {
+  const plan = '진행 계획\n1. 파악\n2. 원인\n3. 고치기\n4. 검증';
+  const call = (id: string, step: number, note: string, name = 'mcp__vibrato__plan_step'): ChatItem => ({ kind: 'tool', id, toolUseId: id, name, input: { step, note }, done: true, at: 1 } as ChatItem);
+  const t = buildPlan([user('u1', 'x'), say('a1', plan), call('t1', 1, '봤어'), call('t2', 2, '찾았어', 'mcp:vibrato/plan_step')])[0];
+  assert.deepEqual(t.steps.map((s) => [s.status, s.note]), [['completed', '봤어'], ['completed', '찾았어'], ['pending', null], ['pending', null]]);
+  assert.equal(t.steps[0].items.some((it) => it.id === 't1'), true);
+  const r = buildPlan([user('u1', 'x'), say('a1', plan), say('a2', '✓ 1~3. 앞 단계 끝')])[0];
+  assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'pending']);
+});

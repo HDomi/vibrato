@@ -4,6 +4,7 @@ import path from 'node:path';
 import { query, type HookJSONOutput, type HookInput, type Options, type PermissionResult, type PermissionUpdate, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { saveToolImage } from '../attachments.js';
 import { PlanProgress, planGap } from '../planGuard.js';
+import { isPlanStepTool, planStepMark } from '../../web/src/lib/textPlan.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
 import { MCP_SERVER_NAME } from '../browserMcp.js';
 import { tokenSum, turnCost } from './turnCost.js';
@@ -14,7 +15,7 @@ import { mimeOf } from '../mime.js';
 
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 /** Tools that are housekeeping, not work on a step: they do not count toward the plan progress reminder. */
-const SILENT_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
+const SILENT_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'mcp__vibrato__plan_step']);
 
 interface Pending {
   kind: 'approval' | 'question';
@@ -137,8 +138,8 @@ export class ClaudeSession implements AgentSession {
       abortController: this.abort,
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'vibrato/0.1.0' },
       stderr: (data) => this.emit({ kind: 'log', text: data }),
-      // Vibrato's own browser tools only drive the in-app browser window the user is watching: no prompt for each step.
-      canUseTool: (toolName, input, { suggestions, signal }) => toolName.startsWith(`mcp__${MCP_SERVER_NAME}__browser_`)
+      // Vibrato's own tools (the in-app browser the user is watching, the plan checklist) need no prompt for each call.
+      canUseTool: (toolName, input, { suggestions, signal }) => toolName.startsWith(`mcp__${MCP_SERVER_NAME}__browser_`) || isPlanStepTool(toolName)
         ? Promise.resolve({ behavior: 'allow', updatedInput: input })
         : this.handlePermission(toolName, input, suggestions ?? [], signal),
       ...(this.opts.planGuard ? {
@@ -240,6 +241,9 @@ export class ClaudeSession implements AgentSession {
           else if (b.type === 'thinking') blocks.push({ type: 'thinking', text: String(b.thinking ?? '') });
           else if (b.type === 'tool_use') {
             blocks.push({ type: 'tool_use', id: String(b.id), name: String(b.name), input: b.input });
+            // A plan_step call is the "✓ n." line it stands for, for the plan checks.
+            const mark = !m.parent_tool_use_id && isPlanStepTool(String(b.name)) ? planStepMark(b.input) : null;
+            if (mark) this.turnTexts.push(mark);
             this.emit({ kind: 'tool.start', toolUseId: String(b.id), name: String(b.name), input: b.input, parent: m.parent_tool_use_id });
           }
         }

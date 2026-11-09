@@ -71,3 +71,17 @@ test('session tokens carry a label and a colour into the MCP URL', () => {
   const other = browserSession(registerBrowserSession('Codex · x'))!;
   assert.notEqual(other.color, s.color);
 });
+
+test('the plan checklist tool is offered when the session asks for it, and answers without the app', async () => {
+  const { toolGroupsOf, PLAN_TOOLS } = await import('../server/browserMcp.ts');
+  assert.deepEqual(toolGroupsOf({}), { browser: true, plan: false });
+  const groups = toolGroupsOf({ b: '0', p: '1' });
+  assert.deepEqual(groups, { browser: false, plan: true });
+  assert.equal(browserMcpUrl(1, 'tok', groups), 'http://127.0.0.1:1/mcp/browser?s=tok&b=0&p=1');
+  const list = await handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, undefined, undefined, groups);
+  assert.deepEqual((list!.result as { tools: { name: string }[] }).tools.map((x) => x.name), PLAN_TOOLS.map((x) => x.name));
+  const ok = await handleRpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'plan_step', arguments: { step: 2, note: 'x' } } }, async () => { throw new Error('no app'); }, undefined, groups);
+  assert.match(JSON.stringify(ok!.result), /Step 2 checked/);
+  const off = await handleRpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'browser_open', arguments: {} } }, undefined, undefined, groups);
+  assert.match(off!.error!.message, /Unknown tool/);
+});

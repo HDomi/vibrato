@@ -32,7 +32,7 @@ test('a run of tool calls with no new ✓ line is reminded to close the step it 
   for (let i = 0; i < NUDGE_FIRST; i++) nudges.push(p.tool(texts));
   assert.deepEqual(nudges.slice(0, -1), Array(NUDGE_FIRST - 1).fill(null));
   assert.match(nudges.at(-1)!, /step 1 \("파악"\)/);
-  assert.match(nudges.at(-1)!, /✓ 1\./);
+  assert.match(nudges.at(-1)!, /✓ 1\.|plan_step/);
   // A ✓ line starts the count over, and the reminder names the next step.
   texts.push('✓ 1. 봤어');
   for (let i = 0; i < NUDGE_FIRST - 1; i++) assert.equal(p.tool(texts), null);

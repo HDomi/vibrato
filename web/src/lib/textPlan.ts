@@ -5,11 +5,24 @@
  */
 const PLAN_HEAD = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:진행\s*계획|계획|plan)\s*(?:\*\*|__)?\s*[:：]?\s*(?:\*\*)?\s*$/i;
 const PLAN_ITEM = /^\s*(\d{1,2})[.)]\s+(.+?)\s*$/;
-const DONE_MARK = /^\s*(?:[-*]\s+)?(?:✓|✔|✅|☑|\[x\])\s*(\d{1,2})\s*[.):]?\s*(.*)$/i;
+// "✓ 2. how", and "✓ 1~3. how" for a run of steps closed in one line.
+const DONE_MARK = /^\s*(?:[-*]\s+)?(?:✓|✔|✅|☑|\[x\])\s*(\d{1,2})(?:\s*[~–-]\s*(\d{1,2}))?\s*[.):]?\s*(.*)$/i;
 const DONE_AFTER = /^\s*(\d{1,2})[.)]\s*(?:✓|✔|✅)\s*(.*)$/;
 // "결과: …", "**결과:** …", or a heading alone ("## 결과", "**Result**") with the outcome on the lines below.
 const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|results?)\s*(?:\*\*|__)?\s*(?:[:：]\s*(.*)|$)/i;
 const plainLine = (s: string) => s.replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
+
+/** The Vibrato checklist tool (server/browserMcp.ts PLAN_TOOLS) as Claude and Codex name it. */
+export const isPlanStepTool = (name: string) => name === 'mcp__vibrato__plan_step' || name === 'mcp:vibrato/plan_step';
+
+/** A plan_step call written out as the "✓ n." line it stands for, or null when its input is not a step. */
+export function planStepMark(input: unknown): string | null {
+  const i = (input ?? {}) as { step?: unknown; note?: unknown; skipped?: unknown };
+  const step = Number(i.step);
+  if (!Number.isInteger(step) || step < 1 || step > 99) return null;
+  const note = typeof i.note === 'string' ? i.note.replace(/\s+/g, ' ').trim() : '';
+  return `✓ ${step}. ${i.skipped ? `Not done: ${note}` : note}`.trimEnd();
+}
 
 /** The last plan in one message: the numbered list under a plan heading (one step is a plan too). */
 export function planIn(text: string): string[] | null {
@@ -66,6 +79,19 @@ export interface StepEntry {
   text: number;
 }
 
+/** The steps one "✓" line closes (several for "✓ 1~3."), and its account. */
+function markOf(line: string): { steps: number[]; note: string } | null {
+  const m = line.match(DONE_MARK);
+  if (m) {
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    const steps = to > from && to - from < 20 ? Array.from({ length: to - from + 1 }, (_, k) => from + k) : [from];
+    return { steps, note: plainLine(m[3]) };
+  }
+  const a = line.match(DONE_AFTER);
+  return a ? { steps: [Number(a[1])], note: plainLine(a[2]) } : null;
+}
+
 const isBookkeeping = (line: string) => PLAN_HEAD.test(line) || PLAN_ITEM.test(line) || DONE_MARK.test(line) || DONE_AFTER.test(line) || RESULT_LINE.test(line);
 
 /** Every "✓ n." line in order, with the plan title it closed at that time. */
@@ -79,8 +105,8 @@ export function stepEntries(texts: string[]): StepEntry[] {
     // Line by line: a "✓" closes a step of the plan written above it, even when the next round's plan follows.
     lines.forEach((line, j) => {
       if (PLAN_HEAD.test(line)) { plan = planIn(lines.slice(j).join('\n')) ?? plan; return; }
-      const m = line.match(DONE_MARK) ?? line.match(DONE_AFTER);
-      if (m) out.push({ step: Number(m[1]), title: plan[Number(m[1]) - 1] ?? '', note: plainLine(m[2]), detail, text: i });
+      const m = markOf(line);
+      for (const step of m?.steps ?? []) out.push({ step, title: plan[step - 1] ?? '', note: m!.note, detail, text: i });
     });
   });
   return out;
@@ -91,8 +117,8 @@ export function doneMarks(texts: string[]): Map<number, string> {
   const out = new Map<number, string>();
   for (const text of texts) {
     for (const line of text.split('\n')) {
-      const m = line.match(DONE_MARK) ?? line.match(DONE_AFTER);
-      if (m) out.set(Number(m[1]), plainLine(m[2]));
+      const m = markOf(line);
+      for (const step of m?.steps ?? []) out.set(step, m!.note);
     }
   }
   return out;

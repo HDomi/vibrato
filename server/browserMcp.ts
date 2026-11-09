@@ -82,6 +82,21 @@ export const BROWSER_TOOLS = [
     inputSchema: { type: 'object', properties: { steps: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string' }, args: { type: 'object' } }, required: ['tool'] } }, stopOnError: { type: 'boolean' } }, required: ['steps'] } },
 ] as const;
 
+/**
+ * The plan checklist (planInstructions.ts) as a tool: text an agent writes between tool calls does not always reach
+ * the reply (it can come back folded into a thinking summary), so a "✓ n." line in it is lost and the checklist
+ * stays on step 1. A tool call always arrives, and the plan view reads it as that "✓ n." line.
+ */
+export const PLAN_TOOLS = [
+  { name: 'plan_step', description: 'Vibrato checklist: mark one step of your plan ("진행 계획") done, the moment it ends and before the next step\'s first tool call. The user\'s checklist moves on this call; text you write between tool calls may not reach them. One call per step; skipped: true for a step you could not do (the note says why).',
+    inputSchema: { type: 'object', properties: { step: { type: 'number', description: 'Step number in your plan, from 1.' }, note: { type: 'string', description: "How it was done or what was found: one short sentence in the user's language." }, skipped: { type: 'boolean' } }, required: ['step', 'note'] } },
+] as const;
+const PLAN_TOOL_INSTRUCTIONS = 'Vibrato checklist: when a step of your plan is done, call plan_step (step number, one sentence) right away, before the next step. The user watches the checklist move on these calls.';
+
+/** Which tool groups a session's MCP URL offers: browser tools (Settings > browser tools) and the plan checklist. */
+export interface ToolGroups { browser: boolean; plan: boolean }
+const BROWSER_ONLY: ToolGroups = { browser: true, plan: false };
+
 export const BROWSER_INSTRUCTIONS = [
   'Vibrato in-app browser. When the user asks you to check, test or measure a web page ("실측", "브라우저로 확인", "playwright", QA of a local dev server), use these tools instead of launching your own browser: the user watches the same window, and their sign-ins (Google included) are already there.',
   'Typical loop: browser_open → browser_snapshot (interactive: true) → browser_click / browser_type with refs (each reports what changed) → browser_snapshot again when the page changed. browser_batch runs several steps in one call. Large pages: snapshot skeleton first, then root=<ref>.',
@@ -154,10 +169,11 @@ function callHost(tool: string, args: Record<string, unknown>, session?: Browser
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 type RpcReply = { jsonrpc: '2.0'; id: string | number | null; result?: unknown; error?: { code: number; message: string } };
 
-const TOOL_NAMES = new Set<string>(BROWSER_TOOLS.map((t) => t.name));
+const toolsOf = (g: ToolGroups) => [...(g.browser ? BROWSER_TOOLS : []), ...(g.plan ? PLAN_TOOLS : [])];
+const instructionsOf = (g: ToolGroups) => [g.browser ? BROWSER_INSTRUCTIONS : '', g.plan ? PLAN_TOOL_INSTRUCTIONS : ''].filter(Boolean).join('\n');
 
 /** One JSON-RPC message; null for notifications (no reply). `call` is injectable for tests. */
-export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<string, unknown>) => Promise<unknown>, session?: BrowserSession): Promise<RpcReply | null> {
+export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<string, unknown>) => Promise<unknown>, session?: BrowserSession, groups: ToolGroups = BROWSER_ONLY): Promise<RpcReply | null> {
   const run = call ?? ((tool: string, args: Record<string, unknown>) => callHost(tool, args, session));
   const id = msg.id ?? null;
   const ok = (result: unknown): RpcReply => ({ jsonrpc: '2.0', id, result });
@@ -166,16 +182,22 @@ export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<str
   switch (msg.method) {
     case 'initialize': {
       const asked = typeof msg.params?.protocolVersion === 'string' ? msg.params.protocolVersion : PROTOCOL;
-      return ok({ protocolVersion: asked, capabilities: { tools: { listChanged: false } }, serverInfo: { name: MCP_SERVER_NAME, title: 'Vibrato browser', version: '1.0.0' }, instructions: BROWSER_INSTRUCTIONS });
+      return ok({ protocolVersion: asked, capabilities: { tools: { listChanged: false } }, serverInfo: { name: MCP_SERVER_NAME, title: 'Vibrato', version: '1.0.0' }, instructions: instructionsOf(groups) });
     }
     case 'ping':
       return ok({});
     case 'tools/list':
-      return ok({ tools: BROWSER_TOOLS });
+      return ok({ tools: toolsOf(groups) });
     case 'tools/call': {
       const name = String(msg.params?.name ?? '');
-      if (!TOOL_NAMES.has(name)) return fail(-32602, `Unknown tool: ${name}`);
+      if (!toolsOf(groups).some((t) => t.name === name)) return fail(-32602, `Unknown tool: ${name}`);
       const args = (msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}) as Record<string, unknown>;
+      // The checklist is read off the call itself (web/src/lib/textPlan.ts planStepMark); nothing to run.
+      if (name === 'plan_step') {
+        const step = Number(args.step);
+        if (!Number.isInteger(step) || step < 1) return ok({ content: [{ type: 'text', text: 'step must be the step number in your plan, from 1.' }], isError: true });
+        return ok({ content: [{ type: 'text', text: `Step ${step} ${args.skipped ? 'closed as not done' : 'checked'}. Carry on with the next step.` }] });
+      }
       try {
         const content = await run(name, args);
         return ok({ content: Array.isArray(content) ? content : [{ type: 'text', text: String(content) }] });
@@ -190,20 +212,28 @@ export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<str
 }
 
 /** Body of POST /mcp/browser: a single message or a batch. Returns the reply body, or null for 202 Accepted. */
-export async function handleMcpBody(body: unknown, call?: (tool: string, args: Record<string, unknown>) => Promise<unknown>, session?: BrowserSession): Promise<unknown> {
+export async function handleMcpBody(body: unknown, call?: (tool: string, args: Record<string, unknown>) => Promise<unknown>, session?: BrowserSession, groups: ToolGroups = BROWSER_ONLY): Promise<unknown> {
   if (Array.isArray(body)) {
-    const replies = (await Promise.all(body.map((m) => handleRpc(m as Rpc, call, session)))).filter(Boolean);
+    const replies = (await Promise.all(body.map((m) => handleRpc(m as Rpc, call, session, groups)))).filter(Boolean);
     return replies.length ? replies : null;
   }
   if (!body || typeof body !== 'object') return { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } };
-  return handleRpc(body as Rpc, call, session);
+  return handleRpc(body as Rpc, call, session, groups);
+}
+
+/** The tool groups a session's MCP URL asks for (see browserMcpUrl); a URL without them is an older session: browser only. */
+export function toolGroupsOf(query: { b?: string; p?: string }): ToolGroups {
+  return { browser: query.b !== '0', plan: query.p === '1' };
 }
 
 /** Session wiring: the URL agents get, and the Codex `-c` overrides for it. */
-export function browserMcpUrl(port: number, token?: string) { return `http://127.0.0.1:${port}/mcp/browser${token ? `?s=${token}` : ''}`; }
-export function codexBrowserArgs(port: number, token?: string): string[] {
+export function browserMcpUrl(port: number, token?: string, groups?: ToolGroups) {
+  const q = [token ? `s=${token}` : '', groups && !groups.browser ? 'b=0' : '', groups?.plan ? 'p=1' : ''].filter(Boolean).join('&');
+  return `http://127.0.0.1:${port}/mcp/browser${q ? `?${q}` : ''}`;
+}
+export function codexBrowserArgs(port: number, token?: string, groups?: ToolGroups): string[] {
   return [
-    '-c', `mcp_servers.${MCP_SERVER_NAME}.url=${JSON.stringify(browserMcpUrl(port, token))}`,
+    '-c', `mcp_servers.${MCP_SERVER_NAME}.url=${JSON.stringify(browserMcpUrl(port, token, groups))}`,
     // Like Claude (server/agents/claude.ts canUseTool): these tools only drive the in-app browser the user watches,
     // so Codex does not stop for an approval on every click.
     '-c', `mcp_servers.${MCP_SERVER_NAME}.default_tools_approval_mode="approve"`,

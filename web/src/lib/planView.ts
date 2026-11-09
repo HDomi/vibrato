@@ -1,7 +1,7 @@
 import type { TodoItem } from './agent';
 import { isInjected, todosFromInput, type ChatItem } from './chatStore';
 import { codePathCandidate } from './localPath';
-import { doneMarks, mergedPlan, planIn, resultOf, stepEntries } from './textPlan';
+import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, stepEntries } from './textPlan';
 
 export { doneMarks, textPlan } from './textPlan';
 
@@ -301,6 +301,9 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
         }
       }
     }
+    // A plan_step call (Vibrato's checklist tool) counts as the "✓ n." line it stands for.
+    const mark = it.kind === 'tool' && isPlanStepTool(it.name) ? planStepMark(it.input) : null;
+    if (mark) { t.texts.push(mark); t.textIds.push(it.id); }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
     if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); t.textIds.push(it.id); addMentioned(t, pathsInText(it.text)); }
@@ -329,7 +332,8 @@ function fileTextSteps(t: PlanTurn) {
     // A new round's plan starts over from its first step.
     if (it.kind === 'assistant' && planIn(it.text)) k = 0;
     // A message with "✓ n." lines belongs to the first step it closes (later ones may have been skipped over).
-    const done = it.kind === 'assistant' ? [...doneMarks([it.text]).keys()].filter((n) => n <= t.steps.length) : [];
+    const said = it.kind === 'assistant' ? it.text : it.kind === 'tool' && isPlanStepTool(it.name) ? planStepMark(it.input) : null;
+    const done = said ? [...doneMarks([said]).keys()].filter((n) => n <= t.steps.length) : [];
     if (done.length) k = Math.max(k, Math.min(...done) - 1);
     file(k < t.steps.length ? t.steps[k] : t.after, it);
     if (done.length) k = Math.max(...done);
