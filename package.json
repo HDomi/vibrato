@@ -1,7 +1,7 @@
 {
   "name": "vibrato",
   "productName": "Vibrato",
-  "version": "4.5.1",
+  "version": "4.6.0",
   "private": true,
   "type": "module",
   "main": "dist/electron/main.cjs",
