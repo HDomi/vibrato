@@ -159,6 +159,9 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
             {info.url && (
               <button onClick={() => window.open(info.url!, '_blank')} className="shrink-0 flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-sky-300 hover:bg-sky-400/10" title={t('run.openExternal')}>{info.url.replace(/^https?:\/\//, '')} ↗</button>
             )}
+            {info.url && window.vibe?.openBrowser && (
+              <button onClick={() => void window.vibe?.openBrowser?.(info.url!)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" title={t('browser.openInBrowser')}><Icon name="devtools" size={12} /></button>
+            )}
             <button onClick={() => void start(info.name, info.command)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors" title={t('run.restart')}><Icon name="reload" size={12} /></button>
             {info.status === 'running' && <button onClick={() => void stop(info.id)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-300 hover:bg-white/10 transition-colors" title={t('run.stop')}><Icon name="stop" size={11} filled /></button>}
           </div>

@@ -194,6 +194,8 @@ export const api = {
   usage: (force = false) => req<UsageSnapshot>(`/api/usage${force ? '?force=1' : ''}`),
   alwaysPlan: () => req<{ on: boolean }>('/api/settings/always-plan'),
   setAlwaysPlan: (on: boolean) => req<{ on: boolean }>('/api/settings/always-plan', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) }),
+  browserTools: () => req<{ on: boolean }>('/api/settings/browser-tools'),
+  setBrowserTools: (on: boolean) => req<{ on: boolean }>('/api/settings/browser-tools', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) }),
   wallpaper: () => req<Wallpaper>('/api/wallpaper'),
   setWallpaper: (patch: Partial<Pick<Wallpaper, 'kind' | 'color' | 'gradient' | 'blur' | 'dim'>>) =>
     req<Wallpaper>('/api/wallpaper', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }),

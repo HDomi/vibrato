@@ -5,7 +5,8 @@ import type { AgentEvent, AgentSession, ClientCommand, ServerMessage } from './a
 import { ClaudeSession } from './agents/claude.js';
 import { CodexSession } from './agents/codex.js';
 import { which } from './shell.js';
-import { loadConfig } from './config.js';
+import { loadConfig, PORT } from './config.js';
+import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME } from './browserMcp.js';
 import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agentExtensions.js';
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
@@ -94,14 +95,16 @@ export class SessionRegistry {
     const cfg = await loadConfig().catch(() => null);
     const instructions = sessionInstructions(cfg);
     const off = sanitizeExtensions(cfg?.extensionsOff);
+    const browserTools = cfg?.browserTools !== false;
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
-      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, planGuard: cfg?.alwaysPlan !== false, settings: claudeFlagSettings(off.claude) });
+      session = new ClaudeSession({ cwd: cmd.cwd, claudePath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, planGuard: cfg?.alwaysPlan !== false, settings: claudeFlagSettings(off.claude),
+        ...(browserTools ? { mcpServers: { [MCP_SERVER_NAME]: { type: 'http' as const, url: browserMcpUrl(PORT) } } } : {}) });
     } else if (cmd.agent === 'codex') {
       const codexPath = await which('codex');
       if (!codexPath) throw new Error('codex CLI not found. Install it from Settings.');
-      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: codexConfigArgs(off.codex) });
+      session = new CodexSession({ cwd: cmd.cwd, codexPath, resume: cmd.resume, permissionMode: cmd.permissionMode, model: cmd.model, instructions, configArgs: [...codexConfigArgs(off.codex), ...(browserTools ? codexBrowserArgs(PORT) : [])] });
     } else {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }

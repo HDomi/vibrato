@@ -45,6 +45,8 @@ function GeneralSettings() {
   const [awake, setAwake] = useState(keepAwakeEnabled);
   const [alwaysPlan, setAlwaysPlan] = useState<boolean | null>(null);
   useEffect(() => { api.alwaysPlan().then((r) => setAlwaysPlan(r.on)).catch(() => {}); }, []);
+  const [browserTools, setBrowserTools] = useState<boolean | null>(null);
+  useEffect(() => { api.browserTools().then((r) => setBrowserTools(r.on)).catch(() => {}); }, []);
   useEffect(() => { window.vibe?.loginItem?.(null).then(setLogin).catch(() => {}); }, []);
   return (
     <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-3">
@@ -75,6 +77,14 @@ function GeneralSettings() {
           {t('settings.alwaysPlan')}
         </label>
         <div className="text-xs text-zinc-500 leading-relaxed pl-6">{t('settings.alwaysPlanNote')}</div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={!!browserTools} disabled={browserTools === null}
+            onChange={(e) => { const on = e.target.checked; setBrowserTools(on); api.setBrowserTools(on).catch(() => setBrowserTools(!on)); }} />
+          {t('settings.browserTools')}
+        </label>
+        <div className="text-xs text-zinc-500 leading-relaxed pl-6">{t('settings.browserToolsNote')}</div>
       </div>
       {window.vibe?.isElectron ? (
         <label className="flex items-center gap-2 text-sm cursor-pointer">

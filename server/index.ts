@@ -10,6 +10,7 @@ import { setShutdownHandler } from './lifecycle.js';
 import { stopAllRuns } from './runner.js';
 import { Scheduler } from './scheduler.js';
 import { warmHistorySearch } from './historySearch.js';
+import { attachBrowserHost } from './browserMcp.js';
 
 export async function startServer(port = PORT): Promise<ServerType> {
   await syncLoginShellPath();
@@ -28,6 +29,9 @@ export async function startServer(port = PORT): Promise<ServerType> {
     const ptyWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
     attachWebSocket(wss, registry);
     attachPty(ptyWss);
+    // The desktop app's main process: runs the browser tool calls agents make (server/browserMcp.ts).
+    const browserWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
+    attachBrowserHost(browserWss);
     let shuttingDown = false;
     // Single exit path: signals, update restart and /api/restart all close sessions and shells first.
     const shutdown = (reason: string, code = 0) => {
@@ -48,7 +52,7 @@ export async function startServer(port = PORT): Promise<ServerType> {
     http.on('upgrade', (req, socket, head) => {
       let pathname: string;
       try { pathname = new URL(req.url ?? '/', 'http://localhost').pathname; } catch { socket.destroy(); return; }
-      const target = pathname === '/ws' ? wss : pathname === '/pty' ? ptyWss : null;
+      const target = pathname === '/ws' ? wss : pathname === '/pty' ? ptyWss : pathname === '/browser-host' ? browserWss : null;
       if (!target) { socket.destroy(); return; }
       // WebSockets are not covered by CORS: without this any web page could open a shell on /pty.
       const reason = rejectReason({ host: req.headers.host, origin: req.headers.origin, secFetchSite: req.headers['sec-fetch-site'] as string | undefined }, port);

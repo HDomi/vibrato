@@ -8,6 +8,27 @@ contextBridge.exposeInMainWorld('vibe', {
   isElectron: true,
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   openIde: (root, file) => ipcRenderer.invoke('open-ide', root, file),
+  // In-app browser window (electron/browser.cts); `url` opens in a new tab.
+  openBrowser: (url) => ipcRenderer.invoke('open-browser', url),
+  // The browser window's own UI: tabs, the page area it reserves for the native web view, and the logs.
+  browser: {
+    info: () => ipcRenderer.invoke('browser:info'),
+    frame: (rect) => ipcRenderer.send('browser:frame', rect),
+    open: (url) => ipcRenderer.invoke('browser:open', url),
+    activate: (id) => ipcRenderer.send('browser:activate', id),
+    close: (id) => ipcRenderer.send('browser:close', id),
+    navigate: (url) => ipcRenderer.send('browser:navigate', url),
+    nav: (action) => ipcRenderer.send('browser:nav', action),
+    zoom: (factor) => ipcRenderer.send('browser:zoom', factor),
+    clear: (kind) => ipcRenderer.send('browser:clear', kind),
+    storage: (op) => ipcRenderer.invoke('browser:storage', op),
+    on: (channel, cb) => {
+      if (!['tabs', 'console', 'net', 'agent', 'storage-changed'].includes(channel)) return () => {};
+      const h = (_e, payload) => cb(payload);
+      ipcRenderer.on(`browser:${channel}`, h);
+      return () => ipcRenderer.removeListener(`browser:${channel}`, h);
+    },
+  },
   onIdeOpenFile: (cb) => { const h = (_e, file) => cb(file); ipcRenderer.on('ide-open-file', h); return () => ipcRenderer.removeListener('ide-open-file', h); },
   // Native Save As sheet: { defaultPath, ext, label } -> chosen path or null.
   saveDialog: (opts) => ipcRenderer.invoke('save-dialog', opts),

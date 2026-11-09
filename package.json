@@ -17,7 +17,7 @@
     "dev:app": "npm run build:main && env -u ELECTRON_RUN_AS_NODE VITE_DEV=1 electron .",
     "build:main": "tsc -p tsconfig.json && cp electron/preload.cjs dist/electron/preload.cjs",
     "build:web": "vite build",
-    "build": "npm run build:main && npm run build:web && node scripts/build-info.cjs",
+    "build": "npm run build:main && npm run build:native && npm run build:web && node scripts/build-info.cjs",
     "dist": "npm run build && electron-builder --mac --arm64 --publish never",
     "start": "npm run build && env -u ELECTRON_RUN_AS_NODE electron .",
     "serve": "tsx server/index.ts",
@@ -28,7 +28,8 @@
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null || true; chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true; scripts/brand-electron.sh || true",
     "brand": "scripts/brand-electron.sh",
     "version:bump": "scripts/bump-version.sh",
-    "check:lock": "scripts/check-lock.sh"
+    "check:lock": "scripts/check-lock.sh",
+    "build:native": "node scripts/build-native.cjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.303",
@@ -76,6 +77,7 @@
     "electron": "^39.0.0",
     "electron-builder": "^26.18.0",
     "material-icon-theme": "^5.39.0",
+    "node-gyp": "^12.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.0.0",

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import { blocksQuit, initLockScreen, isLocked, isLockShortcut, lockNow, openLockSettings, rememberLockForRelaunch } from './lockScreen.cjs';
+import { initBrowser, openBrowser } from './browser.cjs';
 
 /*
  * Electron shell. The Node server (dist/server/index.js) runs as a child process.
@@ -292,6 +293,20 @@ ipcMain.handle('open-ide', async (e, root: unknown, file: unknown) => {
   await openIdeWindow(path.resolve(root), typeof file === 'string' && path.isAbsolute(file) ? file : undefined);
 });
 
+ipcMain.handle('open-browser', async (e, url: unknown) => {
+  if (!fromApp(e) || isLocked()) return;
+  await openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : undefined);
+});
+
+/** The in-app browser window (electron/browser.cts): same page as the app, `?browser=1`. */
+function createBrowserWindow() {
+  const win = createAppWindow({ width: 1440, height: 920, minWidth: 760, minHeight: 480, title: 'Vibrato Browser' }, { x: 12, y: 7 });
+  const url = new URL(DEV ? URL_DEV : URL_PROD);
+  url.searchParams.set('browser', '1');
+  void win.loadURL(url.toString());
+  return win;
+}
+
 ipcMain.handle('pick-folder', async (e) => {
   if (!fromApp(e)) return null;
   const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
@@ -439,7 +454,14 @@ function buildMenu() {
     { role: 'viewMenu' },
     languageMenu,
     lockMenu,
-    { role: 'windowMenu' },
+    {
+      role: 'windowMenu',
+      submenu: [
+        { role: 'minimize' }, { role: 'zoom' }, { type: 'separator' },
+        { label: ko ? 'Vibrato 브라우저' : 'Vibrato Browser', accelerator: 'Shift+CmdOrCtrl+B', click: () => { if (!isLocked()) void openBrowser(); } },
+        { type: 'separator' }, { role: 'front' },
+      ],
+    },
     { role: 'help', submenu: [{ label: 'Repository', click: () => { void shell.openExternal('https://github.com/HDomi/vibrato'); } }] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -456,6 +478,7 @@ app.whenReady().then(async () => {
   const exe = app.getPath('exe');
   const bundle = app.isPackaged && exe.includes('.app/Contents/MacOS/') ? exe.slice(0, exe.indexOf('.app/Contents/MacOS/') + 4) : null;
   const lock = initLockScreen({ appUrl: DEV ? URL_DEV : URL_PROD, preload: path.join(__dirname, 'preload.cjs'), fromApp, serverUrl: URL_PROD, relaunchBundle: bundle });
+  initBrowser({ createWindow: createBrowserWindow, port: PORT, isLocked });
   if (!DEV) {
     await startServer();
     let checking = false;

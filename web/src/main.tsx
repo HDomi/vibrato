@@ -18,6 +18,10 @@ initStyle();
 if (lock === 'main' || lock === 'sub') {
   initWallpaper();
   void import('./components/lock/LockScreen').then(({ default: LockScreen }) => root.render(<LockScreen />));
+} else if (params.get('browser') === '1') {
+  // The in-app browser window (electron/browser.cts); no chat app either.
+  initWallpaper();
+  void import('./components/browser/BrowserApp').then(({ default: BrowserApp }) => root.render(<React.StrictMode><BrowserApp /></React.StrictMode>));
 } else if (ide) {
   void import('./components/editor/IdeApp').then(({ default: IdeApp }) => root.render(<React.StrictMode><IdeApp root={ide} file={params.get('file')} /></React.StrictMode>));
 } else {

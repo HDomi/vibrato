@@ -8,9 +8,12 @@ Claude 는 Agent SDK 에 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를
 
 ```
 electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts)
+            앱 안 브라우저(browser.cts, browserScripts.cts): `/?browser=1` 창, 페이지는 네이티브 WKWebView
+native/     네이티브 모듈(N-API, node-gyp). webview: Electron 창에 WKWebView 를 붙인다 → dist/native (scripts/build-native.cjs)
 server/     Hono 서버 · 에이전트 어댑터 · PTY · git · 업데이트(updater.ts, releaseUpdate.ts) · 잠금 감시(lockWatch.ts)
             예약 실행(scheduler.ts, schedule.ts, schedulePower.ts: caffeinate · pmset 깨우기 helper)
             배경화면(wallpaper.ts: ~/.vibrato/wallpaper 에 원본 · 흐린 사본 저장)
+            에이전트 브라우저 도구(browserMcp.ts): /mcp/browser MCP, 호출은 /browser-host 소켓으로 Electron 이 실행
 web/        React 앱. 잠금화면 cover 는 `/?lock=main|sub`, IDE 창은 `/?ide=<root>` 로 같은 번들을 따로 로드(main.tsx)
             글래스 디자인: index.css 의 @theme 토큰 · .glass(미리 흐린 배경을 fixed 로 깐 카드) · .glass-pop(진짜 backdrop blur)
 tests/      node:test (`npm test`)
@@ -48,3 +51,4 @@ npm run dist       # build + electron-builder → release/ (DMG, zip)
 - 사용자가 체크아웃 런처 앱을 띄워 둔 상태일 수 있다. 그 앱은 레포의 `dist/` · `web/dist/` 를 그대로 서빙하고, 빌드 정보가 바뀌면 재시작 루프에 빠진다. **레포 안에서 `npm run build` / `vite build` / `npm run dist` 를 하지 말고** `/tmp` 복사본에서 빌드 · 검증한다.
 - 실행 중인 앱 옆에서 테스트 사본을 띄울 때 쓰는 환경 변수: `VIBRATO_PORT`, `VIBRATO_USER_DATA`, `VIBRATO_CONFIG_DIR`, `VIBRATO_UPDATE_DIR`, `VIBRATO_UPDATE_FEED`(가짜 릴리스 API). 자동 업데이트 재시작 때도 `open --env` 로 유지된다.
 - 독립 앱은 Apple 개발자 서명이 없다(ad-hoc, `scripts/after-pack.cjs`). 공증 · 스토어 배포는 범위 밖.
+- 앱 안 브라우저는 Chromium(Electron 뷰)이 아니라 WKWebView 다. Electron 안에서는 Google 로그인이 막힌다(2026-11 확인, 예전 브라우저 탭 코드도 막힘). Safari UA + 고정 WKWebsiteDataStore 로 로그인이 유지된다. CDP 가 없으니 에이전트 조작은 MCP 도구로만 한다.

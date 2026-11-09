@@ -12,6 +12,34 @@ export interface AppPermissionInfo {
   accessibility: boolean;
   loginItem: boolean;
 }
+/** In-app browser (electron/browser.cts). */
+export interface BrowserTab { id: number; url: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; progress: number; opener?: number; agent?: boolean; zoom: number }
+export interface BrowserConsoleEntry { seq: number; t: number; tab: number; level: string; text: string; source?: string }
+export interface BrowserNetEntry { seq: number; t: number; tab: number; via: string; method: string; url: string; status?: number; type?: string; size?: number; ms?: number; error?: string }
+export interface BrowserAgentEntry { seq: number; t: number; tool: string; summary: string; ok: boolean; ms: number; result?: string; image?: string }
+export type BrowserStorageArea = 'local' | 'session' | 'cookies';
+export interface BrowserCookie { name: string; value: string; domain: string; path: string; expires?: number; httpOnly: boolean; secure: boolean; session: boolean; sameSite?: string }
+export interface BrowserStorageResult { origin: string; items?: [string, string][]; cookies?: BrowserCookie[]; changed?: number }
+export interface BrowserBridge {
+  info: () => Promise<{ available: boolean; error: string; tabs: BrowserTab[]; active: number | null; console: BrowserConsoleEntry[]; net: BrowserNetEntry[]; agent: BrowserAgentEntry[] } | null>;
+  /** Where the page goes, in window coordinates; null hides it. */
+  frame: (rect: { x: number; y: number; w: number; h: number } | null) => void;
+  open: (url: string) => Promise<number>;
+  activate: (id: number) => void;
+  close: (id: number) => void;
+  navigate: (url: string) => void;
+  nav: (action: 'back' | 'forward' | 'reload' | 'stop' | 'focus') => void;
+  zoom: (factor: number) => void;
+  clear: (kind: 'console' | 'net' | 'agent') => void;
+  /** Active tab's storage: list, set, remove or clear. Null when no tab is open. */
+  storage: (op: { action: 'get' | 'set' | 'remove' | 'clear'; area: BrowserStorageArea; key?: string; value?: string; cookie?: Partial<BrowserCookie> }) => Promise<BrowserStorageResult | null>;
+  on(channel: 'tabs', cb: (p: { tabs: BrowserTab[]; active: number | null }) => void): () => void;
+  on(channel: 'console', cb: (e: BrowserConsoleEntry) => void): () => void;
+  on(channel: 'net', cb: (e: BrowserNetEntry) => void): () => void;
+  on(channel: 'agent', cb: (e: BrowserAgentEntry) => void): () => void;
+  /** An agent changed storage of this tab. */
+  on(channel: 'storage-changed', cb: (e: { tab: number }) => void): () => void;
+}
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
   set: (patch: Partial<LockSettings>) => Promise<LockSettings | null>;
@@ -35,6 +63,10 @@ declare global {
       pickFolder: () => Promise<string | null>;
       /** Opens (or focuses) the IDE window for `root`, optionally opening `file` in it. */
       openIde?: (root: string, file?: string) => Promise<void>;
+      /** Opens the in-app browser window; `url` (http/https) opens in a new tab. */
+      openBrowser?: (url?: string) => Promise<void>;
+      /** The browser window's own bridge (only meaningful in `/?browser=1`). */
+      browser?: BrowserBridge;
       /** IDE window: a file the main window asked to open. */
       onIdeOpenFile?: (cb: (file: string) => void) => () => void;
       saveDialog?: (opts: { defaultPath?: string; ext?: string; label?: string }) => Promise<string | null>;

@@ -31,6 +31,7 @@ import { convertImage, imageInfo, renderPng, writeImageBytes } from './image.js'
 import { allBacklogs, cleanBacklog, projectSettings, suggestVerifyCommands, updateProjectSettings } from './verify.js';
 import { revertTurn, turnDiff } from './turns.js';
 import { agentContext } from './agentContext.js';
+import { handleMcpBody } from './browserMcp.js';
 import { listExtensions, sanitizeExtensions } from './agentExtensions.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
@@ -68,7 +69,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('/api/net/http', bodyLimit({ maxSize: 64 * 1024 * 1024 }));
   app.use('/api/wallpaper/image', bodyLimit({ maxSize: 2 * WALL_MAX_BYTES + 1024 * 1024 }));
   app.use('*', async (c, next) => {
-    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/custom-prompt$|\/api\/settings\/always-plan$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
+    if (c.req.method !== 'GET' && /^(\/api\/favorites(?:\/|$)|\/api\/recent$|\/api\/custom-prompt$|\/api\/settings\/always-plan$|\/api\/settings\/browser-tools$|\/api\/history\/pin$|\/api\/history\/[^/]+$)/.test(c.req.path)) return withConfigLock(next);
     await next();
   });
 
@@ -226,6 +227,22 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     }) });
   });
   app.get('/api/settings/always-plan', async (c) => c.json({ on: (await loadConfig()).alwaysPlan !== false }));
+  app.get('/api/settings/browser-tools', async (c) => c.json({ on: (await loadConfig()).browserTools !== false }));
+  app.put('/api/settings/browser-tools', async (c) => {
+    const body = await c.req.json<{ on?: unknown }>().catch(() => null);
+    if (!body || typeof body.on !== 'boolean') return c.json({ error: 'Expected { on }' }, 400);
+    const cfg = await loadConfig();
+    if (body.on) delete cfg.browserTools; else cfg.browserTools = false;
+    await saveConfig(cfg);
+    return c.json({ on: body.on });
+  });
+  // Vibrato browser tools for agent sessions (server/browserMcp.ts): MCP Streamable HTTP, JSON replies, no SSE stream.
+  app.post('/mcp/browser', async (c) => {
+    const reply = await handleMcpBody(await c.req.json());
+    return reply === null ? c.body(null, 202) : c.json(reply);
+  });
+  app.get('/mcp/browser', (c) => c.body(null, 405));
+  app.delete('/mcp/browser', (c) => c.body(null, 200));
   app.put('/api/settings/always-plan', async (c) => {
     const body = await c.req.json<{ on?: unknown }>().catch(() => null);
     if (!body || typeof body.on !== 'boolean') return c.json({ error: 'Expected { on }' }, 400);

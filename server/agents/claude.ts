@@ -5,6 +5,7 @@ import { query, type HookJSONOutput, type HookInput, type Options, type Permissi
 import { saveToolImage } from '../attachments.js';
 import { planGap } from '../planGuard.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
+import { MCP_SERVER_NAME } from '../browserMcp.js';
 import { tokenSum, turnCost } from './turnCost.js';
 import type { AgentEvent, AgentSession, AssistantBlock, Attachment, McpAction, McpResult, McpServerInfo, PermissionModeId, Question, RewindResult, TaskInfo } from './types.js';
 
@@ -60,6 +61,8 @@ export interface ClaudeSessionOptions {
   planGuard?: boolean;
   /** Flag settings turning skills / plugins off for this session (Settings > Agent CLIs, see agentExtensions.ts). */
   settings?: Options['settings'];
+  /** Extra MCP servers for this session (the Vibrato browser tools, server/browserMcp.ts). */
+  mcpServers?: Options['mcpServers'];
 }
 
 export class ClaudeSession implements AgentSession {
@@ -121,6 +124,7 @@ export class ClaudeSession implements AgentSession {
       model: this.opts.model,
       // Flag settings outrank user / project / local ones, so this turns things off without editing the CLI's config.
       ...(this.opts.settings ? { settings: this.opts.settings } : {}),
+      ...(this.opts.mcpServers ? { mcpServers: this.opts.mcpServers } : {}),
       // Backups before each edit, keyed by the user message id we send, so a turn's file changes can be undone.
       enableFileCheckpointing: true,
       includePartialMessages: true,
@@ -129,7 +133,10 @@ export class ClaudeSession implements AgentSession {
       abortController: this.abort,
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'vibrato/0.1.0' },
       stderr: (data) => this.emit({ kind: 'log', text: data }),
-      canUseTool: (toolName, input, { suggestions, signal }) => this.handlePermission(toolName, input, suggestions ?? [], signal),
+      // Vibrato's own browser tools only drive the in-app browser window the user is watching: no prompt for each step.
+      canUseTool: (toolName, input, { suggestions, signal }) => toolName.startsWith(`mcp__${MCP_SERVER_NAME}__browser_`)
+        ? Promise.resolve({ behavior: 'allow', updatedInput: input })
+        : this.handlePermission(toolName, input, suggestions ?? [], signal),
       ...(this.opts.planGuard ? {
         hooks: {
           UserPromptSubmit: [{ hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit' as const, additionalContext: PLAN_REMINDER } })] }],

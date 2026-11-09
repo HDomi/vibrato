@@ -54,6 +54,9 @@ jobs:
           npm test
 
       - name: Build app
+        # The in-app browser's native module (native/webview) must be in every release.
+        env:
+          VIBRATO_NATIVE_REQUIRED: '1'
         run: npm run dist
 
       - name: Checksums
