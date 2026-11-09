@@ -202,5 +202,10 @@ export async function handleMcpBody(body: unknown, call?: (tool: string, args: R
 /** Session wiring: the URL agents get, and the Codex `-c` overrides for it. */
 export function browserMcpUrl(port: number, token?: string) { return `http://127.0.0.1:${port}/mcp/browser${token ? `?s=${token}` : ''}`; }
 export function codexBrowserArgs(port: number, token?: string): string[] {
-  return ['-c', `mcp_servers.${MCP_SERVER_NAME}.url=${JSON.stringify(browserMcpUrl(port, token))}`];
+  return [
+    '-c', `mcp_servers.${MCP_SERVER_NAME}.url=${JSON.stringify(browserMcpUrl(port, token))}`,
+    // Like Claude (server/agents/claude.ts canUseTool): these tools only drive the in-app browser the user watches,
+    // so Codex does not stop for an approval on every click.
+    '-c', `mcp_servers.${MCP_SERVER_NAME}.default_tools_approval_mode="approve"`,
+  ];
 }

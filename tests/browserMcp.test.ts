@@ -57,7 +57,7 @@ test('batches reply to requests only', async () => {
 
 test('session wiring points both CLIs at the loopback endpoint', () => {
   assert.equal(browserMcpUrl(11398), 'http://127.0.0.1:11398/mcp/browser');
-  assert.deepEqual(codexBrowserArgs(11398), ['-c', 'mcp_servers.vibrato.url="http://127.0.0.1:11398/mcp/browser"']);
+  assert.deepEqual(codexBrowserArgs(11398), ['-c', 'mcp_servers.vibrato.url="http://127.0.0.1:11398/mcp/browser"', '-c', 'mcp_servers.vibrato.default_tools_approval_mode="approve"']);
 });
 
 test('session tokens carry a label and a colour into the MCP URL', () => {
@@ -66,7 +66,7 @@ test('session tokens carry a label and a colour into the MCP URL', () => {
   assert.equal(s.label, 'Claude · vibrato');
   assert.match(s.color, /^#[0-9A-F]{6}$/i);
   assert.equal(browserMcpUrl(11398, token), `http://127.0.0.1:11398/mcp/browser?s=${token}`);
-  assert.deepEqual(codexBrowserArgs(1, token), ['-c', `mcp_servers.vibrato.url="http://127.0.0.1:1/mcp/browser?s=${token}"`]);
+  assert.deepEqual(codexBrowserArgs(1, token).slice(0, 2), ['-c', `mcp_servers.vibrato.url="http://127.0.0.1:1/mcp/browser?s=${token}"`]);
   assert.equal(browserSession('nope'), undefined);
   const other = browserSession(registerBrowserSession('Codex · x'))!;
   assert.notEqual(other.color, s.color);
