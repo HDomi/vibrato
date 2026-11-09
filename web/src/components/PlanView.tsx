@@ -354,26 +354,50 @@ function PlanView({ items, cwd, running, activity, now, onJump, onApprove, onAns
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // While showing a turn picked from the chat, don't snap back to the bottom.
+  const holdFocus = useRef(!!focusTurn);
+  const [atBottom, setAtBottom] = useState(true);
+  const scrollToBottom = () => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; };
+  const jump = () => { stick.current = true; holdFocus.current = false; setAtBottom(true); scrollToBottom(); };
   // Follow new work while scrolled to the bottom, like the chat.
   useEffect(() => {
     const el = content.current; if (!el) return;
-    const ro = new ResizeObserver(() => { if (stick.current && !focusTurn) scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); });
+    const ro = new ResizeObserver(() => { if (stick.current && !holdFocus.current) scrollToBottom(); });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [focusTurn]);
+  }, []);
   useEffect(() => {
-    if (!focusTurn) { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); return; }
-    stick.current = false;
+    if (!focusTurn) { holdFocus.current = false; scrollToBottom(); return; }
+    holdFocus.current = true;
+    stick.current = false; setAtBottom(false);
     scroller.current?.querySelector(`[data-plan-turn="${CSS.escape(focusTurn)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [focusTurn]);
+  // A new request goes to the bottom even if the user had scrolled up.
+  const asked = turns.filter((x) => x.user).length;
+  const lastAsked = useRef(asked);
+  useEffect(() => {
+    if (asked > lastAsked.current) jump();
+    lastAsked.current = asked;
+  }, [asked]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const b = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    stick.current = b; setAtBottom(b);
+    if (b) holdFocus.current = false;
+  };
   return (
-    <div ref={scroller} className="absolute inset-0 overflow-y-auto" onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
-      <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
-        {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
-        <SessionSummary turns={turns} />
-        {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} activity={activity} now={now} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
+    <>
+      <div ref={scroller} className="absolute inset-0 overflow-y-auto" onScroll={onScroll}>
+        <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
+          {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
+          <SessionSummary turns={turns} />
+          {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} activity={activity} now={now} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
+        </div>
       </div>
-    </div>
+      {!atBottom && (
+        <button onClick={jump} className="absolute z-10 bottom-3 left-1/2 -translate-x-1/2 glass-pop pop-in !rounded-full px-3.5 py-1.5 text-xs text-zinc-200 hover:text-white">{t('chat.jumpLatest')}</button>
+      )}
+    </>
   );
 }
 

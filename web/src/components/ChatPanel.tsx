@@ -469,6 +469,15 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   }, [session?.id]);
   useEffect(() => { if (stick.current) scrollToBottom(); }, [session?.items]);
   useEffect(() => { stick.current = true; setAtBottom(true); scrollToBottom(); }, [session?.id]);
+  // A new request (typed here, queued, or sent from elsewhere) jumps to the bottom even if the user had scrolled up.
+  const asked = useMemo(() => (session?.items ?? []).filter((it) => it.kind === 'user' && !isInjected(it)).length, [session?.items]);
+  const lastAsked = useRef({ id: session?.id, n: asked });
+  useEffect(() => {
+    const prev = lastAsked.current;
+    lastAsked.current = { id: session?.id, n: asked };
+    if (prev.id !== session?.id || asked <= prev.n) return;
+    stick.current = true; setAtBottom(true); requestAnimationFrame(scrollToBottom);
+  }, [asked, session?.id]);
   // 1s tick for the elapsed counter in the activity line.
   useEffect(() => {
     if (!session?.turnStartedAt) return;
