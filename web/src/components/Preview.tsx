@@ -265,7 +265,9 @@ export function PreviewDialog({ entry, onClose }: { entry: Entry; onClose: () =>
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
   return (
-    <div className="fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onMouseDown={onClose}>
+    // no-drag: the dialog's header sits inside the title bar's 100px drag region, and Electron hands the cursor and
+    // clicks there to the window regardless of z-index (the close button showed an arrow and started a window drag).
+    <div className="titlebar-nodrag fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onMouseDown={onClose}>
       <div className="w-[960px] max-w-[94vw] h-[86vh] glass-pop pop-in !rounded-[22px] overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
         <Preview entry={entry} onClose={onClose} />
       </div>

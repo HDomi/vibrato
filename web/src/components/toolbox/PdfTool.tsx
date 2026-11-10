@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { useViewActiveRef } from '../../lib/viewActive';
+import Icon from '../Icon';
 import {
   assemblePdf, baseName, duplicatePages, isEncrypted, movePages, nudgePages, pageImageName, pagesOf, PdfLockedError,
   isImageName, removePages, rotatePages, sniff, type ImageFormat, type ImagePageSize, type PageRef, type PdfSource,
@@ -86,6 +87,8 @@ export default function PdfTool() {
   const [drag, setDrag] = useState<{ over: number | null; files: boolean } | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const viewActive = useViewActiveRef();
+  /** Index of the page shown large (double-click a thumbnail), or null. */
+  const [viewing, setViewing] = useState<number | null>(null);
   const idSeq = useRef(0);
 
   useEffect(() => () => {
@@ -197,7 +200,7 @@ export default function PdfTool() {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (!viewActive.current || busy) return;
+      if (!viewActive.current || busy || viewing !== null) return;
       const el = e.target as HTMLElement | null;
       if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -212,7 +215,7 @@ export default function PdfTool() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [busy, duplicate, nudge, pages, redo, remove, sel.size, undo, viewActive]);
+  }, [busy, duplicate, nudge, pages, redo, remove, sel.size, undo, viewActive, viewing]);
 
   const click = (p: PageRef, e: React.MouseEvent) => {
     if (e.shiftKey && anchor.current) {
@@ -363,10 +366,10 @@ export default function PdfTool() {
         <button className={btn} disabled={!!busy} onClick={() => picker.current?.click()}>{t('pdf.addFiles')}</button>
         <SizePick value={imgSize} onChange={setImgSize} />
         <span className="mx-1 h-4 w-px bg-white/10" />
-        <button className={btn} disabled={!one || !!busy} onClick={() => rotate(-90)} title={t('pdf.rotateLeft')}>⟲</button>
-        <button className={btn} disabled={!one || !!busy} onClick={() => rotate(90)} title={t('pdf.rotateRight')}>⟳</button>
-        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(-1)} title={`${t('pdf.moveEarlier')} (⌥←)`}>←</button>
-        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(1)} title={`${t('pdf.moveLater')} (⌥→)`}>→</button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => rotate(-90)} title={t('pdf.rotateLeft')} aria-label={t('pdf.rotateLeft')}><Icon name="rotateLeft" size={14} className="-my-0.5" /></button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => rotate(90)} title={t('pdf.rotateRight')} aria-label={t('pdf.rotateRight')}><Icon name="rotateRight" size={14} className="-my-0.5" /></button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(-1)} title={`${t('pdf.moveEarlier')} (⌥←)`} aria-label={t('pdf.moveEarlier')}><Icon name="left" size={14} className="-my-0.5" /></button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(1)} title={`${t('pdf.moveLater')} (⌥→)`} aria-label={t('pdf.moveLater')}><Icon name="arrowRight" size={14} className="-my-0.5" /></button>
         <button className={btn} disabled={!one || !!busy} onClick={duplicate} title="⌘D">{t('pdf.duplicate')}</button>
         <button className={`${btn} hover:!bg-red-500/30`} disabled={!one || !!busy} onClick={remove} title="⌫">{t('pdf.delete')}</button>
         <span className="mx-1 h-4 w-px bg-white/10" />
@@ -418,7 +421,7 @@ export default function PdfTool() {
       )}
 
       {(busy || err || notice) && (
-        <div className="shrink-0 flex items-start gap-2 text-[11px]">
+        <div className="shrink-0 flex items-center gap-2 text-[11px]">
           {busy ? <span className="text-zinc-400">{busy}</span>
             : err ? <span className="text-red-400 whitespace-pre-wrap">{err}</span>
             : notice && <span className="text-emerald-300/90 break-all">{notice.text}</span>}
@@ -442,6 +445,7 @@ export default function PdfTool() {
                 label={showSourceName && src ? `${baseName(src.name)} · ${p.index + 1}` : undefined}
                 marker={drag?.over === i ? 'before' : drag?.over === i + 1 && i === pages.length - 1 ? 'after' : null}
                 onClick={(e) => click(p, e)}
+                onOpen={() => setViewing(i)}
                 onDragStart={(e) => startDrag(p, e)}
                 onDragEnd={() => { dragKeys.current = null; setDrag(null); }}
                 onDragOver={(e) => overCard(i, e)}
@@ -451,6 +455,10 @@ export default function PdfTool() {
         </div>
         {!pages.length && <div className="py-10 text-center text-[12px] text-zinc-500">{t('pdf.noPages')}</div>}
       </div>
+      {viewing !== null && pages[Math.min(viewing, pages.length - 1)] && (
+        <PageViewer pages={pages} at={Math.min(viewing, pages.length - 1)} docs={docs.current} sources={sources}
+          onIndex={setViewing} onClose={() => setViewing(null)} />
+      )}
     </div>
   );
 }
@@ -469,17 +477,72 @@ function SizePick({ value, onChange }: { value: ImagePageSize; onChange: (v: Ima
   );
 }
 
+/**
+ * One page, large, like the file preview dialog: ←/→ flip through the page list (in its current order,
+ * with the current rotation), Esc or the backdrop closes.
+ */
+function PageViewer({ pages, at, docs, sources, onIndex, onClose }: {
+  pages: PageRef[]; at: number; docs: Map<string, OpenedPdf>; sources: Map<string, PdfSource>; onIndex: (i: number) => void; onClose: () => void;
+}) {
+  const p = pages[at];
+  const doc = docs.get(p.src);
+  const src = sources.get(p.src);
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let made: string | null = null;
+    setUrl(null); setErr(null);
+    if (doc) {
+      renderPageImage(doc.doc, p.index, p.rotate, { format: 'jpeg', dpi: 144, quality: 92, transparent: false }).then(
+        (b) => { made = URL.createObjectURL(b); if (alive) setUrl(made); else URL.revokeObjectURL(made); },
+        (e) => { if (alive) setErr(errText(e)); },
+      );
+    }
+    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
+  }, [doc, p.index, p.rotate]);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); if (at > 0) onIndex(at - 1); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); if (at < pages.length - 1) onIndex(at + 1); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [at, pages.length, onIndex, onClose]);
+  const nav = 'w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent';
+  return (
+    // no-drag: the header would otherwise sit in the title bar's drag region (see PreviewDialog).
+    <div className="titlebar-nodrag fade-in fixed inset-0 z-40 bg-black/50 flex items-center justify-center" onMouseDown={onClose}>
+      <div className="w-[960px] max-w-[94vw] h-[86vh] glass-pop pop-in !rounded-[22px] overflow-hidden flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="h-10 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 text-sm">
+          <span className="font-medium tabular-nums">{at + 1} / {pages.length}</span>
+          <span className="truncate text-xs text-zinc-500">{src?.name} · {t('pdf.pageN', { n: p.index + 1 })}{p.rotate ? ` · ${p.rotate}°` : ''}</span>
+          <div className="flex-1" />
+          <button className={nav} disabled={at === 0} onClick={() => onIndex(at - 1)} title="←" aria-label={t('pdf.prevPage')}><Icon name="back" /></button>
+          <button className={nav} disabled={at === pages.length - 1} onClick={() => onIndex(at + 1)} title="→" aria-label={t('pdf.nextPage')}><Icon name="forward" /></button>
+          <button className={`-mr-2 ${nav}`} onClick={onClose} title="Esc" aria-label={t('pdf.closeView')}><Icon name="close" /></button>
+        </div>
+        <div className="flex-1 min-h-0 flex items-center justify-center p-4 bg-black/20">
+          {url ? <img src={url} alt="" className="max-w-full max-h-full object-contain bg-white shadow-xl shadow-black/50" />
+            : <span className="text-[12px] text-zinc-500">{err ?? t('common.loading')}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FilePicker({ refEl, onFiles }: { refEl: React.RefObject<HTMLInputElement | null>; onFiles: (f: File[]) => void }) {
   return <input ref={refEl} type="file" multiple accept="application/pdf,.pdf,image/*,.heic,.heif,.tif,.tiff" className="hidden" onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) onFiles(fs); }} />;
 }
 
 interface CardProps {
   page: PageRef; n: number; doc?: OpenedPdf; cache: ThumbCache; selected: boolean; label?: string; marker: 'before' | 'after' | null;
-  onClick: (e: React.MouseEvent) => void; onDragStart: (e: DragEvent) => void; onDragEnd: () => void; onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void;
+  onClick: (e: React.MouseEvent) => void; onOpen: () => void; onDragStart: (e: DragEvent) => void; onDragEnd: () => void; onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void;
 }
 
 /** A page thumbnail, rendered when it first scrolls into view. */
-function PageCard({ page, n, doc, cache, selected, label, marker, onClick, onDragStart, onDragEnd, onDragOver, onDrop }: CardProps) {
+function PageCard({ page, n, doc, cache, selected, label, marker, onClick, onOpen, onDragStart, onDragEnd, onDragOver, onDrop }: CardProps) {
   const el = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
@@ -499,7 +562,7 @@ function PageCard({ page, n, doc, cache, selected, label, marker, onClick, onDra
     return () => { alive = false; };
   }, [seen, doc, cache, page.src, page.index, page.rotate]);
   return (
-    <div ref={el} draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDrop={onDrop}
+    <div ref={el} draggable onClick={onClick} onDoubleClick={onOpen} title={t('pdf.openLarge')} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDrop={onDrop}
       className="relative flex flex-col items-center gap-1.5 cursor-default select-none">
       {marker && <div className={`absolute top-0 bottom-6 w-[3px] rounded-full bg-blue-400 ${marker === 'before' ? '-left-[7px]' : '-right-[7px]'}`} />}
       <div className={`w-full h-[184px] flex items-center justify-center rounded-xl p-2 transition-colors ${selected ? 'bg-blue-500/25 ring-2 ring-blue-400' : 'bg-white/[.03] hover:bg-white/[.06]'}`}>
