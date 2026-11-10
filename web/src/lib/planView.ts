@@ -98,6 +98,8 @@ export interface PlanTurn {
   answer: string | null;
   /** The answer is the whole last message (markdown), not a one-line summary. */
   answerFull: boolean;
+  /** The agent has started its "Result:" section (it may still be streaming). */
+  hasResult: boolean;
 }
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -224,7 +226,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     return step;
   };
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, commits: [], pushed: false, created: [], mentioned: [] };
+    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, hasResult: false, commits: [], pushed: false, created: [], mentioned: [] };
     turns.push(turn);
     active = null;
     justDone = null;
@@ -372,6 +374,7 @@ function applyTextPlan(t: PlanTurn) {
   t.steps.forEach((step, i) => { if (i < lastDone && step.key.startsWith('text:')) step.status = 'completed'; });
   const last = t.texts[t.texts.length - 1];
   const result = resultOf(t.texts);
+  t.hasResult = !!result;
   // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.
   t.answerFull = result ? result.full : !t.hasPlan && !!last?.trim();
   t.answer = result ? result.text : t.answerFull ? last.trim() : noteLine(last ?? null, 240);

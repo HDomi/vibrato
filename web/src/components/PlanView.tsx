@@ -293,7 +293,10 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
   // Subagents still running after the turn ended: the request is not over yet, so no "done" until they finish.
   const agents = tasks?.all.length ?? 0;
   const ended = turn.result ? (turn.result.ok ? 'done' : 'failed') : live ? (turn.pending.length ? 'waiting' : 'running') : total && done < total ? 'stopped' : null;
-  const state = agents && (ended === 'done' || ended === 'stopped' || !ended) ? null : ended;
+  // Every step checked but the turn still going: the agent is writing its result (or wrapping up before it).
+  const wrapping = live && total > 0 && done === total;
+  const writing = wrapping && turn.hasResult && !!turn.answer;
+  const state = agents && (ended === 'done' || ended === 'stopped' || !ended) ? null : ended === 'running' && wrapping ? 'writing' : ended;
   // The step being worked on: the one marked in progress, else (a plan written as text) the first not yet done.
   const marked = turn.steps.findIndex((s) => s.status === 'in_progress');
   const current = live ? (marked >= 0 ? marked : turn.steps.findIndex((s) => s.status !== 'completed')) : -1;
@@ -301,7 +304,8 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
   const files = new Set(turn.changes.flatMap((c) => c.files.map((f) => f.path)));
   const verify = turn.verify[turn.verify.length - 1];
   // The result only once the turn has ended: until then the latest message is progress, not the outcome.
-  const showAnswer = turn.answer && !live;
+  // ...except the "Result:" section itself, which streams in as it is written.
+  const showAnswer = turn.answer && (!live || writing);
   const latest = live && !total ? noteLine(turn.texts[turn.texts.length - 1] ?? null, 200) : null;
   return (
     <section data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
@@ -320,7 +324,7 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
           </span>
         )}
         {state && (
-          <span className={`shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' ? 'bg-amber-300/15 text-amber-200' : state === 'waiting' ? 'bg-sky-400/15 text-sky-200 animate-pulse' : 'bg-fill-2 text-zinc-300'}`}>
+          <span className={`shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' || state === 'writing' ? 'bg-amber-300/15 text-amber-200' : state === 'waiting' ? 'bg-sky-400/15 text-sky-200 animate-pulse' : 'bg-fill-2 text-zinc-300'}`}>
             {t(`plan.state.${state}`)}
           </span>
         )}
@@ -335,6 +339,15 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
             <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{done}/{total}</span>
           </div>
           <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} onJump={onJump} />)}</div>
+          {wrapping && !writing && (
+            <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-300" data-plan-wrapping="">
+              <span className="w-5 h-5 shrink-0 rounded-full border-2 border-amber-300 border-t-transparent animate-spin" />
+              <div className="min-w-0 flex-1 leading-5">
+                {t('plan.writingResult')}
+                {activity && <ActivityLine text={activity} />}
+              </div>
+            </div>
+          )}
         </div>
       ) : live ? (
         <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-400">
@@ -349,7 +362,9 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
       {!!tasks?.unplaced.length && <div className="px-1"><TaskLines tasks={tasks.unplaced} onJump={onJump} /></div>}
       {showAnswer && (
         <div className="rounded-xl bg-black/15 border border-line px-3.5 py-2.5">
-          <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>
+          {writing
+            ? <div className="flex items-center gap-2 text-[11.5px] font-medium text-amber-200/90 mb-1"><span className="w-3 h-3 shrink-0 rounded-full border-2 border-amber-300/80 border-t-transparent animate-spin" />{t('plan.writingResult')}</div>
+            : <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>}
           {turn.answerFull
             ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} /></div>
             : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}

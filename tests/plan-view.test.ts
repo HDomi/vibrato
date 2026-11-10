@@ -324,3 +324,17 @@ test('running subagents are filed under the turn and step whose tool card starte
   assert.deepEqual(got.unplaced.map((x) => x.id), ['e']);
   assert.equal(liveTasksByTurn(turns, { b: tasks.b }).size, 0);
 });
+
+test('a turn knows when its "Result:" section has started, even while it streams', () => {
+  const base: ChatItem[] = [
+    user('u1', 'Do it'),
+    say('a1', 'Plan\n1. One\n2. Two'),
+    say('a2', '✓ 1. did one\n✓ 2. did two'),
+  ];
+  const [before] = buildPlan(base);
+  assert.equal(before.steps.every((s) => s.status === 'completed'), true);
+  assert.equal(before.hasResult, false);
+  const [writing] = buildPlan([...base, { ...(say('a3', 'Result: half of the') as Extract<ChatItem, { kind: 'assistant' }>), streaming: true }]);
+  assert.equal(writing.hasResult, true);
+  assert.match(writing.answer ?? '', /half of the/);
+});
