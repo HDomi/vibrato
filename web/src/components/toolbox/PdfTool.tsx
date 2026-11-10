@@ -4,8 +4,9 @@ import { t } from '../../lib/i18n';
 import { useViewActiveRef } from '../../lib/viewActive';
 import {
   assemblePdf, baseName, duplicatePages, isEncrypted, movePages, nudgePages, pageImageName, pagesOf, PdfLockedError,
-  removePages, rotatePages, type ImageFormat, type PageRef, type PdfSource,
+  isImageName, removePages, rotatePages, sniff, type ImageFormat, type ImagePageSize, type PageRef, type PdfSource,
 } from '../../lib/pdfDoc';
+import { imageToPdf } from '../../lib/pdfImage';
 import { openPdf, PdfPasswordError, renderPageImage, renderThumb, type OpenedPdf } from '../../lib/pdfRender';
 import { takePayload } from './bus';
 import { Check, Seg, blobToBase64, btn, btnPrimary, errText, fmtBytes, select, usePersisted } from './ui';
@@ -80,6 +81,7 @@ export default function PdfTool() {
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ text: string; path?: string } | null>(null);
   const [showExport, setShowExport] = useState(false);
+  const [imgSize, setImgSize] = usePersisted<ImagePageSize>('pdf.imageSize', 'a4');
   const [ex, setEx] = usePersisted<ExportOpts>('pdf.export', { format: 'png', dpi: 150, quality: 90, transparent: false });
   const [drag, setDrag] = useState<{ over: number | null; files: boolean } | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -136,11 +138,15 @@ export default function PdfTool() {
       const files = await load();
       const added: PageRef[] = [];
       for (const f of files) {
-        if (!isPdfName(f.name) && !(f.bytes[0] === 0x25 && f.bytes[1] === 0x50)) { failed.push(t('pdf.notPdf', { name: f.name })); continue; }
+        const kind = sniff(f.bytes);
+        const image = kind === 'png' || kind === 'jpeg' || (kind !== 'pdf' && isImageName(f.name));
+        if (!image && kind !== 'pdf' && !isPdfName(f.name)) { failed.push(t('pdf.notPdf', { name: f.name })); continue; }
         try {
-          const opened = await openPdf(f.bytes, f.name);
-          const locked = await isEncrypted(f.bytes).catch(() => false);
-          const src: PdfSource = { id: `s${++idSeq.current}`, name: f.name, path: f.path, bytes: f.bytes, pageCount: opened.doc.numPages, locked };
+          // An image becomes a one-page PDF here, so every edit, save and export treats it like any page.
+          const bytes = image ? await imageToPdf(f, imgSize) : f.bytes;
+          const opened = await openPdf(bytes, f.name);
+          const locked = image ? false : await isEncrypted(bytes).catch(() => false);
+          const src: PdfSource = { id: `s${++idSeq.current}`, name: f.name, path: f.path, bytes, pageCount: opened.doc.numPages, locked };
           docs.current.set(src.id, opened);
           setSources((m) => new Map(m).set(src.id, src));
           added.push(...pagesOf(src));
@@ -158,7 +164,7 @@ export default function PdfTool() {
       setBusy(null);
       if (failed.length) setErr(failed.join('\n'));
     }
-  }, [edit]);
+  }, [edit, imgSize]);
 
   // Files sent from the file list / preview ("Open in PDF tool", "Export pages as images").
   const receive = useCallback((p: PdfToolPayload | undefined) => {
@@ -248,7 +254,7 @@ export default function PdfTool() {
     dragKeys.current = null;
     setDrag(null);
     if (keys) { edit((p) => movePages(p, keys, at)); return; }
-    const vibePaths = e.dataTransfer.getData('application/x-vibe-path').split('\n').filter(isPdfName);
+    const vibePaths = e.dataTransfer.getData('application/x-vibe-path').split('\n').filter((n) => isPdfName(n) || isImageName(n));
     const files = [...e.dataTransfer.files];
     if (vibePaths.length) void add(() => Promise.all(vibePaths.map(readPath)), at);
     else if (files.length) void add(() => Promise.all(files.map(readFile)), at);
@@ -344,6 +350,7 @@ export default function PdfTool() {
           <div className="text-[11px] text-zinc-500 max-w-md">{t('pdf.dropHint')}</div>
         </div>
         <FilePicker refEl={picker} onFiles={(fs) => void add(() => Promise.all(fs.map(readFile)))} />
+        <div className="shrink-0 flex items-center gap-2"><SizePick value={imgSize} onChange={setImgSize} /></div>
         {err && <div className="shrink-0 text-[11px] text-red-400 whitespace-pre-wrap">{err}</div>}
       </div>
     );
@@ -354,6 +361,7 @@ export default function PdfTool() {
     <div className="h-full flex flex-col gap-3 min-h-0">
       <div className="shrink-0 flex flex-wrap items-center gap-1.5">
         <button className={btn} disabled={!!busy} onClick={() => picker.current?.click()}>{t('pdf.addFiles')}</button>
+        <SizePick value={imgSize} onChange={setImgSize} />
         <span className="mx-1 h-4 w-px bg-white/10" />
         <button className={btn} disabled={!one || !!busy} onClick={() => rotate(-90)} title={t('pdf.rotateLeft')}>⟲</button>
         <button className={btn} disabled={!one || !!busy} onClick={() => rotate(90)} title={t('pdf.rotateRight')}>⟳</button>
@@ -447,8 +455,22 @@ export default function PdfTool() {
   );
 }
 
+/** Page size for images added from now on (pages already in the list keep theirs). */
+function SizePick({ value, onChange }: { value: ImagePageSize; onChange: (v: ImagePageSize) => void }) {
+  return (
+    <label className="flex items-center gap-1.5 text-[11px] text-zinc-500" title={t('pdf.imageSizeHint')}>
+      {t('pdf.imageSize')}
+      <select className={select} value={value} onChange={(e) => onChange(e.target.value as ImagePageSize)}>
+        <option value="a4">A4</option>
+        <option value="letter">Letter</option>
+        <option value="image">{t('pdf.sizeImage')}</option>
+      </select>
+    </label>
+  );
+}
+
 function FilePicker({ refEl, onFiles }: { refEl: React.RefObject<HTMLInputElement | null>; onFiles: (f: File[]) => void }) {
-  return <input ref={refEl} type="file" multiple accept="application/pdf,.pdf" className="hidden" onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) onFiles(fs); }} />;
+  return <input ref={refEl} type="file" multiple accept="application/pdf,.pdf,image/*,.heic,.heif,.tif,.tiff" className="hidden" onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) onFiles(fs); }} />;
 }
 
 interface CardProps {

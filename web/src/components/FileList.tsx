@@ -3,6 +3,7 @@ import { api, formatSize, type Entry, type Listing } from '../lib/api';
 import { useContextMenu, type MenuItem } from './ContextMenu';
 import { openTool } from './toolbox/bus';
 import type { PdfToolPayload } from './toolbox/PdfTool';
+import { isImageName } from '../lib/pdfDoc';
 import { t, useLang } from '../lib/i18n';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
@@ -174,13 +175,18 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, anchor, selectedEntries, listing, renaming, creating, searching]);
 
-  /** PDFs in the selection: open them in the PDF tool (several = merge), or export their pages as images. */
+  /**
+   * PDFs and images in the selection: open them in the PDF editor (several = merge; images become
+   * pages), or export PDF pages as images.
+   */
   const pdfItems = (sel: Entry[]): MenuItem[] => {
-    const pdfs = sel.filter((x) => !x.isDir && x.kind === 'pdf').map((x) => x.path);
-    if (!pdfs.length) return [];
+    const files = sel.filter((x) => !x.isDir && (x.kind === 'pdf' || (x.kind === 'image' && isImageName(x.name))));
+    const pdfs = files.filter((x) => x.kind === 'pdf').map((x) => x.path);
+    if (!files.length) return [];
+    const paths = files.map((x) => x.path);
     return [
-      { label: pdfs.length > 1 ? t('pdf.mergeN', { n: pdfs.length }) : t('pdf.editButton'), onClick: () => openTool('pdf', { paths: pdfs } satisfies PdfToolPayload) },
-      { label: t('pdf.toImagesButton'), onClick: () => openTool('pdf', { paths: pdfs, exportImages: true } satisfies PdfToolPayload) },
+      { label: paths.length > 1 ? t('pdf.mergeN', { n: paths.length }) : pdfs.length ? t('pdf.editButton') : t('pdf.imageToPdf'), onClick: () => openTool('pdf', { paths } satisfies PdfToolPayload) },
+      ...(pdfs.length ? [{ label: t('pdf.toImagesButton'), onClick: () => openTool('pdf', { paths: pdfs, exportImages: true } satisfies PdfToolPayload) }] : []),
     ];
   };
   const itemMenu = (e: Entry): MenuItem[] => {
