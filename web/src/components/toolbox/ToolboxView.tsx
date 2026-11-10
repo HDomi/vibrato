@@ -2,10 +2,11 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentTyp
 import { useViewActiveRef } from '../../lib/viewActive';
 import { t, useLang } from '../../lib/i18n';
 import { usePersisted } from './ui';
+import { takeRequestedTool } from './bus';
 import { SideSplitter, usePaneWidth } from '../Splitter';
 
-type Group = 'data' | 'web' | 'security' | 'time' | 'image' | 'system';
-const GROUPS: Group[] = ['data', 'web', 'security', 'time', 'image', 'system'];
+type Group = 'data' | 'web' | 'security' | 'time' | 'image' | 'doc' | 'system';
+const GROUPS: Group[] = ['data', 'web', 'security', 'time', 'image', 'doc', 'system'];
 
 /** Each tool is its own chunk, so opening the tab loads only the one on screen. */
 const TOOLS: { id: string; group: Group; badge: string; Comp: ComponentType }[] = [
@@ -29,6 +30,7 @@ const TOOLS: { id: string; group: Group; badge: string; Comp: ComponentType }[] 
   { id: 'qr', group: 'image', badge: 'QR', Comp: lazy(() => import('./QrTool')) },
   { id: 'datauri', group: 'image', badge: 'URI', Comp: lazy(() => import('./DataUriTool')) },
   { id: 'favicon', group: 'image', badge: 'ICO', Comp: lazy(() => import('./FaviconTool')) },
+  { id: 'pdf', group: 'doc', badge: 'PDF', Comp: lazy(() => import('./PdfTool')) },
   { id: 'net', group: 'system', badge: 'IP', Comp: lazy(() => import('./NetTool')) },
   { id: 'env', group: 'system', badge: '.env', Comp: lazy(() => import('./EnvTool')) },
   { id: 'chmod', group: 'system', badge: '755', Comp: lazy(() => import('./ChmodTool')) },
@@ -48,6 +50,8 @@ export default function ToolboxView() {
   // Shortcuts number the tools in list order (unfiltered): ⌘1-9, ⌘0 for the tenth.
   const order = useMemo(() => GROUPS.flatMap((g) => TOOLS.filter((x) => x.group === g)), []);
   useEffect(() => { setCursor(0); }, [q]);
+  // Opened from elsewhere in the app before this view existed: the request waited in the bus.
+  useEffect(() => { const id = takeRequestedTool(); if (id && TOOLS.some((x) => x.id === id)) setActive(id); }, [setActive]);
   const viewActive = useViewActiveRef();
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -57,7 +61,7 @@ export default function ToolboxView() {
       if (!/^[0-9]$/.test(e.key) || !order[i]) return;
       e.preventDefault(); setActive(order[i].id);
     };
-    const open = (e: Event) => { const id = (e as CustomEvent<{ id: string }>).detail?.id; if (TOOLS.some((x) => x.id === id)) setActive(id); };
+    const open = (e: Event) => { const id = (e as CustomEvent<{ id: string }>).detail?.id; takeRequestedTool(); if (TOOLS.some((x) => x.id === id)) setActive(id); };
     window.addEventListener('keydown', h);
     window.addEventListener('vibe:toolbox-open', open);
     return () => { window.removeEventListener('keydown', h); window.removeEventListener('vibe:toolbox-open', open); };

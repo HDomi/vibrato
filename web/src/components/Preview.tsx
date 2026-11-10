@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ImageConvertDialog from './ImageConvertDialog';
+import { openTool } from './toolbox/bus';
+import type { PdfToolPayload } from './toolbox/PdfTool';
 import { highlight, highlightedLines, LANGUAGES, languageFor, rememberLanguage } from '../lib/highlight';
 import { CopyButton, LocalLinkContext, openLocalFile } from './MarkdownView';
 import MarkdownView from './MarkdownView';
@@ -202,6 +204,12 @@ export default function Preview({ entry, onClose, layer }: Props) {
         <div className="flex-1" />
         {entry.kind === 'image' && (
           <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => setConverting(true)}>{t('image.convertButton')}</button>
+        )}
+        {entry.kind === 'pdf' && (
+          <>
+            <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => openTool('pdf', { paths: [entry.path] } satisfies PdfToolPayload)}>{t('pdf.editButton')}</button>
+            <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => openTool('pdf', { paths: [entry.path], exportImages: true } satisfies PdfToolPayload)}>{t('pdf.toImagesButton')}</button>
+          </>
         )}
         {entry.kind === 'markdown' && <CopySourceButton path={entry.path} />}
         <button className="text-xs text-zinc-400 hover:text-white" onClick={() => navigator.clipboard.writeText(entry.path)} title={entry.path}>{t('preview.copyPath')}</button>

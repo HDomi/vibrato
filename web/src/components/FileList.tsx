@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Entry, type Listing } from '../lib/api';
 import { useContextMenu, type MenuItem } from './ContextMenu';
+import { openTool } from './toolbox/bus';
+import type { PdfToolPayload } from './toolbox/PdfTool';
 import { t, useLang } from '../lib/i18n';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
@@ -172,6 +174,15 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, anchor, selectedEntries, listing, renaming, creating, searching]);
 
+  /** PDFs in the selection: open them in the PDF tool (several = merge), or export their pages as images. */
+  const pdfItems = (sel: Entry[]): MenuItem[] => {
+    const pdfs = sel.filter((x) => !x.isDir && x.kind === 'pdf').map((x) => x.path);
+    if (!pdfs.length) return [];
+    return [
+      { label: pdfs.length > 1 ? t('pdf.mergeN', { n: pdfs.length }) : t('pdf.editButton'), onClick: () => openTool('pdf', { paths: pdfs } satisfies PdfToolPayload) },
+      { label: t('pdf.toImagesButton'), onClick: () => openTool('pdf', { paths: pdfs, exportImages: true } satisfies PdfToolPayload) },
+    ];
+  };
   const itemMenu = (e: Entry): MenuItem[] => {
     const sel = selected.has(e.path) ? selectedEntries : [e];
     if (!selected.has(e.path)) { setSelected(new Set([e.path])); setAnchor(e.path); }
@@ -180,6 +191,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
       { label: e.isDir ? t('common.open') : t('files.preview'), onClick: () => open(e) },
       ...(onOpenInIde && !e.isDir && !many ? [{ label: t('files.openInIde'), onClick: () => onOpenInIde(e) }] : []),
       ...(onAttach ? [{ label: many ? t('files.attachNToChat', { n: sel.length }) : t('files.attachToChat'), onClick: () => onAttach(sel) }] : []),
+      ...pdfItems(sel),
       { separator: true },
       { label: t('common.revealInFinder'), onClick: () => api.open(e.path, 'finder').catch(fail) },
       ...(e.isDir ? [{ label: t('common.openInTerminal'), onClick: () => api.open(e.path, 'terminal').catch(fail) }] : []),

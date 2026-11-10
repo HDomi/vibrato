@@ -205,6 +205,12 @@ function AppInner() {
     return () => window.removeEventListener('vibe:open-file', h);
   }, [navigate, view, project, setView]);
   useEffect(() => { setPreviewPopup(null); }, [view]);
+  // `openTool` from outside the toolbox (preview, file list): bring Tools mode up first.
+  useEffect(() => {
+    const h = () => setView('tools');
+    window.addEventListener('vibe:toolbox-open', h);
+    return () => window.removeEventListener('vibe:toolbox-open', h);
+  }, [setView]);
   const openProject = useCallback((p: string) => {
     setProject(p); navigate(p); setActiveSession(null);
     api.pushRecent(p).then(setRecent).catch(() => {});
