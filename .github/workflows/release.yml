@@ -58,8 +58,12 @@ jobs:
 
       - name: Build app
         # The in-app browser's native module (native/webview) must be in every release.
+        # Releases are signed with the self-signed certificate (scripts/after-pack.cjs) so macOS keeps the app's
+        # privacy permissions across updates; an ad-hoc release would make every user grant them again.
         env:
           VIBRATO_NATIVE_REQUIRED: '1'
+          VIBRATO_SIGN_REQUIRED: '1'
+          MAC_SIGN_P12: ${{ secrets.MAC_SIGN_P12 }}
         run: |
           # Packaging still downloads small tools from GitHub releases, which sometimes answer 504: retry.
           for i in 1 2 3; do
