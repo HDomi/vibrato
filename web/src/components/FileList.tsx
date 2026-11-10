@@ -25,6 +25,11 @@ interface Clipboard { paths: string[]; cut: boolean; change?: number }
 interface SearchHit { path: string; rel: string; isDir: boolean }
 let clipboard: Clipboard | null = null; // module-level so it survives re-renders and folder changes
 
+function formatDate(mtime: number): string {
+  const date = new Date(mtime);
+  return `${String(date.getFullYear()).padStart(4, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export default function FileList({ listing, error, isFavorite, onNavigate, onPreview, onToggleFavorite, onRefresh, onAttach, onOpenInIde }: Props) {
   useLang();
   const menu = useContextMenu();
@@ -290,7 +295,7 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
                       : e.name}
                   </td>
                   <td className="py-1.5 pr-3 text-right text-zinc-500 whitespace-nowrap">{e.isDir ? '' : formatSize(e.size)}</td>
-                  <td className="py-1.5 pr-3 text-right text-zinc-600 whitespace-nowrap hidden lg:table-cell">{new Date(e.mtime).toLocaleDateString()}</td>
+                  <td className="py-1.5 pr-3 text-right text-zinc-600 whitespace-nowrap hidden lg:table-cell">{formatDate(e.mtime)}</td>
                 </tr>
               ))}
               {entries.length === 0 && !creating && <tr><td className="p-6 text-center text-zinc-600" colSpan={4}>{t('files.empty')}</td></tr>}
