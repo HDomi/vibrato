@@ -365,9 +365,10 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
           {writing
             ? <div className="flex items-center gap-2 text-[11.5px] font-medium text-amber-200/90 mb-1"><span className="w-3 h-3 shrink-0 rounded-full border-2 border-amber-300/80 border-t-transparent animate-spin" />{t('plan.writingResult')}</div>
             : <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>}
+          {/* Same markdown and link handling as the chat: local paths open in the app, web links in the browser. */}
           {turn.answerFull
-            ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} /></div>
-            : <div className="text-[13px] leading-relaxed text-zinc-100">{turn.answer}</div>}
+            ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} baseDir={cwd} /></div>
+            : <MarkdownView text={turn.answer!} baseDir={cwd} className="prose-md text-[13px] leading-relaxed text-zinc-100 max-w-none [&_p]:my-0" />}
           <ProgressLog turn={turn} onJump={onJump} />
         </div>
       )}

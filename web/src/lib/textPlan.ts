@@ -11,6 +11,8 @@ const DONE_AFTER = /^\s*(\d{1,2})[.)]\s*(?:✓|✔|✅)\s*(.*)$/;
 // "결과: …", "**결과:** …", or a heading alone ("## 결과", "**Result**") with the outcome on the lines below.
 const RESULT_LINE = /^\s*(?:#{1,6}\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*(?:최종\s*)?(?:결과|results?)\s*(?:\*\*|__)?\s*(?:[:：]\s*(.*)|$)/i;
 const plainLine = (s: string) => s.replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
+/** One line kept as markdown (links, `code` paths) minus bold markers, which a marker cut in half would leave unbalanced. */
+const mdLine = (s: string) => s.replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim();
 
 /** The Vibrato checklist tool (server/browserMcp.ts PLAN_TOOLS) as Claude and Codex name it. */
 export const isPlanStepTool = (name: string) => name === 'mcp__vibrato__plan_step' || name === 'mcp:vibrato/plan_step';
@@ -130,8 +132,7 @@ function resultAt(lines: string[], j: number, m: RegExpMatchArray): { text: stri
   const body = lines.slice(j + 1).join('\n').trim();
   // Anything under the marker is part of the outcome, even a single line: the result is shown as the reply's answer.
   if (body) return { text: head ? `${head}\n\n${body}` : body, full: true };
-  const rest = plainLine(head);
-  return rest ? { text: rest, full: false } : null;
+  return plainLine(head) ? { text: mdLine(head), full: false } : null;
 }
 
 /** The last "Result:" marker of these messages, with the index of the message it is in. */
@@ -160,7 +161,7 @@ export function resultOf(texts: string[]): { text: string; full: boolean } | nul
     const earlier = lastResult(texts, before);
     if (!earlier) break;
     if (earlier.full) {
-      const same = plainLine(earlier.text.split('\n')[0]) === last.text;
+      const same = plainLine(earlier.text.split('\n')[0]) === plainLine(last.text);
       return { text: same ? earlier.text : `${last.text}\n\n${earlier.text}`, full: true };
     }
     before = earlier.at;

@@ -338,3 +338,9 @@ test('a turn knows when its "Result:" section has started, even while it streams
   assert.equal(writing.hasResult, true);
   assert.match(writing.answer ?? '', /half of the/);
 });
+
+test('a one-line result keeps its links and code paths as markdown, only bold is dropped', () => {
+  const [turn] = buildPlan([user('u1', 'x'), say('a1', '진행 계획\n1. a\n\n✓ 1. a\n\n**결과:** [보고서](/tmp/r.md) 만들고 `web/a.ts` 고쳤어.')]);
+  assert.equal(turn.answer, '[보고서](/tmp/r.md) 만들고 `web/a.ts` 고쳤어.');
+  assert.equal(turn.answerFull, false);
+});

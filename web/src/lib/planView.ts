@@ -94,7 +94,10 @@ export interface PlanTurn {
   texts: string[];
   /** Item ids of `texts`, index for index. */
   textIds: string[];
-  /** The outcome: the reply's "Result:" line, else the gist of its last message (all of it when there is no plan). */
+  /**
+   * The outcome: the reply's "Result:" line (markdown, so its links open), else the gist of its last message
+   * (all of it when there is no plan).
+   */
   answer: string | null;
   /** The answer is the whole last message (markdown), not a one-line summary. */
   answerFull: boolean;
