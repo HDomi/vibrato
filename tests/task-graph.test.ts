@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { liveTasks, reduceEvent, type ChatSession } from '../web/src/lib/chatStore';
-import { layoutTaskTree, NODE_H, NODE_W, ROOT_ID, shortTokens, taskKind } from '../web/src/lib/taskGraph';
+import { layoutTaskTree, NODE_H, NODE_W, ROOT_ID, shortTokens, taskKind, visibleTasks } from '../web/src/lib/taskGraph';
 import type { TaskInfo } from '../web/src/lib/agent';
 
 const base: ChatSession = { id: 's', agent: 'claude', cwd: '/p', permissionMode: 'default', status: 'running', totalCostUsd: 0, lastSeq: 0, items: [] };
@@ -48,4 +48,22 @@ test('task labels and token counts stay short', () => {
   assert.equal(shortTokens(1234), '1.2k');
   assert.equal(shortTokens(35200), '35k');
   assert.equal(shortTokens(2_500_000), '2.5M');
+});
+
+test('the graph hides completed tasks but keeps failed ones and parents of anything still shown', () => {
+  const list = [
+    task('p1', { status: 'completed' }),
+    task('c1', { parentId: 'p1', status: 'running' }),
+    task('p2', { status: 'completed' }),
+    task('c2', { parentId: 'p2', status: 'completed' }),
+    task('g', { parentId: 'c2', status: 'completed' }),
+    task('f', { status: 'failed' }),
+    task('s', { status: 'stopped' }),
+    task('p3', { status: 'completed' }),
+    task('c3', { parentId: 'p3', status: 'completed' }),
+    task('g3', { parentId: 'c3', status: 'failed' }),
+    task('loop1', { parentId: 'loop2', status: 'completed' }),
+    task('loop2', { parentId: 'loop1', status: 'completed' }),
+  ];
+  assert.deepEqual(visibleTasks(list).map((t) => t.id), ['p1', 'c1', 'f', 's', 'p3', 'c3', 'g3']);
 });

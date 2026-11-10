@@ -67,6 +67,25 @@ export function layoutTaskTree(tasks: TaskInfo[]): GraphLayout {
   return { nodes, edges, width: (maxDepth + 1) * (NODE_W + GAP_X) - GAP_X, height: Math.max(nextRow, 1) * (NODE_H + GAP_Y) - GAP_Y };
 }
 
+/**
+ * What the relation graph shows: tasks still running, failed or stopped. A completed task drops out,
+ * unless something it spawned is still shown, so a parent stays until all of its children are done.
+ */
+export function visibleTasks(tasks: TaskInfo[]): TaskInfo[] {
+  const children = new Map<string, TaskInfo[]>();
+  for (const t of tasks) if (t.parentId && t.parentId !== t.id) children.set(t.parentId, [...(children.get(t.parentId) ?? []), t]);
+  const keep = new Map<string, boolean>();
+  const shown = (t: TaskInfo): boolean => {
+    const known = keep.get(t.id);
+    if (known !== undefined) return known;
+    keep.set(t.id, t.status !== 'completed'); // provisional, guards against a parent cycle
+    const v = t.status !== 'completed' || (children.get(t.id) ?? []).some(shown);
+    keep.set(t.id, v);
+    return v;
+  };
+  return tasks.filter(shown);
+}
+
 /** Short label for a chip or node: the agent type for subagents, else what kind of task it is. */
 export function taskKind(t: TaskInfo): string {
   if (t.subagentType) return t.subagentType;
