@@ -42,7 +42,11 @@ function sign(app) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibrato-sign-'));
   const keychain = path.join(dir, 'sign.keychain-db');
   const pass = crypto.randomBytes(16).toString('hex');
-  const security = (...args) => execFileSync('/usr/bin/security', args, { stdio: 'pipe' });
+  const security = (...args) => execFileSync('/usr/bin/security', args, { encoding: 'utf8', stdio: 'pipe' });
+  // `codesign --keychain` finds the certificate there, but looks the private key up through the user's keychain
+  // search list. On the GitHub runner the throwaway keychain is not on it, and signing failed with "The specified
+  // item could not be found in the keychain" (v4.7.1). Put it on the list for the duration, then restore the list.
+  const searchList = security('list-keychains', '-d', 'user').split('\n').map((l) => l.trim().replace(/^"|"$/g, '')).filter(Boolean);
   try {
     fs.writeFileSync(path.join(dir, 'id.p12'), p12, { mode: 0o600 });
     security('create-keychain', '-p', pass, keychain);
@@ -50,9 +54,16 @@ function sign(app) {
     security('unlock-keychain', '-p', pass, keychain);
     security('import', path.join(dir, 'id.p12'), '-k', keychain, '-P', P12_PASSWORD, '-T', '/usr/bin/codesign');
     security('set-key-partition-list', '-S', 'apple-tool:,apple:', '-s', '-k', pass, keychain);
-    console.log(`  • signing with "${IDENTITY}"`);
-    codesign(app, ['--keychain', keychain, '--sign', IDENTITY]);
+    security('list-keychains', '-d', 'user', '-s', keychain, ...searchList);
+    // By SHA-1 rather than by name: unambiguous, and a p12 without its private key fails here, not inside codesign.
+    // The self-signed certificate is not trusted (CSSMERR_TP_NOT_TRUSTED), so not `-v`: codesign signs with it anyway.
+    const found = security('find-identity', '-p', 'codesigning', keychain);
+    const hash = found.split('\n').find((l) => l.includes(`"${IDENTITY}"`))?.match(/\b([0-9A-F]{40})\b/)?.[1];
+    if (!hash) throw new Error(`No "${IDENTITY}" signing identity (certificate + private key) in the p12:\n${found}`);
+    console.log(`  • signing with "${IDENTITY}" (${hash.slice(0, 8)})`);
+    codesign(app, ['--keychain', keychain, '--sign', hash]);
   } finally {
+    try { security('list-keychains', '-d', 'user', '-s', ...searchList); } catch {}
     try { security('delete-keychain', keychain); } catch {}
     fs.rmSync(dir, { recursive: true, force: true });
   }
