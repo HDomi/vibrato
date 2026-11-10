@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import type { TaskInfo } from '../lib/agent';
 import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
-import { buildPlan, noteLine, type PlanStep, type PlanTurn } from '../lib/planView';
+import { buildPlan, liveTasksByTurn, noteLine, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
+import { taskKind } from '../lib/taskGraph';
 import { resolveLocal } from '../lib/localPath';
 import { ApprovalItem, QuestionItem } from './ChatItems';
 import FileIcon from './FileIcon';
@@ -16,6 +18,8 @@ interface Props {
   /** Session folder, for relative paths the agent names. */
   cwd: string;
   running: boolean;
+  /** The session's subagents / background tasks; running ones show under the step that started them. */
+  tasks?: Record<string, TaskInfo>;
   /** What the agent is doing right now (the chat's status line), shown under the step in progress. */
   activity: string | null;
   /** Clock for the time on the step in progress (ticks while running). */
@@ -84,6 +88,34 @@ const letter = (i: number): string => (i < 26 ? String.fromCharCode(97 + i) : le
 /** Accounts shown under a step before "earlier ones" folds the rest away. */
 const ENTRIES_SHOWN = 4;
 
+/**
+ * Subagents / background tasks still running, under the step that started them: kind, what it was asked, how
+ * long it has run. Violet like the composer chip. Ticks on its own, since the turn may have ended already.
+ */
+function TaskLines({ tasks, onJump }: { tasks: TaskInfo[]; onJump: (id: string) => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const shown = tasks.slice(0, 4);
+  return (
+    <div className="mt-1.5 space-y-1" data-plan-tasks="">
+      {shown.map((task) => (
+        <div key={task.id} role={task.toolUseId ? 'link' : undefined} title={`${taskKind(task)} · ${task.description}`}
+          onClick={task.toolUseId ? (e) => { e.stopPropagation(); onJump(task.toolUseId!); } : undefined}
+          className={`flex items-center gap-2 text-[11.5px] leading-4 text-violet-200/90 min-w-0 ${task.toolUseId ? 'cursor-pointer hover:text-violet-100' : ''}`}>
+          <span className="w-3 h-3 shrink-0 rounded-full border-2 border-violet-400/80 border-t-transparent animate-spin" />
+          <span className="shrink-0 font-medium">{taskKind(task)}</span>
+          <span className="truncate text-violet-200/60">{task.description.split('\n')[0]}</span>
+          <span className="shrink-0 ml-auto tabular-nums text-violet-300/60">{duration(now - task.startedAt)}</span>
+        </div>
+      ))}
+      {tasks.length > shown.length && <div className="text-[11px] text-violet-300/60 pl-5">{t('plan.tasksMore', { n: tasks.length - shown.length })}</div>}
+    </div>
+  );
+}
+
 /** A step's accounts: one "a." line, or for a step done again in later rounds, a., b., c. with the round's title. */
 function StepEntries({ step, note }: { step: PlanStep; note: string | null }) {
   const [all, setAll] = useState(false);
@@ -111,7 +143,7 @@ function StepEntries({ step, note }: { step: PlanStep; note: string | null }) {
 }
 
 /** One plan step: number and text, its accounts (a., b., …) or why it was skipped, what it took, and live, what is happening now. */
-function StepRow({ step, index, current, live, activity, now, onJump }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; onJump: (id: string) => void }) {
+function StepRow({ step, index, current, live, activity, now, tasks, onJump }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; tasks?: TaskInfo[]; onJump: (id: string) => void }) {
   useLang();
   const done = step.status === 'completed';
   const title = current && step.activeForm ? step.activeForm : step.content;
@@ -131,6 +163,7 @@ function StepRow({ step, index, current, live, activity, now, onJump }: { step: 
         <StepEntries step={step} note={note} />
         {(done || current) && <StepStatsLine step={step} now={now} running={working} />}
         {working && activity && <ActivityLine text={activity} />}
+        {!!tasks?.length && <TaskLines tasks={tasks} onJump={onJump} />}
       </div>
       {target && <span className="shrink-0 mt-0.5 text-[11px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">{t('plan.jumpChat')} →</span>}
     </div>
@@ -252,12 +285,15 @@ function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
   return checked ?? uniqueFiles(turn.created);
 }
 
-function TurnCard({ turn, live, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
+function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
   useLang();
   const created = useCreatedFiles(turn, cwd);
   const done = turn.steps.filter((s) => s.status === 'completed').length;
   const total = turn.steps.length;
-  const state = turn.result ? (turn.result.ok ? 'done' : 'failed') : live ? (turn.pending.length ? 'waiting' : 'running') : total && done < total ? 'stopped' : null;
+  // Subagents still running after the turn ended: the request is not over yet, so no "done" until they finish.
+  const agents = tasks?.all.length ?? 0;
+  const ended = turn.result ? (turn.result.ok ? 'done' : 'failed') : live ? (turn.pending.length ? 'waiting' : 'running') : total && done < total ? 'stopped' : null;
+  const state = agents && (ended === 'done' || ended === 'stopped' || !ended) ? null : ended;
   // The step being worked on: the one marked in progress, else (a plan written as text) the first not yet done.
   const marked = turn.steps.findIndex((s) => s.status === 'in_progress');
   const current = live ? (marked >= 0 ? marked : turn.steps.findIndex((s) => s.status !== 'completed')) : -1;
@@ -277,6 +313,12 @@ function TurnCard({ turn, live, cwd, activity, now, onJump, onApprove, onAnswer 
             <div key={i} className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.replace(/\s+/g, ' ').trim()}</span></div>
           ))}
         </div>
+        {agents > 0 && (
+          <span className="shrink-0 mt-0.5 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 bg-violet-500/15 text-violet-200" data-plan-agents="">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            {t('plan.state.agents', { n: agents })}
+          </span>
+        )}
         {state && (
           <span className={`shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 ${state === 'done' ? 'bg-emerald-400/15 text-emerald-200' : state === 'failed' ? 'bg-red-500/15 text-red-200' : state === 'running' ? 'bg-amber-300/15 text-amber-200' : state === 'waiting' ? 'bg-sky-400/15 text-sky-200 animate-pulse' : 'bg-fill-2 text-zinc-300'}`}>
             {t(`plan.state.${state}`)}
@@ -292,7 +334,7 @@ function TurnCard({ turn, live, cwd, activity, now, onJump, onApprove, onAnswer 
             </div>
             <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{done}/{total}</span>
           </div>
-          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} onJump={onJump} />)}</div>
+          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} onJump={onJump} />)}</div>
         </div>
       ) : live ? (
         <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-400">
@@ -304,6 +346,7 @@ function TurnCard({ turn, live, cwd, activity, now, onJump, onApprove, onAnswer 
           </div>
         </div>
       ) : null}
+      {!!tasks?.unplaced.length && <div className="px-1"><TaskLines tasks={tasks.unplaced} onJump={onJump} /></div>}
       {showAnswer && (
         <div className="rounded-xl bg-black/15 border border-line px-3.5 py-2.5">
           <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>
@@ -348,9 +391,10 @@ function SessionSummary({ turns }: { turns: PlanTurn[] }) {
 }
 
 /** The session as a checklist per turn: each plan step with what was done for it. */
-function PlanView({ items, cwd, running, activity, now, onJump, onApprove, onAnswer, focusTurn }: Props) {
+function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove, onAnswer, focusTurn }: Props) {
   useLang();
   const turns = useMemo(() => buildPlan(items), [items]);
+  const turnTasks = useMemo(() => liveTasksByTurn(turns, tasks), [turns, tasks]);
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -391,7 +435,7 @@ function PlanView({ items, cwd, running, activity, now, onJump, onApprove, onAns
         <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
           {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
           <SessionSummary turns={turns} />
-          {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} activity={activity} now={now} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
+          {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} tasks={turnTasks.get(turn.id)} activity={activity} now={now} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
         </div>
       </div>
       {!atBottom && (

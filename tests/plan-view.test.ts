@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPlan, noteLine } from '../web/src/lib/planView';
+import { buildPlan, liveTasksByTurn, noteLine } from '../web/src/lib/planView';
+import type { TaskInfo } from '../web/src/lib/agent';
 import { reduceEvent, type ChatItem, type ChatSession } from '../web/src/lib/chatStore';
 
 const user = (id: string, text: string): ChatItem => ({ kind: 'user', id, text, attachments: [] });
@@ -295,4 +296,31 @@ test('a plan_step call closes its step like a "✓ n." line, and "✓ 1~3." clos
   assert.equal(t.steps[0].items.some((it) => it.id === 't1'), true);
   const r = buildPlan([user('u1', 'x'), say('a1', plan), say('a2', '✓ 1~3. 앞 단계 끝')])[0];
   assert.deepEqual(r.steps.map((s) => s.status), ['completed', 'completed', 'completed', 'pending']);
+});
+
+test('running subagents are filed under the turn and step whose tool card started them', () => {
+  const turns = buildPlan([
+    user('u1', 'Investigate'),
+    todos('t1', [['Spawn agents', 'in_progress'], ['Wrap up', 'pending']]),
+    tool('ag1', 'Agent', { description: 'scan' }),
+    tool('ag2', 'Agent', { description: 'probe' }),
+    todos('t2', [['Spawn agents', 'completed'], ['Wrap up', 'in_progress']]),
+    tool('bg1', 'Bash', { command: 'sleep 100', run_in_background: true }),
+    { kind: 'result', id: 'res', ok: true, text: '', costUsd: 0.1, numTurns: 3, durationMs: 9000 },
+  ]);
+  const task = (id: string, extra: Partial<TaskInfo>): TaskInfo => ({ id, type: 'local_agent', description: id, status: 'running', startedAt: 1, ...extra });
+  const tasks: Record<string, TaskInfo> = {
+    a: task('a', { toolUseId: 'ag1' }),
+    b: task('b', { toolUseId: 'ag2', status: 'completed' }),
+    c: task('c', { toolUseId: 'nested-card', parentId: 'a' }),
+    d: task('d', { toolUseId: 'bg1', type: 'local_bash' }),
+    e: task('e', {}),
+    f: task('f', { toolUseId: 'ag2', ambient: true }),
+  };
+  const got = liveTasksByTurn(turns, tasks).get(turns[0].id)!;
+  assert.deepEqual(got.all.map((x) => x.id).sort(), ['a', 'c', 'd', 'e']);
+  assert.deepEqual(got.byStep.get(0)?.map((x) => x.id), ['a', 'c']);
+  assert.deepEqual(got.byStep.get(1)?.map((x) => x.id), ['d']);
+  assert.deepEqual(got.unplaced.map((x) => x.id), ['e']);
+  assert.equal(liveTasksByTurn(turns, { b: tasks.b }).size, 0);
 });

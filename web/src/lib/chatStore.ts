@@ -71,7 +71,7 @@ export function displayTitle(s: ChatSession, max = 40): string | null {
  */
 export function backgroundState(s: ChatSession): 'running' | 'waiting' | null {
   if (s.status === 'compacting') return 'running';
-  if (s.status !== 'running') return null;
+  if (s.status !== 'running') return isWorking(s) ? 'running' : null;
   return pendingRequests(s) > 0 ? 'waiting' : 'running';
 }
 
@@ -110,6 +110,15 @@ export function currentTodos(s: ChatSession): TodoItem[] {
 /** Subagents and background tasks still working, oldest first; housekeeping tasks are left out. */
 export function liveTasks(s: Pick<ChatSession, 'tasks'>): TaskInfo[] {
   return Object.values(s.tasks ?? {}).filter((t) => t.status === 'running' && !t.ambient).sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
+}
+
+/**
+ * Whether a session is busy: its turn runs or compacts, or a subagent / background task it spawned
+ * is still working after the turn ended. Drives the yellow dots on project icons and session tabs.
+ */
+export function isWorking(s: Pick<ChatSession, 'status' | 'tasks'>): boolean {
+  if (s.status === 'running' || s.status === 'compacting') return true;
+  return s.status !== 'closed' && liveTasks(s).length > 0;
 }
 
 /** Whether a session belongs to the project on screen: its folder, or a worktree started from it. */

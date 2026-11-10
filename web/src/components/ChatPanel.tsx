@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useViewActiveRef } from '../lib/viewActive';
-import { currentTodos, displayTitle, isInjected, type ChatItem, type ChatSession } from '../lib/chatStore';
+import { currentTodos, displayTitle, isInjected, isWorking, type ChatItem, type ChatSession } from '../lib/chatStore';
 import type { AgentId, Attachment, PermissionModeId, RewindResult } from '../lib/agent';
 import { api, type Backlog, type HistorySession, type ModelInfo, type WorktreeInfo } from '../lib/api';
 import LeftoverWorktrees from './LeftoverWorktrees';
@@ -624,7 +624,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   return (
     <div className="h-full flex flex-col min-w-0">
       <div className="@container h-10 shrink-0 flex items-center gap-3 px-4 border-b border-white/10 text-xs whitespace-nowrap">
-        <span className={`w-2 h-2 rounded-full ${running ? 'bg-amber-400 animate-pulse' : session.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
+        <span className={`w-2 h-2 rounded-full ${isWorking(session) ? 'bg-amber-400 animate-pulse' : session.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
         <AgentIcon agent={session.agent} size={16} />
         <span className="font-medium text-zinc-200">{session.agent === 'codex' ? 'Codex' : 'Claude'}</span>
         <ModelSelect agent={session.agent} value={session.model ?? null} onChange={onModel} compact />
@@ -667,7 +667,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         </div>
       )}
       <div className="flex-1 min-h-0 relative">
-        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} activity={activity} now={now} running={running} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
+        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} activity={activity} now={now} running={running} tasks={session.tasks} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
         {searching && view === 'chat' && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
           onJump={() => { stick.current = false; setAtBottom(false); }} />}
         {/* Kept mounted under the plan view so switching back keeps its place. */}

@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { backgroundState, displayTitle, inProject, pendingRequests, sortSessions, type ChatSession } from './lib/chatStore';
+import { backgroundState, displayTitle, inProject, isWorking, pendingRequests, sortSessions, type ChatSession } from './lib/chatStore';
 import { api, ApiError, type Entry, type Favorites, type HomeInfo, type Listing, type RecentSession, type ScheduleRun } from './lib/api';
 import { agentClient, type Attachment } from './lib/agent';
 import { openTerminal, reconnectTerminals, terminalsBusy } from './lib/terminals';
@@ -213,14 +213,15 @@ function AppInner() {
   useEffect(() => { setOnScreenSession(view === 'agent' ? (agentActive && agentActive !== 'new' ? agentActive : null) : (session?.id ?? null)); }, [view, agentActive, session?.id]);
   // Dock badges: sessions whose turn ended while their project was not on screen stay "done, unseen" until it is opened.
   const [unseen, setUnseen] = useState<Set<string>>(() => new Set());
-  const lastStatus = useRef<Record<string, ChatSession['status']>>({});
+  const lastWorking = useRef<Record<string, boolean>>({});
   const shownProject = view === 'vibe' ? project : null;
   useEffect(() => {
     const ended: string[] = [];
     for (const s of Object.values(S.sessions)) {
-      const before = lastStatus.current[s.id];
-      if ((before === 'running' || before === 'compacting') && s.status === 'idle' && !inProject(s, shownProject)) ended.push(s.id);
-      lastStatus.current[s.id] = s.status;
+      // Done means the turn and every subagent it left running have finished.
+      const working = isWorking(s);
+      if (lastWorking.current[s.id] && !working && s.status === 'idle' && !inProject(s, shownProject)) ended.push(s.id);
+      lastWorking.current[s.id] = working;
     }
     if (ended.length) setUnseen((u) => new Set([...u, ...ended]));
   }, [S.sessions, shownProject]);
@@ -463,10 +464,10 @@ function AppInner() {
   const waiting = Object.values(S.sessions).reduce((n, s) => n + pendingRequests(s), 0);
   // Same element every render: the toolbox takes no props, so React skips it when the app re-renders.
   const toolbox = useMemo(() => <Suspense fallback={null}><ToolboxView /></Suspense>, []);
-  /** Per project: 'running' while any of its sessions works, else 'done' if one finished unseen. */
+  /** Per project: 'running' while any of its sessions (or their subagents) works, else 'done' if one finished unseen. */
   const projectBadge = (path: string): 'running' | 'done' | null => {
     const mine = Object.values(S.sessions).filter((s) => inProject(s, path));
-    if (mine.some((s) => s.status === 'running' || s.status === 'compacting')) return 'running';
+    if (mine.some(isWorking)) return 'running';
     return mine.some((s) => unseen.has(s.id)) ? 'done' : null;
   };
   const tabIcons: Record<typeof rightTabs[number][0], IconName> = { files: 'list', preview: 'file', terminal: 'terminal', git: 'branch', run: 'play' };
@@ -508,7 +509,7 @@ function AppInner() {
                     <div key={s.id} onClick={() => setActiveSession(s.id)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
                       onContextMenu={(e) => menu.open(e, sessionMenu(s, { setPinned: S.setPinned, rename: () => setRenamingTab(s.id), close: () => closeSession(s.id), remove: () => deleteSession(s, () => closeSession(s.id, true)) }))} {...(s.id !== session?.id ? dropProps(s.id) : {})}
                       className={`group flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 whitespace-nowrap cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${isWorking(s) ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
                       {renamingTab === s.id
@@ -669,7 +670,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
               onDrop={(e) => { if (s.id === session?.id || !hasTransfer(e)) return; e.preventDefault(); setDropTarget(null); const p = readTransfer(e); if (p) sendTransfer(s.id, p); }}
               onContextMenu={(e) => menu.open(e, sessionMenu(s, { setPinned: S.setPinned, rename: () => setRenaming(s.id), close: () => closeOne(s), remove: () => deleteSession(s, () => closeOne(s, true)) }))}
               className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-300 hover:bg-fill'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.status === 'running' || s.status === 'compacting' ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isWorking(s) ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
               <AgentIcon agent={s.agent} size={16} />
               {s.pinned && <span className="text-[10px]" title={t('common.pin')}>📌</span>}
               {renaming === s.id

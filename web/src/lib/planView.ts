@@ -1,5 +1,5 @@
-import type { TodoItem } from './agent';
-import { isInjected, todosFromInput, type ChatItem } from './chatStore';
+import type { TaskInfo, TodoItem } from './agent';
+import { isInjected, liveTasks, todosFromInput, type ChatItem } from './chatStore';
 import { codePathCandidate } from './localPath';
 import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, stepEntries } from './textPlan';
 
@@ -396,3 +396,46 @@ export function noteLine(note: string | null, max = 160): string | null {
 
 /** Whether a step group has anything worth a card. */
 export const hasWork = (s: PlanStep) => s.items.length > 0;
+
+/** Running subagents / background tasks of one turn: per plan step (by index) that started them, and the rest. */
+export interface TurnTasks { all: TaskInfo[]; byStep: Map<number, TaskInfo[]>; unplaced: TaskInfo[] }
+
+/**
+ * Files every running task under the turn and plan step whose tool card started it. A subagent's own subagent
+ * counts toward the card of the top task in its chain. Tasks with no card in any turn go to the last turn.
+ */
+export function liveTasksByTurn(turns: PlanTurn[], tasks: Record<string, TaskInfo> | undefined): Map<string, TurnTasks> {
+  const out = new Map<string, TurnTasks>();
+  const live = liveTasks({ tasks });
+  if (!live.length || !turns.length) return out;
+  // Tool card id -> [turn id, step index or -1 for work outside the checklist].
+  const where = new Map<string, [string, number]>();
+  for (const turn of turns) {
+    const file = (items: ChatItem[], step: number) => { for (const it of items) if (it.kind === 'tool') where.set(it.id, [turn.id, step]); };
+    file(turn.before.items, -1);
+    turn.steps.forEach((st, i) => file(st.items, i));
+    file(turn.after.items, -1);
+  }
+  const origin = (task: TaskInfo): string | undefined => {
+    let cur: TaskInfo | undefined = task;
+    let card = task.toolUseId;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      if (cur.toolUseId && where.has(cur.toolUseId)) card = cur.toolUseId;
+      cur = cur.parentId ? tasks?.[cur.parentId] : undefined;
+    }
+    return card;
+  };
+  const last = turns[turns.length - 1].id;
+  for (const task of live) {
+    const card = origin(task);
+    const [turnId, step] = (card && where.get(card)) || [last, -1];
+    let entry = out.get(turnId);
+    if (!entry) out.set(turnId, (entry = { all: [], byStep: new Map(), unplaced: [] }));
+    entry.all.push(task);
+    if (step < 0) entry.unplaced.push(task);
+    else entry.byStep.set(step, [...(entry.byStep.get(step) ?? []), task]);
+  }
+  return out;
+}
