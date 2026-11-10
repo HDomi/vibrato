@@ -128,6 +128,7 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
   const claudeError = loadError ?? u?.errors.find((e) => e.startsWith('claude:'));
   const codexError = loadError ?? u?.errors.find((e) => e.startsWith('codex:'));
   const showFolder = mode === 'vibe' && !!onPickFolder;
+  const openBrowser = typeof window !== 'undefined' ? window.vibe?.openBrowser : undefined;
 
   return (
     // z-30: the usage tooltips hang over the cards below.
@@ -141,7 +142,15 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
         {onOpenSettings && <CircleButton title={t('common.settings')} onClick={onOpenSettings}><Icon name="gear" size={15} /></CircleButton>}
         <span className="ml-1.5"><UpdateBadge onWall /></span>
       </div>
-      <ModeTabs mode={mode} onMode={onMode} />
+      {/* The browser button hangs off the capsule's right edge so the tabs stay centered. */}
+      <div className="relative">
+        <ModeTabs mode={mode} onMode={onMode} />
+        {openBrowser && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2.5">
+            <CircleButton title={t('usage.openBrowser')} onClick={() => void openBrowser()}><Icon name="globe" size={16} /></CircleButton>
+          </div>
+        )}
+      </div>
       <div className="min-w-0 flex items-center justify-end gap-1.5 pr-[42px]">
         <UsageChip agent="claude" label="5h" win={u?.claude?.fiveHour ?? null} error={claudeError} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
         <UsageChip agent="claude" label={t('usage.week')} win={u?.claude?.weekly ?? null} error={claudeError} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
