@@ -897,6 +897,14 @@ const tools: Record<string, Tool> = {
     const dx = Number(args.x ?? 0) * (args.direction === 'left' ? -1 : 1);
     return lease(tab, async () => {
       activate(tab.id);
+      // The cursor goes over what scrolls first, so the user sees the agent scrolling instead of a still cursor.
+      const over = await evalIn(tab, `
+        const el = ${sel ? `__vb.find(${JSON.stringify(sel)})` : 'null'};
+        const box = el && el.scrollHeight > el.clientHeight + 1 ? el.getBoundingClientRect() : null;
+        const l = Math.max(0, box ? box.left : 0), r = Math.min(innerWidth, box ? box.right : innerWidth);
+        const t = Math.max(0, box ? box.top : 0), b = Math.min(innerHeight, box ? box.bottom : innerHeight);
+        return { x: Math.round((l + r) / 2), y: Math.round((t + b) / 2) };`).catch(() => null) as { x: number; y: number } | null;
+      if (over) await cursorTo(tab, ctx, over);
       const r = await evalIn(tab, `
         const el = ${sel ? `__vb.find(${JSON.stringify(sel)})` : 'null'};
         const box = el && el.scrollHeight > el.clientHeight + 1 ? el : document.scrollingElement || document.documentElement;
