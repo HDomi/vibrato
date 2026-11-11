@@ -11,6 +11,7 @@ import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agent
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
 import type { RemoteSessionSummary } from './remote/protocol.cjs';
+import { isCompactSummary, listHistory } from './history.js';
 
 const BUFFER_LIMIT = 5000;
 const BUFFER_BYTES = 16 * 1024 * 1024;
@@ -43,6 +44,11 @@ interface Entry {
   sendChain: Promise<void>;
   /** Origin of the message being sent through the remote host; stamped on the `user` event it produces. */
   pendingRemote?: RemoteOrigin;
+  /**
+   * What the remote list calls this session: its first message, or a resumed conversation's saved title. Kept here
+   * because the replay buffer drops old events (a single long answer is thousands of stream pieces).
+   */
+  title?: string;
 }
 
 export class SessionRegistry {
@@ -78,18 +84,16 @@ export class SessionRegistry {
    */
   summaries(): RemoteSessionSummary[] {
     return [...this.entries.values()].filter((e) => !e.closed).map((e) => {
-      let title = '';
       let mode: string | undefined;
       const open = new Set<string>();
       for (const m of e.buffer) {
         const ev = m.event;
-        if (ev.kind === 'user' && !title) title = ev.text.trim().split('\n')[0].slice(0, 120);
-        else if (ev.kind === 'session.init' && ev.permissionMode) mode = ev.permissionMode;
+        if (ev.kind === 'session.init' && ev.permissionMode) mode = ev.permissionMode;
         else if (ev.kind === 'status' && ev.permissionMode) mode = ev.permissionMode;
         else if (ev.kind === 'approval.request' || ev.kind === 'question.request') open.add(ev.requestId);
         else if (ev.kind === 'approval.resolved' || ev.kind === 'question.resolved') open.delete(ev.requestId);
       }
-      return { id: e.session.id, agent: e.session.agent, cwd: e.session.cwd, title, createdAt: e.createdAt, lastActivity: e.lastActivity, running: e.running, waiting: open.size, permissionMode: mode };
+      return { id: e.session.id, agent: e.session.agent, cwd: e.session.cwd, title: e.title ?? '', createdAt: e.createdAt, lastActivity: e.lastActivity, running: e.running, waiting: open.size, permissionMode: mode };
     });
   }
 
@@ -153,6 +157,8 @@ export class SessionRegistry {
     this.entries.set(session.id, entry);
     session.onEvent((event) => this.broadcast(entry, event));
     this.changed();
+    // A resumed conversation has no message in this process yet: name it the way the history list does.
+    if (cmd.resume) void this.resumedTitle(entry, cmd.resume);
     return session;
   }
 
@@ -259,6 +265,13 @@ export class SessionRegistry {
     this.broadcast(e, { kind: 'verify', id: vid, status: r.cancelled ? 'cancelled' : r.exitCode === 0 ? 'passed' : 'failed', command: settings.command, output: r.output, exitCode: r.exitCode, durationMs: r.durationMs });
   }
 
+  private async resumedTitle(e: Entry, agentSessionId: string) {
+    const rows = await listHistory(e.session.cwd, e.session.agent, 300).catch(() => []);
+    const row = rows.find((r) => r.sessionId === agentSessionId) as { customTitle?: string; summary?: string; firstPrompt?: string } | undefined;
+    const title = row && (row.customTitle || row.summary || (isCompactSummary(row.firstPrompt) ? '' : row.firstPrompt));
+    if (title && !e.title && this.entries.get(e.session.id) === e) { e.title = firstLine(title); this.changed(); }
+  }
+
   private broadcast(e: Entry, event: AgentEvent) {
     if (event.kind === 'user' && e.pendingRemote) { event = { ...event, remote: e.pendingRemote }; e.pendingRemote = undefined; }
     const msg: ServerMessage = { sessionId: e.session.id, seq: ++e.seq, ts: Date.now(), event };
@@ -285,12 +298,20 @@ export class SessionRegistry {
       while (e.buffer.length > 1 && (e.buffer.length > BUFFER_LIMIT || e.bufferBytes > BUFFER_BYTES)) e.bufferBytes -= Buffer.byteLength(JSON.stringify(e.buffer.shift()!));
     }
     for (const ws of e.subscribers) safeSend(ws, msg);
-    if (event.kind === 'status' || event.kind === 'approval.request' || event.kind === 'approval.resolved' || event.kind === 'question.request' || event.kind === 'question.resolved' || (event.kind === 'user' && e.buffer.filter((m) => m.event.kind === 'user').length === 1)) this.changed();
+    let named = false;
+    // Not the CLI's own user-role turns (compaction summary, <task-notification>, <command-name>): they are not what the person asked.
+    if (event.kind === 'user' && !e.title && firstLine(event.text) && !isCompactSummary(event.text) && !event.text.trimStart().startsWith('<')) { e.title = firstLine(event.text); named = true; }
+    if (named || event.kind === 'status' || event.kind === 'approval.request' || event.kind === 'approval.resolved' || event.kind === 'question.request' || event.kind === 'question.resolved') this.changed();
     // Once the turn has settled (the adapters send `status: idle` right after `result`): changes, then verify.
     if (event.kind === 'result' && (e.touched || e.turnBase)) {
       setTimeout(() => void this.finishTurn(e).catch((err) => console.warn(`[vibrato] turn wrap-up failed: ${(err as Error).message}`)), 50);
     }
   }
+}
+
+/** A message's first non-empty line, as a list title. */
+function firstLine(text: string | undefined | null): string {
+  return (text ?? '').trim().split('\n')[0].trim().slice(0, 120);
 }
 
 function safeSend(ws: WebSocket, msg: unknown) {

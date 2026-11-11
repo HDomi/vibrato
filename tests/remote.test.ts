@@ -258,3 +258,16 @@ test('an hour without remote activity logs the client out; automatic refreshes d
   const err = await lost;
   assert.ok(err instanceof RemoteClientError && err.code === 'KICKED' && err.extra.reason === 'idle');
 });
+
+test('remote list titles survive a long answer and skip turns the CLI injects', async () => {
+  const reg = new SessionRegistry() as unknown as { entries: Map<string, unknown>; broadcast: (e: unknown, ev: unknown) => void; summaries: () => { title: string }[]; closeAll: () => Promise<void> };
+  const entry = { session: { id: 'T1', agent: 'claude', cwd: os.tmpdir(), onEvent: () => () => {}, close: async () => {} }, buffer: [], seq: 0, subscribers: new Set(), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, bufferBytes: 0, touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
+  reg.entries.set('T1', entry);
+  reg.broadcast(entry, { kind: 'user', text: 'This session is being continued from a previous conversation that ran out of context.', attachments: [] });
+  reg.broadcast(entry, { kind: 'user', text: '<task-notification>done</task-notification>', attachments: [] });
+  assert.equal(reg.summaries()[0].title, '');
+  reg.broadcast(entry, { kind: 'user', text: '\n  Refactor the auth module\nand add tests', attachments: [] });
+  for (let i = 0; i < 6000; i++) reg.broadcast(entry, { kind: 'text.delta', text: 'tok ', parent: null });
+  assert.equal(reg.summaries()[0].title, 'Refactor the auth module');
+  await reg.closeAll();
+});
