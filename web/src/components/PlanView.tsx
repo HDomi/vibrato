@@ -317,6 +317,7 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
             <div key={i} className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.replace(/\s+/g, ' ').trim()}</span></div>
           ))}
         </div>
+        {turn.user?.remote && <RemoteChip origin={turn.user.remote} />}
         {agents > 0 && (
           <span className="shrink-0 mt-0.5 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 bg-violet-500/15 text-violet-200" data-plan-agents="">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
@@ -462,3 +463,19 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
 }
 
 export default memo(PlanView);
+
+/** "Remote" chip on a turn sent from another Vibrato; hovering shows the sender's address and the time it came in. */
+function RemoteChip({ origin }: { origin: { address: string; at: number } }) {
+  const d = new Date(origin.at);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const when = `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return (
+    <span className="group relative shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 bg-sky-400/15 text-sky-200 cursor-default" data-plan-remote="">
+      {t('plan.remote')}
+      <span role="tooltip" className="glass-pop pointer-events-none absolute right-0 top-full mt-1.5 z-20 hidden group-hover:block whitespace-nowrap rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] leading-5 text-zinc-200 shadow-lg">
+        <span className="block">{t('plan.remoteIp', { ip: origin.address })}</span>
+        <span className="block">{t('plan.remoteAt', { time: when })}</span>
+      </span>
+    </span>
+  );
+}

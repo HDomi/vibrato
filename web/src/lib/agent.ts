@@ -11,7 +11,8 @@ export type AssistantBlock =
 
 export type AgentEvent =
   | { kind: 'session.init'; sessionId: string; agent: AgentId; cwd: string; model?: string; permissionMode?: string; agentSessionId?: string; tools?: string[]; commands?: string[] }
-  | { kind: 'user'; text: string; attachments: Attachment[]; /** Client-chosen id; Claude keys file checkpoints by it. */ messageId?: string }
+  | { kind: 'user'; text: string; attachments: Attachment[]; /** Client-chosen id; Claude keys file checkpoints by it. */ messageId?: string;
+      /** Sent from another Vibrato through the remote host: from where, and when (server ms). */ remote?: { address: string; at: number } }
   | { kind: 'text.delta'; text: string; parent: string | null }
   | { kind: 'thinking.delta'; text: string; parent: string | null }
   | { kind: 'assistant.message'; id: string; parent: string | null; blocks: AssistantBlock[] }

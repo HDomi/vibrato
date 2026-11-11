@@ -110,7 +110,7 @@ export async function watchSession(s: Pick<RemoteSessionSummary, 'id' | 'agent' 
   await b.call('attach', { sessionId: s.id, after: chats.get(s.id)!.lastSeq });
 }
 
-export async function startSession(opts: { agent: AgentId; cwd: string; permissionMode: PermissionModeId; resume?: string }): Promise<string> {
+export async function startSession(opts: { agent: AgentId; cwd: string; permissionMode: PermissionModeId; resume?: string; model?: string }): Promise<string> {
   const b = remoteBridge()!;
   const { sessionId } = await b.call<{ sessionId: string }>('start', opts);
   // Events sent before this reply had no chat to land in: replay from the start (duplicates are skipped by seq).
@@ -122,6 +122,34 @@ export async function closeSession(id: string) {
   await remoteBridge()?.call('close', { sessionId: id });
   chats.delete(id);
   bump();
+}
+
+export interface RemoteModel { id: string; name: string; description?: string; isDefault?: boolean }
+
+/** Model lists of the connected host, per agent; dropped when the connection changes. */
+const modelLists = new Map<AgentId, Promise<RemoteModel[] | null>>();
+let modelsFor: string | null = null;
+
+/**
+ * The host's models for `agent`, or null while loading and when the host is too old to list them
+ * (the pickers are then hidden and the CLI's default model is used).
+ */
+export function useRemoteModels(agent: AgentId | null | undefined, hostKey: string | null): RemoteModel[] | null {
+  const [list, setList] = useState<RemoteModel[] | null>(null);
+  useEffect(() => {
+    const b = remoteBridge();
+    if (!b || !agent || !hostKey) { setList(null); return; }
+    if (modelsFor !== hostKey) { modelLists.clear(); modelsFor = hostKey; }
+    let p = modelLists.get(agent);
+    if (!p) {
+      p = b.call<RemoteModel[]>('models', { agent }).then((l) => (Array.isArray(l) ? l : []), () => null);
+      modelLists.set(agent, p);
+    }
+    let alive = true;
+    void p.then((l) => { if (alive) setList(l); });
+    return () => { alive = false; };
+  }, [agent, hostKey]);
+  return list;
 }
 
 /** Sessions, projects and history of the connected host; refetched when the host says its list changed. */
@@ -143,11 +171,13 @@ export function useRemoteSessions(connected: boolean) {
 
 export interface HostStatus {
   configured: boolean; enabled: boolean; port: number; listening: boolean; error: string | null; fingerprint: string | null;
-  codeCreatedAt: number | null; passwordSetAt: number | null; keepAwake: boolean; wakeOnConnect: boolean; awake: boolean; clients: { address: string; since: number }[]; addresses: string[];
+  codeCreatedAt: number | null; passwordSetAt: number | null; webhook: string | null; keepAwake: boolean; wakeOnConnect: boolean; awake: boolean; clients: { address: string; since: number }[]; addresses: string[];
 }
 
 async function hostCall<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  // The local server takes POST / PUT only with a JSON body (server/app.ts request guard), even an empty one.
+  const send = method !== 'GET';
+  const res = await fetch(path, { method, headers: send ? { 'Content-Type': 'application/json' } : undefined, body: send ? JSON.stringify(body ?? {}) : undefined });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
   return data as T;
@@ -156,6 +186,8 @@ async function hostCall<T>(method: string, path: string, body?: unknown): Promis
 export const hostApi = {
   status: () => hostCall<HostStatus>('GET', '/api/remote/host'),
   configure: (patch: { enabled?: boolean; port?: number; keepAwake?: boolean; wakeOnConnect?: boolean }) => hostCall<HostStatus & { code: string | null }>('PUT', '/api/remote/host', patch),
+  setWebhook: (url: string | null) => hostCall<HostStatus>('PUT', '/api/remote/host/webhook', { url }),
+  testWebhook: () => hostCall<{ ok: true }>('POST', '/api/remote/host/webhook/test'),
   setPassword: (password: string) => hostCall<HostStatus>('PUT', '/api/remote/host/password', { password }),
   newCode: () => hostCall<HostStatus & { code: string }>('POST', '/api/remote/host/code'),
   disconnectAll: () => hostCall<HostStatus>('POST', '/api/remote/host/disconnect'),

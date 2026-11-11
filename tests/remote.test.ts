@@ -95,6 +95,10 @@ test('login with the code, calls work, fingerprint is the host certificate', asy
     // Nothing outside the session methods: no files, no shell, no deleting or renaming conversations.
     for (const m of ['fs.read', 'history.delete', 'delete', 'rename', 'pin', 'pty', 'settings']) await assert.rejects(conn.call(m, { path: '/etc/passwd', id: 'x' }), /Unknown method/);
     assert.ok(conn.caps.has('batch') && conn.caps.has('deflate'), 'both optional features agreed');
+    // Models and usage are read-only lookups; a model id that could become a CLI flag is refused.
+    assert.ok(Array.isArray(await conn.call('models', { agent: 'codex' })));
+    await assert.rejects(conn.call('start', { agent: 'claude', cwd: os.tmpdir(), model: '--dangerously-skip-permissions' }), /Bad model/);
+    await assert.rejects(conn.call('model', { sessionId: 'nope', model: 'sonnet' }), /gone/);
     await assert.rejects(conn.call('start', { agent: 'claude', cwd: 'relative/dir' }), /absolute/);
     await assert.rejects(conn.call('send', { sessionId: 'nope', text: 'hi' }), /gone/);
     assert.equal((await host.status()).clients.length, 1);
@@ -176,7 +180,66 @@ test('a new code drops connected clients', async () => {
   const lost = new Promise<unknown>((r) => conn.once('close', r));
   code = await host.newCode();
   const err = await lost;
-  assert.ok(err instanceof RemoteClientError && err.code === 'CLOSED');
+  assert.ok(err instanceof RemoteClientError && err.code === 'KICKED', 'told it was closed on purpose, so it does not reconnect');
   const again = await login(code);
   again.conn.close();
+});
+
+test('discord notices: only discord webhook URLs, masked, no mentions, and lockouts are reported', async () => {
+  const { validWebhook, maskWebhook, sendDiscord, noticeMessage } = await import('../server/remote/notify.js');
+  const url = 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123';
+  assert.ok(validWebhook(url));
+  for (const bad of ['http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz', 'https://evil.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz', 'https://discord.com.evil.com/api/webhooks/1/x']) assert.equal(validWebhook(bad), false, bad);
+  assert.equal(maskWebhook(url), 'discord.com/api/webhooks/1234…/abcd••••');
+  let sent: { url: string; body: { content: string; allowed_mentions: unknown } } | null = null;
+  await sendDiscord(url, noticeMessage({ kind: 'login', address: '203.0.113.7 @everyone', at: 0, ok: true }), async (u, init) => { sent = { url: u, body: JSON.parse(init.body) }; return { ok: true, status: 204 }; });
+  assert.equal(sent!.url, url);
+  assert.deepEqual(sent!.body.allowed_mentions, { parse: [] });
+  assert.ok(!sent!.body.content.includes('@everyone') && sent!.body.content.startsWith('MAC_LOGIN\n\nIP: 203.0.113.7'));
+  await assert.rejects(sendDiscord(url, 'x', async () => ({ ok: false, status: 404 })), /404/);
+  // The limiter says when a failure locked an address, so the host can report it.
+  const l = new AuthLimiter();
+  let verdict = { lockedMs: null as number | null, globalLockMs: null as number | null };
+  for (let i = 0; i < 5; i++) { l.begin('z', 0); verdict = l.end('z', false, 0); }
+  assert.equal(verdict.lockedMs, 30_000);
+});
+
+test('notices: MAC_LOGIN for successes and failures, MAC_LOGOUT clean or dropped, in the agreed format', async () => {
+  const sent: string[] = [];
+  host.sendNotice = async (_u, content) => { sent.push(content); };
+  await host.setWebhook('https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123');
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  const a = await login(code);
+  await settle();
+  a.conn.close();                                   // says bye: a clean logout
+  await settle(); await settle();
+  await assert.rejects(login(code, null, 'wrong pw'));
+  await assert.rejects(login(code, null, 'wrong pw')); // same address within a minute: not sent again
+  const b = await login(code);
+  await settle();
+  (b.conn as unknown as { socket: import('node:tls').TLSSocket }).socket.destroy(); // the link drops
+  await settle(); await settle();
+  const form = /^MAC_(LOGIN|LOGOUT)\n\nIP: [\d.:a-f]+\n시간: \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\n성공여부: (성공|실패)$/;
+  for (const m of sent) assert.match(m, form);
+  assert.deepEqual(sent.map((m) => `${m.split('\n')[0]} ${m.split('성공여부: ')[1]}`), ['MAC_LOGIN 성공', 'MAC_LOGOUT 성공', 'MAC_LOGIN 실패', 'MAC_LOGIN 성공', 'MAC_LOGOUT 실패']);
+  host.sendNotice = async () => {};
+});
+
+test('webhook setting: rejects other URLs, status shows it masked only', async () => {
+  await assert.rejects(host.setWebhook('https://example.com/hook'), /Discord webhook/);
+  await host.setWebhook('https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123');
+  const st = await host.status();
+  assert.equal(st.webhook, 'discord.com/api/webhooks/1234…/abcd••••');
+  assert.ok(!JSON.stringify(st).includes('abcdefghijklmnopqrstuvwxyz'), 'the full URL never leaves the server');
+  await host.setWebhook(null);
+  assert.equal((await host.status()).webhook, null);
+});
+
+test('a message sent through the remote host keeps its origin in the chat (plan view chip)', async () => {
+  const { reduceEvent } = await import('../web/src/lib/chatStore.js');
+  const base = { id: 's', agent: 'claude' as const, cwd: '/', permissionMode: 'default' as const, status: 'idle' as const, items: [], totalCostUsd: 0, lastSeq: 0 };
+  const next = reduceEvent(base, { kind: 'user', text: 'hi', attachments: [], messageId: 'm1', remote: { address: '203.0.113.7', at: 1700000000000 } }, 1);
+  assert.deepEqual((next.items[0] as { remote?: unknown }).remote, { address: '203.0.113.7', at: 1700000000000 });
+  const local = reduceEvent(base, { kind: 'user', text: 'hi', attachments: [], messageId: 'm2' }, 1);
+  assert.equal((local.items[0] as { remote?: unknown }).remote, undefined);
 });

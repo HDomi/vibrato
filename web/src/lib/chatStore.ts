@@ -3,7 +3,8 @@ import type { AgentEvent, AgentId, Attachment, PermissionModeId, Question, TaskI
 
 export type ChatItem =
   | { kind: 'user'; id: string; text: string; attachments: Attachment[]; pending?: boolean; /** Sent while the agent was still working on the previous message. */ followUp?: boolean; /** Compaction summary injected by the CLI, not typed by the user. */ compact?: boolean;
-      /** Other user-role turns the CLI wrote itself: background task notices, slash commands run in the terminal. */ injected?: InjectedKind }
+      /** Other user-role turns the CLI wrote itself: background task notices, slash commands run in the terminal. */ injected?: InjectedKind;
+      /** Sent from another Vibrato through the remote host (plan view chip). */ remote?: { address: string; at: number } }
   | { kind: 'assistant'; id: string; text: string; thinking: string; parent: string | null; streaming: boolean; /** When the block finished (server ms); absent for blocks loaded from saved history. */ at?: number }
   | { kind: 'tool'; id: string; name: string; input: unknown; output: string | null; isError: boolean; parent: string | null; elapsed: number; done: boolean; /** Images the tool returned: absolute paths, or data: URIs from saved history. */ images?: string[]; /** When it started (server ms); absent for tools loaded from saved history. */ at?: number }
   | { kind: 'approval'; id: string; toolName: string; input: unknown; canAlwaysAllow: boolean; decision: string | null }
@@ -223,8 +224,9 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       // The echo carries the id the client chose (Claude checkpoints use it); older servers only match by text.
       const pendingIdx = items.findIndex((it) => it.kind === 'user' && it.pending && (e.messageId ? it.id === e.messageId : it.text === split.text));
       const id = e.messageId ?? uid();
-      if (pendingIdx >= 0) { const was = items[pendingIdx] as Extract<ChatItem, { kind: 'user' }>; items[pendingIdx] = { kind: 'user', id, text: split.text, attachments: split.attachments, followUp: was.followUp }; }
-      else if (!e.messageId || !items.some((it) => it.id === e.messageId)) items.push({ kind: 'user', id, text: split.text, attachments: split.attachments, compact: isCompactSummary(split.text) || undefined, followUp: s.status === 'running' || undefined });
+      const remote = e.remote ? { address: e.remote.address, at: e.remote.at } : undefined;
+      if (pendingIdx >= 0) { const was = items[pendingIdx] as Extract<ChatItem, { kind: 'user' }>; items[pendingIdx] = { kind: 'user', id, text: split.text, attachments: split.attachments, followUp: was.followUp, remote }; }
+      else if (!e.messageId || !items.some((it) => it.id === e.messageId)) items.push({ kind: 'user', id, text: split.text, attachments: split.attachments, compact: isCompactSummary(split.text) || undefined, followUp: s.status === 'running' || undefined, remote });
       next.turnStartedAt = next.turnStartedAt ?? Date.now();
       return next;
     }

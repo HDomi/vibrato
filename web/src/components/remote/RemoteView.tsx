@@ -3,8 +3,8 @@ import { t, useLang } from '../../lib/i18n';
 import type { ChatItem } from '../../lib/chatStore';
 import type { AgentId, PermissionModeId } from '../../lib/agent';
 import {
-  closeSession, remoteBridge, remoteOnly, startSession, useRemoteChat, useRemoteSessions, useRemoteState, watchSession,
-  type RemoteHistoryRow, type RemoteHostView, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
+  closeSession, remoteBridge, remoteOnly, startSession, useRemoteChat, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
+  type RemoteHistoryRow, type RemoteHostView, type RemoteModel, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
 import HostSettings from './HostSettings';
@@ -61,6 +61,8 @@ export default function RemoteView() {
             </button>
           </div>
         )}
+        {/* Last in the panel: the host's usage, refreshed only on request. */}
+        {connected && <UsagePanel hostKey={String(state.hostId)} />}
       </aside>
       <section className="glass flex-1 min-w-0 flex flex-col overflow-hidden">
         {hostPanel && !remoteOnly() ? <HostSettings onClose={() => setHostPanel(false)} />
@@ -183,6 +185,7 @@ function ConnectError({ host, err, onTrusted }: { host: RemoteHostView | null; e
     : err.code === 'DENIED_DISABLED' ? t('remote.err.disabled')
     : err.code === 'DENIED_NOPASSWORD' ? t('remote.err.hostNoPassword')
     : err.code === 'NEED_PASSWORD' ? t('remote.err.needPassword')
+    : err.code === 'KICKED' ? t('remote.err.kicked')
     : err.code === 'NEED_CODE' ? t('remote.err.needCode')
     : err.code === 'FINGERPRINT_MISMATCH' ? t('remote.err.fingerprint')
     : err.code === 'BAD_HOST' ? t('remote.err.badHost', { message: err.message })
@@ -336,13 +339,17 @@ function NewSession({ cwd, resume, onStarted, onCancel }: { cwd: string; resume?
   const b = remoteBridge()!;
   const [agent, setAgent] = useState<AgentId>(resume?.agent ?? 'claude');
   const [mode, setMode] = useState<PermissionModeId>('default');
+  const [model, setModel] = useState('');
+  const conn = useRemoteState();
+  const models = useRemoteModels(agent, conn.since ? String(conn.hostId) : null);
+  useEffect(() => { setModel(''); }, [agent]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const start = async () => {
     setBusy(true); setError('');
     try {
-      const id = await startSession({ agent, cwd, permissionMode: mode, resume: resume?.sessionId });
+      const id = await startSession({ agent, cwd, permissionMode: mode, resume: resume?.sessionId, model: model || undefined });
       if (text.trim()) await b.call('send', { sessionId: id, text: text.trim() });
       onStarted(id);
     } catch (e) { setError(cleanErr(e)); setBusy(false); }
@@ -362,6 +369,11 @@ function NewSession({ cwd, resume, onStarted, onCancel }: { cwd: string; resume?
                 <button key={a} className={`${btnCls} ${agent === a ? 'bg-fill-3 text-white' : 'text-zinc-300 hover:bg-fill-2'}`} onClick={() => setAgent(a)}>{a === 'claude' ? 'Claude' : 'Codex'}</button>
               ))}
             </div>
+          </Field>
+        )}
+        {models && models.length > 0 && (
+          <Field label={t('remote.model')}>
+            <ModelSelect models={models} value={model} onChange={setModel} className={inputCls} />
           </Field>
         )}
         <Field label={t('remote.mode')}>
@@ -406,6 +418,11 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   const running = chat ? chat.status === 'running' || chat.status === 'compacting' : !!summary?.running;
   const gone = !summary && chat?.status === 'closed';
   const mode = chat?.permissionMode ?? (summary?.permissionMode as PermissionModeId | undefined) ?? 'default';
+  const conn = useRemoteState();
+  const models = useRemoteModels(chat?.agent ?? summary?.agent, conn.since ? String(conn.hostId) : null);
+  // Switching models sends no new session.init: show the choice until the session reports another one.
+  const [pickedModel, setPickedModel] = useState<{ value: string; from: string | undefined } | null>(null);
+  const shownModel = pickedModel && pickedModel.from === chat?.model ? pickedModel.value : chat?.model ?? '';
 
   const act = (p: Promise<unknown>) => void p.catch((e) => setError(cleanErr(e)));
   const send = () => {
@@ -424,6 +441,11 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
           <div className="text-[13px] font-medium text-zinc-100 truncate">{summary?.title || t('remote.untitled')}</div>
           <div className="text-[11px] text-zinc-500 truncate">{(chat?.agent ?? summary?.agent) === 'codex' ? 'Codex' : 'Claude'} · {base(chat?.cwd ?? summary?.cwd ?? '')}</div>
         </div>
+        {models && models.length > 0 && (
+          <ModelSelect models={models} value={shownModel} disabled={gone}
+            onChange={(v) => { setPickedModel({ value: v, from: chat?.model }); act(b.call('model', { sessionId: id, model: v || null })); }}
+            className="h-7 max-w-[180px] rounded-lg bg-black/30 border border-white/10 px-2 text-[12px] text-zinc-200 outline-none" />
+        )}
         <select className="h-7 rounded-lg bg-black/30 border border-white/10 px-2 text-[12px] text-zinc-200 outline-none" value={mode} disabled={gone}
           onChange={(e) => act(b.call('mode', { sessionId: id, mode: e.target.value }))}>
           {MODES.map((m) => <option key={m.id} value={m.id}>{t(m.key)}</option>)}
@@ -481,4 +503,106 @@ function Item({ it, cwd, sessionId, onError }: { it: ChatItem; cwd?: string; ses
     case 'verify':
       return <div className={`text-[12px] ${it.status === 'failed' ? 'text-red-300' : it.status === 'passed' ? 'text-emerald-300' : 'text-zinc-400'}`}>{t(`remote.verify.${it.status}`, { cmd: it.command })}</div>;
   }
+}
+
+/** Model picker: "" is the CLI's default; a model the session reports but the list lacks still shows as itself. */
+function ModelSelect({ models, value: raw, onChange, className, disabled, title }: { models: RemoteModel[]; value: string; onChange: (v: string) => void; className: string; disabled?: boolean; title?: string }) {
+  const value = matchModel(models, raw);
+  const known = !value || models.some((m) => m.id === value);
+  return (
+    <select className={className} value={value} disabled={disabled} title={title} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{t('remote.modelDefault')}</option>
+      {!known && <option value={value}>{value}</option>}
+      {models.map((m) => <option key={m.id} value={m.id}>{m.name}{m.isDefault ? t('chat.defaultSuffix') : ''}</option>)}
+    </select>
+  );
+}
+
+// ---- the host's usage ----
+
+interface UsageWindow { usedPct: number; resetsAt: number | null }
+interface UsageSnapshot {
+  fetchedAt: number;
+  claude: { fiveHour: UsageWindow | null; weekly: UsageWindow | null; model: (UsageWindow & { name: string }) | null } | null;
+  codex: { fiveHour: UsageWindow | null; weekly: UsageWindow | null } | null;
+  errors: string[];
+}
+
+/** "2h 5m" until a reset given in unix seconds. */
+function resetIn(ts: number | null): string {
+  if (!ts) return t('usage.noReset');
+  const mins = Math.round((ts * 1000 - Date.now()) / 60_000);
+  if (mins <= 0) return t('usage.reset');
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  return t('usage.resetsAfter', { time: d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m` });
+}
+
+/**
+ * Bottom of the left panel: how much of the host's Claude and Codex limits is left. Shown once on connect from
+ * the host's cached copy; only the refresh button asks the providers again.
+ */
+function UsagePanel({ hostKey }: { hostKey: string }) {
+  useLang();
+  const b = remoteBridge()!;
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'unsupported' | 'error'>('idle');
+  const load = (force: boolean) => {
+    setState('loading');
+    void b.call<UsageSnapshot>('usage', { force }).then((u) => { setUsage(u); setState('idle'); },
+      (e) => setState(/Unknown method/.test(String((e as Error)?.message)) ? 'unsupported' : 'error'));
+  };
+  useEffect(() => { setUsage(null); load(false); }, [hostKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (state === 'unsupported') return null;
+  const rows: { agent: string; label: string; win: UsageWindow | null }[] = usage ? [
+    ...(usage.claude ? [
+      { agent: 'Claude', label: '5h', win: usage.claude.fiveHour },
+      { agent: 'Claude', label: t('usage.week'), win: usage.claude.weekly },
+      ...(usage.claude.model ? [{ agent: 'Claude', label: usage.claude.model.name, win: usage.claude.model }] : []),
+    ] : []),
+    ...(usage.codex ? [
+      { agent: 'Codex', label: '5h', win: usage.codex.fiveHour },
+      { agent: 'Codex', label: t('usage.week'), win: usage.codex.weekly },
+    ] : []),
+  ] : [];
+  return (
+    <div className="shrink-0 border-t border-line px-3 py-2.5 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t('remote.usage')}</span>
+        {usage && <span className="text-[10px] text-zinc-500">{t('remote.usageAt', { time: new Date(usage.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}</span>}
+        <button className="h-6 px-2 rounded-md text-[11px] text-zinc-300 hover:bg-fill-2 hover:text-white disabled:opacity-40" disabled={state === 'loading'} onClick={() => load(true)}>
+          {state === 'loading' ? t('common.loading') : t('common.refresh')}
+        </button>
+      </div>
+      {state === 'error' && <div className="text-[11px] text-red-300">{t('remote.usageFailed')}</div>}
+      {usage && rows.length === 0 && <div className="text-[11px] text-zinc-500">{t('remote.usageNone')}</div>}
+      {rows.map((r) => {
+        const left = r.win ? Math.max(0, 100 - r.win.usedPct) : null;
+        return (
+          <div key={`${r.agent}:${r.label}`} className="text-[11px]" title={r.win ? resetIn(r.win.resetsAt) : undefined}>
+            <div className="flex items-center gap-2">
+              <span className="w-12 shrink-0 text-zinc-400">{r.agent}</span>
+              <span className="flex-1 min-w-0 truncate text-zinc-500">{r.label}</span>
+              <span className={`tabular-nums ${left === null ? 'text-zinc-600' : left <= 10 ? 'text-red-300' : left <= 30 ? 'text-amber-300' : 'text-zinc-200'}`}>{left === null ? '–' : `${left}%`}</span>
+            </div>
+            <div className="mt-0.5 h-1 rounded-full bg-white/10 overflow-hidden">
+              {left !== null && <div className={`h-full rounded-full ${left <= 10 ? 'bg-red-400' : left <= 30 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${left}%` }} />}
+            </div>
+            {r.win && <div className="mt-0.5 text-[10px] text-zinc-500">{resetIn(r.win.resetsAt)}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The list names models by alias ("haiku") while a running session reports the full id ("claude-haiku-5-5"):
+ * find the entry whose display name ("Haiku 5.5") reads as that id, so the picker shows it by name.
+ */
+export function matchModel(models: RemoteModel[], id: string): string {
+  if (!id || models.some((m) => m.id === id)) return id;
+  const want = id.toLowerCase();
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const hit = models.find((m) => { const n = slug(m.name); return n.length > 2 && (want === n || want.endsWith(`-${n}`) || want.includes(`-${n}-`)); });
+  return hit?.id ?? id;
 }

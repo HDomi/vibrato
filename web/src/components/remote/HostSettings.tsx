@@ -36,6 +36,15 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
   };
 
   const pwValid = pw.length >= 4 && pw.length <= 128 && pw === pw2;
+  const [hook, setHook] = useState('');
+  const [hookNote, setHookNote] = useState('');
+  const hookValid = /^https:\/\/(?:ptb\.|canary\.)?(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[\w-]+$/.test(hook.trim());
+  const saveHook = (url: string | null) => void run(async () => { const r = await hostApi.setWebhook(url); setHook(''); setHookNote(''); return r; });
+  const testHook = async () => {
+    setHookNote(t('remote.host.webhookSending'));
+    try { await hostApi.testWebhook(); setHookNote(t('remote.host.webhookSent')); }
+    catch (e) { setHookNote(`${t('remote.host.webhookFailed')} ${(e as Error).message}`); }
+  };
   // The password belongs to an access code: the first time, make the code too (shown below, once).
   const savePassword = () => void run(async () => {
     if (!status?.configured) { const r = await hostApi.configure({}); if (r.code) setCode(r.code); }
@@ -130,6 +139,20 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
                   {status.configured ? t('remote.host.newCode') : t('remote.host.makeCode')}
                 </button>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-[12px] font-medium text-zinc-300">{t('remote.host.webhook')}</div>
+              <div className="text-[12px] text-zinc-400">{status.webhook ? <span className="font-mono">{status.webhook}</span> : t('remote.host.webhookNone')}</div>
+              <div className="flex gap-2">
+                <input type="password" className="flex-1 h-8 rounded-lg bg-black/30 border border-white/10 px-2.5 text-[13px] text-zinc-100 outline-none focus:border-white/30" value={hook}
+                  onChange={(e) => setHook(e.target.value)} placeholder="https://discord.com/api/webhooks/…" autoComplete="off" spellCheck={false}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && hookValid && !busy) saveHook(hook.trim()); }} />
+                <button className="h-8 px-3 shrink-0 whitespace-nowrap rounded-lg text-xs text-zinc-200 hover:bg-fill-2 disabled:opacity-40" disabled={busy || !hookValid || !status.configured} onClick={() => saveHook(hook.trim())}>{t('remote.save')}</button>
+                {status.webhook && <button className="h-8 px-3 shrink-0 whitespace-nowrap rounded-lg text-xs text-zinc-200 hover:bg-fill-2 disabled:opacity-40" disabled={busy} onClick={() => void testHook()}>{t('remote.host.webhookTest')}</button>}
+                {status.webhook && <button className="h-8 px-3 shrink-0 whitespace-nowrap rounded-lg text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-40" disabled={busy} onClick={() => saveHook(null)}>{t('remote.remove')}</button>}
+              </div>
+              <div className={`text-[11px] ${hook && !hookValid ? 'text-red-300' : 'text-zinc-500'}`}>{hook && !hookValid ? t('remote.host.webhookBad') : hookNote || t('remote.host.webhookHint')}</div>
             </div>
 
             {status.fingerprint && (

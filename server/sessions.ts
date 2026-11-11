@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { sessionInstructions } from './planInstructions.js';
 import type { WebSocket, WebSocketServer } from 'ws';
-import type { AgentEvent, AgentSession, ClientCommand, ServerMessage } from './agents/types.js';
+import type { AgentEvent, AgentSession, ClientCommand, RemoteOrigin, ServerMessage } from './agents/types.js';
 import { ClaudeSession } from './agents/claude.js';
 import { CodexSession } from './agents/codex.js';
 import { which } from './shell.js';
@@ -41,6 +41,8 @@ interface Entry {
   turnShell: boolean;
   /** Sends are serialized: a message waiting for its snapshot must not be overtaken by the next one. */
   sendChain: Promise<void>;
+  /** Origin of the message being sent through the remote host; stamped on the `user` event it produces. */
+  pendingRemote?: RemoteOrigin;
 }
 
 export class SessionRegistry {
@@ -190,7 +192,7 @@ export class SessionRegistry {
    * Hand a message to the CLI, in arrival order. A message that starts a new turn first snapshots the
    * working tree (bounded, so a huge repo cannot hold the send for long).
    */
-  send(id: string, run: () => Promise<void>): Promise<void> {
+  send(id: string, run: () => Promise<void>, remote?: RemoteOrigin): Promise<void> {
     const e = this.entries.get(id);
     if (!e) return Promise.reject(new Error('Unknown session'));
     const job = e.sendChain.then(async () => {
@@ -199,7 +201,9 @@ export class SessionRegistry {
         const timeout = new Promise<null>((r) => setTimeout(() => r(null), 3000).unref());
         e.turnBase = await Promise.race([snapshot(e.session.cwd).catch(() => null), timeout]);
       }
-      await run();
+      // Sends run one at a time, so the next `user` event is this message's echo.
+      e.pendingRemote = remote;
+      try { await run(); } finally { e.pendingRemote = undefined; }
     });
     e.sendChain = job.catch(() => {});
     return job;
@@ -256,6 +260,7 @@ export class SessionRegistry {
   }
 
   private broadcast(e: Entry, event: AgentEvent) {
+    if (event.kind === 'user' && e.pendingRemote) { event = { ...event, remote: e.pendingRemote }; e.pendingRemote = undefined; }
     const msg: ServerMessage = { sessionId: e.session.id, seq: ++e.seq, ts: Date.now(), event };
     e.lastActivity = msg.ts;
     if (event.kind === 'status') {

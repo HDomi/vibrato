@@ -15,7 +15,8 @@ export interface Question { question: string; header: string; options: QuestionO
 
 export type AgentEvent =
   | { kind: 'session.init'; sessionId: string; agent: AgentId; cwd: string; model?: string; permissionMode?: string; agentSessionId?: string; tools?: string[]; commands?: string[] }
-  | { kind: 'user'; text: string; attachments: Attachment[]; /** Client-chosen id; Claude keys file checkpoints by it. */ messageId?: string }
+  | { kind: 'user'; text: string; attachments: Attachment[]; /** Client-chosen id; Claude keys file checkpoints by it. */ messageId?: string;
+      /** Sent through the remote host (server/remote/host.ts): from where, and when (server ms). */ remote?: RemoteOrigin }
   | { kind: 'text.delta'; text: string; parent: string | null }
   | { kind: 'thinking.delta'; text: string; parent: string | null }
   | { kind: 'assistant.message'; id: string; parent: string | null; blocks: AssistantBlock[] }
@@ -42,6 +43,8 @@ export type AgentEvent =
   /** Files the turn changed (git snapshot before vs after, see server/turns.ts). */
   | { kind: 'changes'; id: string; root: string; from: string; to: string; files: TurnFile[] }
   | { kind: 'log'; text: string };
+
+export interface RemoteOrigin { address: string; at: number }
 
 export interface TurnFile { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; binary: boolean }
 

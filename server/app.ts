@@ -512,6 +512,17 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
       return c.json(await remoteHost().status());
     } catch (err) { return c.json({ error: (err as Error).message }, 400); }
   });
+  app.put('/api/remote/host/webhook', async (c) => {
+    const b = await c.req.json<{ url?: unknown }>();
+    try {
+      await remoteHost().setWebhook(typeof b.url === 'string' ? b.url : null);
+      return c.json(await remoteHost().status());
+    } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  });
+  app.post('/api/remote/host/webhook/test', async (c) => {
+    try { await remoteHost().testWebhook(); return c.json({ ok: true }); }
+    catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  });
   app.post('/api/remote/host/code', async (c) => c.json({ code: await remoteHost().newCode(), ...(await remoteHost().status()) }));
   app.post('/api/remote/host/disconnect', async (c) => { remoteHost().disconnectAll(); return c.json(await remoteHost().status()); });
   app.post('/api/schedules/wake-helper', async (c) => {

@@ -249,17 +249,25 @@ export class AuthLimiter {
     return null;
   }
 
-  end(key: string, ok: boolean, now = Date.now()) {
+  /** Record the login's outcome. Says whether this failure just locked the address (for how long) or everyone. */
+  end(key: string, ok: boolean, now = Date.now()): { lockedMs: number | null; globalLockMs: number | null } {
+    const none = { lockedMs: null, globalLockMs: null };
     const s = this.perAddr.get(key);
-    if (!s) return;
+    if (!s) return none;
     s.busy = false;
-    if (ok) { this.perAddr.delete(key); return; }
+    if (ok) { this.perAddr.delete(key); return none; }
     s.fails++;
     s.last = now;
-    if (s.fails >= this.opts.freeFails) s.lockedUntil = now + Math.min(this.opts.maxLockMs, this.opts.baseLockMs * 2 ** (s.fails - this.opts.freeFails));
+    let lockedMs: number | null = null;
+    if (s.fails >= this.opts.freeFails) {
+      lockedMs = Math.min(this.opts.maxLockMs, this.opts.baseLockMs * 2 ** (s.fails - this.opts.freeFails));
+      s.lockedUntil = now + lockedMs;
+    }
     this.recent = this.recent.filter((t) => now - t < this.opts.globalWindowMs);
     this.recent.push(now);
-    if (this.recent.length > this.opts.globalFails) { this.globalUntil = now + this.opts.globalLockMs; this.recent = []; }
+    let globalLockMs: number | null = null;
+    if (this.recent.length > this.opts.globalFails) { this.globalUntil = now + this.opts.globalLockMs; this.recent = []; globalLockMs = this.opts.globalLockMs; }
+    return { lockedMs, globalLockMs };
   }
 
   /** The login ended without a verdict on the code (host turned off): free the address, count nothing. */
@@ -275,7 +283,7 @@ export class AuthLimiter {
 }
 
 /** Methods a logged-in client may call. Anything else is refused by the host. */
-export const REMOTE_METHODS = ['info', 'projects', 'sessions', 'history', 'start', 'attach', 'detach', 'send', 'approve', 'answer', 'interrupt', 'mode', 'close'] as const;
+export const REMOTE_METHODS = ['info', 'projects', 'sessions', 'history', 'start', 'attach', 'detach', 'send', 'approve', 'answer', 'interrupt', 'mode', 'close', 'models', 'model', 'usage'] as const;
 export type RemoteMethod = typeof REMOTE_METHODS[number];
 
 export interface RemoteSessionSummary {
@@ -290,5 +298,7 @@ export interface RemoteSessionSummary {
   waiting: number;
   permissionMode?: string;
 }
+
+export interface RemoteModel { id: string; name: string; description?: string; isDefault?: boolean }
 
 export interface RemoteHistoryRow { agent: 'claude' | 'codex'; sessionId: string; title: string; lastModified: number }

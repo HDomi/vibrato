@@ -98,7 +98,8 @@ async function open(host: SavedHost, code: string, password: string | null, reco
     c.on('close', (err: RemoteClientError | null) => {
       if (conn !== c) return;
       conn = null;
-      if (err) scheduleRetry(host.id, err.message);
+      if (err?.code === 'KICKED') setState({ status: 'error', error: { code: 'KICKED', message: err.message }, since: null, attempt: 0 });
+      else if (err) scheduleRetry(host.id, err.message);
     });
     setState({ status: 'connected', hostName: r.hostName, since: Date.now(), attempt: 0, error: null });
     // Pick up where the page was: events after the last one it got.

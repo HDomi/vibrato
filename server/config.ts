@@ -88,6 +88,8 @@ export interface RemoteHostConfig {
   wakeOnConnect?: boolean;
   /** Second factor: a password set on this Mac and typed on the client at every login. Only its PBKDF2 result. */
   password?: { salt: string; iterations: number; key: string; setAt: number };
+  /** Discord webhook told about logins and lockouts (server/remote/notify.ts). A secret: never sent to the UI unmasked. */
+  discordWebhook?: string;
 }
 
 export const CUSTOM_PROMPT_MAX = 20000;

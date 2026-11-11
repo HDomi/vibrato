@@ -10,11 +10,16 @@ import type { PermissionModeId } from '../agents/types.js';
 import { loadConfig, saveConfig, withConfigLock, type RemoteHostConfig } from '../config.js';
 import { listHistory, isCompactSummary } from '../history.js';
 import { readBuildInfo } from '../updater.js';
+import { listClaudeModels } from '../agents/claude.js';
+import { listCodexModels } from '../agents/codex.js';
+import { which } from '../shell.js';
+import { getUsage } from '../usage.js';
 import { loadIdentity } from './identity.js';
+import { maskWebhook, noticeMessage, sendDiscord, testMessage, validWebhook } from './notify.js';
 import {
   addressKey, agreeCaps, AuthLimiter, DEFAULT_REMOTE_PORT, deriveKey, derivePassword, loginKey, PASSWORD_MAX, PASSWORD_MIN, encodeFrame, EXPORTER_LABEL, FrameReader, generateCode, MAX_FRAME,
   PBKDF2_ITERATIONS, PREAUTH_MAX_FRAME, proof, proofMatches, PROTOCOL_VERSION, queueMessage, REMOTE_METHODS, slimForRemote,
-  type Cap, type RemoteHistoryRow, type RemoteMethod, type WireMessage,
+  type Cap, type RemoteHistoryRow, type RemoteMethod, type RemoteModel, type WireMessage,
 } from './protocol.cjs';
 
 /*
@@ -34,6 +39,27 @@ const BATCH_MS = 15;
 /** A long replay is cut into batches of this many messages so the first ones show while the rest is on the way. */
 const BATCH_MAX = 400;
 const MODES: PermissionModeId[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto'];
+/** Model ids as the CLIs name them (claude-opus-5-5, gpt-5.1-codex, sonnet[1m], ...): nothing that could become a flag. */
+const MODEL_RE = /^[A-Za-z0-9][\w.:/\[\]-]{0,99}$/;
+/** Listing Codex models starts a CLI process: remember the answer for a while. */
+const MODELS_TTL_MS = 10 * 60_000;
+const modelCache = new Map<string, { at: number; list: RemoteModel[] }>();
+
+async function modelsFor(agent: 'claude' | 'codex'): Promise<RemoteModel[]> {
+  const hit = modelCache.get(agent);
+  if (hit && Date.now() - hit.at < MODELS_TTL_MS) return hit.list;
+  const bin = await which(agent);
+  if (!bin) return [];
+  const list = agent === 'codex' ? await listCodexModels(bin) : await listClaudeModels(bin);
+  modelCache.set(agent, { at: Date.now(), list });
+  return list;
+}
+
+function modelParam(v: unknown): string | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  if (typeof v !== 'string' || !MODEL_RE.test(v)) throw new RemoteError('Bad model.');
+  return v;
+}
 
 export interface RemoteHostStatus {
   configured: boolean;
@@ -47,6 +73,8 @@ export interface RemoteHostStatus {
   wakeOnConnect: boolean;
   /** A password (second factor) is set; when it was. */
   passwordSetAt: number | null;
+  /** The Discord webhook for login notices, masked; null when none. */
+  webhook: string | null;
   /** The no-idle-sleep assertion is held right now. */
   awake: boolean;
   clients: { address: string; since: number }[];
@@ -67,6 +95,9 @@ export class RemoteHost {
   private sessionsTimer: NodeJS.Timeout | null = null;
   /** `caffeinate -i` while listening: an idle-sleeping Mac would not answer at all. */
   private caffeinate: ChildProcess | null = null;
+  /** Failed-login notices: when one last went out per address, and all of them in the last minute. */
+  private failNoticeAt = new Map<string, number>();
+  private failNotices: number[] = [];
 
   constructor(readonly registry: SessionRegistry) {
     this.pruneTimer.unref();
@@ -140,12 +171,56 @@ export class RemoteHost {
     }).catch(() => {});
   }
 
+  /**
+   * MAC_LOGIN / MAC_LOGOUT to Discord. Successes always go out; failed logins at most once a minute per address
+   * and ten a minute in all, so a flood of guesses cannot flood the channel (or Discord's rate limit).
+   */
+  notice(kind: 'login' | 'logout', address: string, ok: boolean) {
+    const now = Date.now();
+    if (kind === 'login' && !ok) {
+      if (now - (this.failNoticeAt.get(address) ?? 0) < 60_000) return;
+      this.failNotices = this.failNotices.filter((t) => now - t < 60_000);
+      if (this.failNotices.length >= 10) return;
+      this.failNoticeAt.set(address, now);
+      this.failNotices.push(now);
+      if (this.failNoticeAt.size > 1000) this.failNoticeAt.clear();
+    }
+    void loadConfig().then((cfg) => this.notify(cfg.remote?.discordWebhook, noticeMessage({ kind, address, at: now, ok }))).catch(() => {});
+  }
+
+  /** Posts a notice; replaceable in tests. */
+  sendNotice: (url: string, content: string) => Promise<void> = (url, content) => sendDiscord(url, content);
+
+  private notify(url: string | undefined, content: string) {
+    if (!url) return;
+    void this.sendNotice(url, content).catch((err) => console.warn(`[vibrato] remote: Discord notice failed: ${(err as Error).message}`));
+  }
+
+  /** Settings: set (or with null clear) the Discord webhook for login notices. */
+  async setWebhook(url: string | null): Promise<void> {
+    const clean = url?.trim() || null;
+    if (clean && !validWebhook(clean)) throw new RemoteError('Paste a Discord webhook URL (https://discord.com/api/webhooks/…).');
+    await withConfigLock(async () => {
+      const cfg = await loadConfig();
+      if (!cfg.remote) throw new RemoteError('Create an access code first.');
+      if (clean) cfg.remote.discordWebhook = clean; else delete cfg.remote.discordWebhook;
+      await saveConfig(cfg);
+    });
+  }
+
+  /** Settings: post a test message to the saved webhook; throws with Discord's answer when it fails. */
+  async testWebhook(): Promise<void> {
+    const url = (await loadConfig()).remote?.discordWebhook;
+    if (!url) throw new RemoteError('No webhook is set.');
+    await sendDiscord(url, testMessage(os.hostname()));
+  }
+
   async stop() {
     this.holdAwake(false);
     const server = this.server;
     this.server = null;
     this.listeningPort = 0;
-    for (const c of this.conns) c.destroy();
+    for (const c of this.conns) c.kick();
     this.conns.clear();
     if (server) await new Promise<void>((r) => server.close(() => r()));
   }
@@ -164,6 +239,7 @@ export class RemoteHost {
       keepAwake: cfg?.keepAwake !== false,
       wakeOnConnect: cfg?.wakeOnConnect !== false,
       passwordSetAt: cfg?.password?.setAt ?? null,
+      webhook: cfg?.discordWebhook ? maskWebhook(cfg.discordWebhook) : null,
       awake: !!this.caffeinate,
       clients: [...this.conns].filter((c) => c.authed).map((c) => ({ address: c.address, since: c.since })),
       addresses: localAddresses(),
@@ -222,13 +298,13 @@ export class RemoteHost {
       cfg.remote = { ...cfg.remote, ...(await keyFor(code, { enabled: cfg.remote?.enabled ?? false, port: cfg.remote?.port ?? DEFAULT_REMOTE_PORT })) };
       await saveConfig(cfg);
     });
-    for (const c of this.conns) c.destroy();
+    for (const c of this.conns) c.kick();
     this.conns.clear();
     return code;
   }
 
   disconnectAll() {
-    for (const c of this.conns) c.destroy();
+    for (const c of this.conns) c.kick();
     this.conns.clear();
   }
 
@@ -275,6 +351,8 @@ class Conn {
   private attached = new Set<string>();
   /** Features both sides support (protocol.cts CAPS), agreed in the hello. */
   private caps = new Set<Cap>();
+  /** The client said goodbye ({ t: 'bye' }) or this host closed it on purpose; otherwise the link dropped. */
+  private closedCleanly = false;
   /** Compression starts only after the login answer went out uncompressed. */
   private compressOut = false;
   private queue: WireMessage[] = [];
@@ -332,8 +410,18 @@ class Conn {
 
   destroy() { this.socket.destroy(); }
 
+  /** Closed on purpose by this host (turned off, new code, new password, disconnect all): a clean logout. */
+  kick() {
+    this.closedCleanly = true;
+    // Say so first: a client that only saw the link drop would reconnect right away.
+    if (this.authed) this.send({ t: 'kicked' });
+    this.socket.end();
+    setTimeout(() => this.destroy(), 500).unref();
+  }
+
   cleanup() {
     clearTimeout(this.loginTimer);
+    if (this.authed) this.host.notice('logout', this.address, this.closedCleanly);
     if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
     this.queue = [];
     // Leaving before sending a proof (no password at hand, user cancelled) guessed nothing: no failure counted.
@@ -354,7 +442,7 @@ class Conn {
   private async onHello(msg: Record<string, unknown>) {
     if (msg.v !== PROTOCOL_VERSION) { this.deny('version'); return; }
     const wait = this.host.limits.begin(this.limiterKey);
-    if (wait) { this.deny('locked', wait.retryAfterMs); return; }
+    if (wait) { this.host.notice('login', this.address, false); this.deny('locked', wait.retryAfterMs); return; }
     this.limiterHeld = true;
     const cfg = (await loadConfig()).remote;
     if (!cfg?.enabled) { this.host.limits.cancel(this.limiterKey); this.limiterHeld = false; this.deny('disabled'); return; }
@@ -375,16 +463,18 @@ class Conn {
     if (cnonce.length !== 32 || !this.key) { this.deny('bad'); return; }
     const exporter = this.socket.exportKeyingMaterial(32, EXPORTER_LABEL, Buffer.alloc(0));
     const ok = proofMatches(proof(this.key, 'client', this.nonce, cnonce, exporter), msg.proof);
-    this.host.limits.end(this.limiterKey, ok);
+    const verdict = this.host.limits.end(this.limiterKey, ok);
     this.limiterHeld = false;
+    if (!ok) this.host.notice('login', this.address, false);
     if (!ok) { this.deny('code'); return; }
-    if (this.host.authedCount() >= MAX_CLIENTS) { this.deny('busy'); return; }
+    if (this.host.authedCount() >= MAX_CLIENTS) { this.host.notice('login', this.address, false); this.deny('busy'); return; }
     clearTimeout(this.loginTimer);
     this.authed = true;
     this.stage = 'ready';
     this.send({ t: 'ok', proof: proof(this.key, 'host', this.nonce, cnonce, exporter).toString('base64') });
     this.compressOut = true;
     console.log(`[vibrato] remote client logged in from ${this.address}${this.caps.size ? ` (${[...this.caps].join(', ')})` : ''}`);
+    this.host.notice('login', this.address, true);
     this.host.clientLoggedIn();
   }
 
@@ -396,6 +486,7 @@ class Conn {
 
   private async onCall(msg: Record<string, unknown>) {
     if (msg.t === 'ping') { this.send({ t: 'pong' }); return; }
+    if (msg.t === 'bye') { this.closedCleanly = true; this.socket.end(); return; }
     if (msg.t !== 'call') return;
     const id = msg.id;
     const method = msg.method as RemoteMethod;
@@ -435,7 +526,8 @@ class Conn {
         const cwd = await dirParam(p.cwd);
         const permissionMode = MODES.includes(p.permissionMode as PermissionModeId) ? p.permissionMode as PermissionModeId : 'default';
         const resume = typeof p.resume === 'string' && /^[\w.-]{1,200}$/.test(p.resume) ? p.resume : undefined;
-        const session = await reg.start({ type: 'session.start', agent, cwd, permissionMode, resume }, this.sink);
+        const model = modelParam(p.model);
+        const session = await reg.start({ type: 'session.start', agent, cwd, permissionMode, resume, model }, this.sink);
         this.attached.add(session.id);
         try { session.start(); } catch (err) { await reg.close(session.id); throw err; }
         void rememberRecent(cwd);
@@ -461,7 +553,7 @@ class Conn {
         if (!text.trim()) throw new RemoteError('Empty message.');
         if (text.length > 100_000) throw new RemoteError('Message is too long.');
         const s = must(reg, id);
-        await reg.send(id, () => s.send(text, [], crypto.randomUUID()));
+        await reg.send(id, () => s.send(text, [], crypto.randomUUID()), { address: this.address, at: Date.now() });
         return { ok: true };
       }
       case 'approve': {
@@ -486,6 +578,18 @@ class Conn {
       }
       case 'close':
         await reg.close(str(p.sessionId));
+        return { ok: true };
+      case 'models': {
+        const agent = p.agent === 'codex' ? 'codex' : p.agent === 'claude' ? 'claude' : null;
+        if (!agent) throw new RemoteError('Unknown agent.');
+        return (await modelsFor(agent).catch(() => [])).map((m): RemoteModel => ({ id: m.id, name: m.name, description: m.description, isDefault: m.isDefault }));
+      }
+      case 'usage':
+        // The host's Claude / Codex limits, as its own header shows them. force: fetch now instead of the cached copy.
+        return getUsage(p.force === true);
+      case 'model':
+        // null: back to the CLI's default model.
+        await must(reg, str(p.sessionId)).setModel(modelParam(p.model) ?? null);
         return { ok: true };
     }
   }
