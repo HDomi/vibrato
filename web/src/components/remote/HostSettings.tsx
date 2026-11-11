@@ -14,6 +14,8 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
 
   const load = () => hostApi.status().then((s) => { setStatus(s); setPort((p) => p || String(s.port)); }).catch((e) => setError((e as Error).message));
   useEffect(() => {
@@ -32,6 +34,15 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
+
+  const pwValid = pw.length >= 4 && pw.length <= 128 && pw === pw2;
+  // The password belongs to an access code: the first time, make the code too (shown below, once).
+  const savePassword = () => void run(async () => {
+    if (!status?.configured) { const r = await hostApi.configure({}); if (r.code) setCode(r.code); }
+    const r = await hostApi.setPassword(pw);
+    setPw(''); setPw2('');
+    return r;
+  });
 
   const portNum = Number(port);
   const portValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535;
@@ -55,7 +66,8 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
               <div className="flex-1 text-[13px] text-zinc-200">
                 {status.listening ? t('remote.host.on', { port: status.port }) : status.enabled ? t('remote.host.failed', { error: status.error ?? '' }) : t('remote.host.off')}
               </div>
-              <button className={`h-8 px-3 rounded-lg text-xs font-medium ${status.enabled ? 'text-zinc-200 hover:bg-fill-2' : 'bg-selected text-on-selected'} disabled:opacity-40`} disabled={busy}
+              <button className={`h-8 px-3 rounded-lg text-xs font-medium ${status.enabled ? 'text-zinc-200 hover:bg-fill-2' : 'bg-selected text-on-selected'} disabled:opacity-40`} disabled={busy || (!status.enabled && !status.passwordSetAt)}
+                title={!status.enabled && !status.passwordSetAt ? t('remote.host.needPassword') : undefined}
                 onClick={() => void run(() => hostApi.configure({ enabled: !status.enabled, ...(portValid ? { port: portNum } : {}) }))}>
                 {status.enabled ? t('remote.host.turnOff') : t('remote.host.turnOn')}
               </button>
@@ -69,6 +81,34 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
                 <button className="h-8 px-3 rounded-lg text-xs text-zinc-200 hover:bg-fill-2 disabled:opacity-40" disabled={busy || !portChanged} onClick={() => void run(() => hostApi.configure({ port: portNum }))}>{t('remote.host.applyPort')}</button>
               </div>
               <div className={`text-[11px] ${port && !portValid ? 'text-red-300' : 'text-zinc-500'}`}>{port && !portValid ? t('remote.host.portRange') : t('remote.host.portHint')}</div>
+            </div>
+
+            <div className="space-y-2">
+              <Toggle on={status.keepAwake} disabled={busy} label={t('remote.host.keepAwake')} hint={t(status.awake ? 'remote.host.keepAwakeOn' : 'remote.host.keepAwakeHint')}
+                onChange={(v) => void run(() => hostApi.configure({ keepAwake: v }))} />
+              <Toggle on={status.wakeOnConnect} disabled={busy} label={t('remote.host.wakeOnConnect')} hint={t('remote.host.wakeOnConnectHint')}
+                onChange={(v) => void run(() => hostApi.configure({ wakeOnConnect: v }))} />
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-[12px] font-medium text-zinc-300">{t('remote.password')}</div>
+              {!status.passwordSetAt && (
+                <div className={`text-[12px] ${status.enabled ? 'text-amber-300' : 'text-zinc-400'}`}>{t(status.enabled ? 'remote.host.noPasswordOn' : 'remote.host.needPassword')}</div>
+              )}
+              {status.passwordSetAt && <div className="text-[12px] text-zinc-400">{t('remote.host.passwordSince', { date: new Date(status.passwordSetAt).toLocaleString() })}</div>}
+              <div className="flex gap-2">
+                <input type="password" className="flex-1 h-8 rounded-lg bg-black/30 border border-white/10 px-2.5 text-[13px] text-zinc-100 outline-none focus:border-white/30" value={pw}
+                  onChange={(e) => setPw(e.target.value)} placeholder={t('remote.host.passwordNew')} autoComplete="new-password" />
+                <input type="password" className="flex-1 h-8 rounded-lg bg-black/30 border border-white/10 px-2.5 text-[13px] text-zinc-100 outline-none focus:border-white/30" value={pw2}
+                  onChange={(e) => setPw2(e.target.value)} placeholder={t('remote.host.passwordAgain')} autoComplete="new-password"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && pwValid && !busy) savePassword(); }} />
+                <button className="h-8 px-3 shrink-0 whitespace-nowrap rounded-lg text-xs text-zinc-200 hover:bg-fill-2 disabled:opacity-40" disabled={busy || !pwValid} onClick={savePassword}>
+                  {status.passwordSetAt ? t('remote.host.passwordChange') : t('remote.host.passwordSet')}
+                </button>
+              </div>
+              <div className={`text-[11px] ${pw && pw2 && pw !== pw2 ? 'text-red-300' : pw && pw.length < 4 ? 'text-red-300' : 'text-zinc-500'}`}>
+                {pw && pw.length < 4 ? t('remote.host.passwordShort') : pw && pw2 && pw !== pw2 ? t('remote.host.passwordMismatch') : t('remote.host.passwordHint')}
+              </div>
             </div>
 
             {code && (
@@ -120,5 +160,17 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
         {error && <div className="text-[12px] text-red-300">{error}</div>}
       </div>
     </div>
+  );
+}
+
+function Toggle({ on, disabled, label, hint, onChange }: { on: boolean; disabled?: boolean; label: string; hint: string; onChange: (v: boolean) => void }) {
+  return (
+    <label className={`flex items-start gap-2.5 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}>
+      <input type="checkbox" className="mt-0.5" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="flex-1">
+        <span className="block text-[13px] text-zinc-200">{label}</span>
+        <span className="block text-[11px] text-zinc-500">{hint}</span>
+      </span>
+    </label>
   );
 }

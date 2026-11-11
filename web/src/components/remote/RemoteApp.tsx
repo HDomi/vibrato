@@ -19,7 +19,8 @@ export default function RemoteApp() {
           <span className="font-semibold text-zinc-200">Vibrato</span>
           <span className="ml-2 text-zinc-400">{t('usage.remote')}</span>
         </div>
-        <RemoteView />
+        {/* min-h-0: without it this column grows with the chat and nothing inside can scroll. */}
+        <div className="flex-1 min-h-0 flex"><RemoteView /></div>
       </div>
     </ContextMenuProvider>
   );

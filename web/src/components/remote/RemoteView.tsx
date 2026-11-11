@@ -48,7 +48,7 @@ export default function RemoteView() {
   if (!remoteBridge()) return <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">{t('remote.needsApp')}</div>;
 
   return (
-    <div className="flex-1 min-w-0 flex gap-4 px-[42px] pb-4">
+    <div className="flex-1 min-w-0 min-h-0 flex gap-4 px-[42px] pb-4">
       <aside className="glass w-[320px] shrink-0 flex flex-col overflow-hidden">
         <ConnectionPanel state={state} />
         {connected && (
@@ -94,6 +94,7 @@ function ConnectionPanel({ state }: { state: RemoteState }) {
   const [hostId, setHostId] = useState<string | null>(null);
   const [editing, setEditing] = useState<RemoteHostView | 'new' | null>(null);
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const reload = () => b.hosts().then((list) => { setHosts(list); setHostId((cur) => cur && list.some((h) => h.id === cur) ? cur : state.hostId ?? list[0]?.id ?? null); });
@@ -105,7 +106,7 @@ function ConnectionPanel({ state }: { state: RemoteState }) {
   const connect = async () => {
     if (!host) return;
     setBusy(true);
-    try { await b.connect({ hostId: host.id, code: code.trim() || undefined, remember }); setCode(''); }
+    try { await b.connect({ hostId: host.id, code: code.trim() || undefined, password: password || undefined, remember }); setCode(''); setPassword(''); }
     finally { setBusy(false); void reload(); }
   };
 
@@ -156,11 +157,15 @@ function ConnectionPanel({ state }: { state: RemoteState }) {
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void connect(); }} autoComplete="off" spellCheck={false} />
             </Field>
           )}
+          <Field label={t('remote.password')}>
+            <input type="password" className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('remote.passwordPh')}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void connect(); }} autoComplete="off" />
+          </Field>
           {!host.hasCode && (
             <label className="flex items-center gap-2 text-[12px] text-zinc-300"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />{t('remote.remember')}</label>
           )}
           <div className="flex items-center gap-2">
-            <button className={`${primaryCls} flex-1`} disabled={busy || (!host.hasCode && !code.trim())} onClick={() => void connect()}>{busy ? t('remote.connecting') : t('remote.connect')}</button>
+            <button className={`${primaryCls} flex-1`} disabled={busy || (!host.hasCode && !code.trim()) || !password} onClick={() => void connect()}>{busy ? t('remote.connecting') : t('remote.connect')}</button>
             {host.hasCode && <button className={ghostCls} onClick={() => void b.forgetCode(host.id).then(reload)}>{t('remote.forgetCode')}</button>}
           </div>
         </>
@@ -176,6 +181,8 @@ function ConnectError({ host, err, onTrusted }: { host: RemoteHostView | null; e
     : err.code === 'DENIED_LOCKED' ? t('remote.err.locked', { s: Math.ceil((err.retryAfterMs ?? 30000) / 1000) })
     : err.code === 'DENIED_BUSY' ? t('remote.err.busy')
     : err.code === 'DENIED_DISABLED' ? t('remote.err.disabled')
+    : err.code === 'DENIED_NOPASSWORD' ? t('remote.err.hostNoPassword')
+    : err.code === 'NEED_PASSWORD' ? t('remote.err.needPassword')
     : err.code === 'NEED_CODE' ? t('remote.err.needCode')
     : err.code === 'FINGERPRINT_MISMATCH' ? t('remote.err.fingerprint')
     : err.code === 'BAD_HOST' ? t('remote.err.badHost', { message: err.message })

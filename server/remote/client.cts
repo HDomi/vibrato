@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import tls from 'node:tls';
-import { deriveKey, encodeFrame, EXPORTER_LABEL, FrameReader, MAX_FRAME, MIN_ITERATIONS, proof, proofMatches, PROTOCOL_VERSION } from './protocol.cjs';
+import { agreeCaps, CAPS, deriveKey, derivePassword, loginKey, encodeFrame, EXPORTER_LABEL, FrameReader, MAX_FRAME, MIN_ITERATIONS, proof, proofMatches, PROTOCOL_VERSION, type Cap } from './protocol.cjs';
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 30_000;
@@ -13,7 +13,7 @@ const PING_EVERY_MS = 20_000;
 /** No pong for this long: the link is dead even if TCP has not noticed (sleep, Wi-Fi change). */
 const PONG_TIMEOUT_MS = 45_000;
 
-export type RemoteErrorCode = 'FINGERPRINT_MISMATCH' | 'DENIED' | 'BAD_HOST' | 'TIMEOUT' | 'NETWORK' | 'CLOSED';
+export type RemoteErrorCode = 'FINGERPRINT_MISMATCH' | 'DENIED' | 'BAD_HOST' | 'TIMEOUT' | 'NETWORK' | 'CLOSED' | 'NEED_PASSWORD';
 
 export class RemoteClientError extends Error {
   constructor(readonly code: RemoteErrorCode, message: string, readonly extra: { fingerprint?: string; reason?: string; retryAfterMs?: number } = {}) { super(message); }
@@ -23,6 +23,8 @@ export interface ConnectOptions {
   address: string;
   port: number;
   code: string;
+  /** The host's login password, when it set one (second factor). */
+  password?: string;
   /** Fingerprint saved from an earlier login; null on the first one (trust on first use). */
   pinned: string | null;
 }
@@ -30,7 +32,7 @@ export interface ConnectOptions {
 export interface Connected { fingerprint: string; hostName: string }
 
 /**
- * Events: 'event' (a session ServerMessage), 'sessions' (the host's session list changed),
+ * Events: 'events' (session ServerMessages, oldest first), 'sessions' (the host's session list changed),
  * 'close' (RemoteClientError | null: null after close() was called).
  */
 export class RemoteConnection extends EventEmitter {
@@ -44,6 +46,8 @@ export class RemoteConnection extends EventEmitter {
   /** Logged in at some point: only then does a lost connection emit 'close'. */
   private ready = false;
   private closeEmitted = false;
+  /** Features the host agreed to (protocol.cts CAPS); an older host agrees to none. */
+  caps = new Set<Cap>();
 
   connect(opts: ConnectOptions): Promise<Connected> {
     return new Promise<Connected>((resolve, reject) => {
@@ -83,7 +87,7 @@ export class RemoteConnection extends EventEmitter {
           return;
         }
         stage = 'challenge';
-        this.write({ t: 'hello', v: PROTOCOL_VERSION });
+        this.write({ t: 'hello', v: PROTOCOL_VERSION, caps: [...CAPS] });
       });
       const reader = new FrameReader((raw) => {
         const msg = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -101,9 +105,20 @@ export class RemoteConnection extends EventEmitter {
             return;
           }
           hostName = typeof msg.host === 'string' ? msg.host.slice(0, 200) : '';
+          this.caps = agreeCaps(msg.caps);
           stage = 'ok';
-          void deriveKey(opts.code, salt, iter).then((k) => {
+          const pw = msg.pw && typeof msg.pw === 'object' ? msg.pw as { salt?: unknown; iter?: unknown } : null;
+          const pwSalt = pw && typeof pw.salt === 'string' ? Buffer.from(pw.salt, 'base64') : Buffer.alloc(0);
+          const pwIter = Number(pw?.iter);
+          if (pw && (!Number.isInteger(pwIter) || pwIter < MIN_ITERATIONS || pwIter > 10_000_000 || pwSalt.length < 16)) {
+            fail(new RemoteClientError('BAD_HOST', 'The host asked for an unsafe login.'));
+            return;
+          }
+          // The host wants its password too: without one there is nothing to try (and no failure is counted).
+          if (pw && !opts.password) { fail(new RemoteClientError('NEED_PASSWORD', 'This host also asks for its password.')); return; }
+          void Promise.all([deriveKey(opts.code, salt, iter), pw ? derivePassword(opts.password!, pwSalt, pwIter) : Promise.resolve(null)]).then(([codeKey, pwKey]) => {
             if (settled) return;
+            const k = loginKey(codeKey, pwKey);
             key = k;
             const exporter = socket.exportKeyingMaterial(32, EXPORTER_LABEL, Buffer.alloc(0));
             this.write({ t: 'auth', cnonce: cnonce.toString('base64'), proof: proof(k, 'client', nonce, cnonce, exporter).toString('base64') });
@@ -125,7 +140,11 @@ export class RemoteConnection extends EventEmitter {
           return;
         }
         fail(new RemoteClientError('BAD_HOST', 'Unexpected message from the host.'));
-      }, () => fail(new RemoteClientError('BAD_HOST', 'Malformed data from the host.')), () => MAX_FRAME);
+      }, () => {
+        // After login the stream is out of step: drop the connection (it reconnects) rather than read garbage.
+        if (this.ready) socket.destroy();
+        else fail(new RemoteClientError('BAD_HOST', 'Malformed data from the host.'));
+      }, () => MAX_FRAME, () => this.ready && this.caps.has('deflate'));
       socket.on('data', (chunk: Buffer) => reader.push(chunk));
     });
   }
@@ -154,7 +173,8 @@ export class RemoteConnection extends EventEmitter {
 
   private onMessage(msg: Record<string, unknown>) {
     if (msg.t === 'pong') { this.lastPong = Date.now(); return; }
-    if (msg.t === 'event') { this.emit('event', msg.message); return; }
+    if (msg.t === 'events') { if (Array.isArray(msg.messages)) this.emit('events', msg.messages); return; }
+    if (msg.t === 'event') { this.emit('events', [msg.message]); return; }
     if (msg.t === 'sessions') { this.emit('sessions'); return; }
     if (msg.t === 'reply' && typeof msg.id === 'number') {
       const c = this.calls.get(msg.id);

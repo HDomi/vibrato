@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('vibe', {
     state: () => ipcRenderer.invoke('remote:state'),
     call: (method, params) => ipcRenderer.invoke('remote:call', method, params),
     onState: (cb) => { const h = (_e, s) => cb(s); ipcRenderer.on('remote:state', h); return () => ipcRenderer.removeListener('remote:state', h); },
-    onEvent: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on('remote:event', h); return () => ipcRenderer.removeListener('remote:event', h); },
+    onEvents: (cb) => { const h = (_e, list) => cb(list); ipcRenderer.on('remote:events', h); return () => ipcRenderer.removeListener('remote:events', h); },
     onSessions: (cb) => { const h = () => cb(); ipcRenderer.on('remote:sessions', h); return () => ipcRenderer.removeListener('remote:sessions', h); },
   },
   pickFolder: () => ipcRenderer.invoke('pick-folder'),

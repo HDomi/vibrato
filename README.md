@@ -5,8 +5,8 @@
 <h1 align="center">Vibrato</h1>
 
 <p align="center">
-  Claude Code · Codex CLI 를 한 화면에서 쓰는 macOS 전용 바이브코딩 앱.<br/>
-  IDE 없이, 구독 로그인된 로컬 CLI 그대로, 내 입맛대로 만든 UI로.
+  Claude Code · Codex CLI 를 한 화면에서 쓰는 macOS 바이브코딩 앱.<br/>
+  IDE 없이, 구독 로그인된 로컬 CLI 그대로. 밖에서는 Windows · Mac 에서 원격으로 이어서.
 </p>
 
 <p align="center">
@@ -14,17 +14,17 @@
   <a href="https://github.com/HDomi/vibrato/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/HDomi/vibrato/release.yml?label=build" alt="Release build" /></a>
   <a href="https://github.com/HDomi/vibrato/releases"><img src="https://img.shields.io/github/downloads/HDomi/vibrato/total?color=22c55e" alt="Downloads" /></a>
   <img src="https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20Silicon-111?logo=apple" alt="macOS 14+ Apple Silicon" />
-  <img src="https://img.shields.io/github/last-commit/HDomi/vibrato/main?label=last%20commit" alt="Last commit" />
+  <img src="https://img.shields.io/badge/Windows-10%2F11%20x64%20(원격%20전용)-0078D4?logo=windows" alt="Windows 10/11 x64 remote client" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/HDomi/vibrato/releases/latest"><b>⬇ 최신 버전 다운로드 (DMG)</b></a>
+  <a href="https://github.com/HDomi/vibrato/releases/latest"><b>⬇ macOS (DMG)</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/HDomi/vibrato/releases/latest"><b>⬇ Windows 원격 클라이언트</b></a>
   &nbsp;·&nbsp;
   <a href="#설치">설치</a>
   &nbsp;·&nbsp;
-  <a href="#주요-기능">기능</a>
-  &nbsp;·&nbsp;
-  <a href="#릴리스--버전">릴리스</a>
+  <a href="#원격-작업">원격 작업</a>
   &nbsp;·&nbsp;
   <a href="#문제-해결">문제 해결</a>
 </p>
@@ -37,9 +37,11 @@
 
 ## 목차
 
-- [왜 만들었나](#왜-만들었나)
+- [소개](#소개)
+- [플랫폼](#플랫폼)
 - [하이라이트](#하이라이트)
 - [주요 기능](#주요-기능)
+- [원격 작업](#원격-작업)
 - [설치](#설치)
 - [사용법](#사용법)
 - [업데이트](#업데이트)
@@ -52,29 +54,57 @@
 - [문서](#문서)
 - [참고](#참고)
 
-## 왜 만들었나
+## 소개
 
 바이브코딩을 하다 보면 코드를 직접 보는 시간보다 에이전트와 대화하는 시간이 길다. 그런데 Claude Code 는 이 터미널, Codex 는 저 터미널, 결과물 확인은 Finder 와 브라우저… 전부 흩어져 있다.
 Vibrato 는 그걸 한 창에 모은다. 폴더를 고르면 그 폴더를 루트로 에이전트 세션이 열리고, 옆에서 파일을 보고, 터미널을 띄우고, 커밋까지 한다.
+자리를 비워도 된다. 회사 PC 나 노트북의 Vibrato 에서 집 Mac 의 세션에 붙어 대화를 이어 가고, 승인하고, 새 세션을 연다. 화면 공유가 아니라 세션만 오가서 가볍다.
 
 - **API 키를 쓰지 않는다.** 이미 설치·로그인된 `claude`(claude.ai 구독) 와 `codex`(ChatGPT) 바이너리를 그대로 쓴다. CLI 로 쓰는 것과 요금·한도가 똑같다.
 - **코드는 안 숨긴다.** 전부 TypeScript. 마음에 안 드는 UI 는 고쳐 쓰면 된다.
 - **설치 한 번, 업데이트는 클릭 한 번.** DMG 로 깔고, 새 릴리스가 나오면 헤더 배지에서 바로 받는다. 체크섬 · 번들 id · 서명을 확인하고 교체한다.
+
+## 플랫폼
+
+| | macOS | Windows |
+|---|---|---|
+| 용도 | **전체 앱**: 에이전트 실행 · 파일 · 터미널 · Git · 도구 · 스케줄러 · 원격 | **원격 클라이언트 전용**: Mac 의 세션에 붙어서 작업 |
+| 요구 사항 | macOS 14+, Apple Silicon | Windows 10 / 11, x64 |
+| 에이전트 실행 | 이 Mac 에서 (`claude` · `codex`) | 하지 않는다. 연결한 Mac 이 실행한다 |
+| 원격 접속 받기(호스트) | 된다 | 안 된다 |
+| 원격 접속 하기(클라이언트) | 된다 | 된다 |
+| 설치 파일 | `Vibrato-<버전>-arm64.dmg` | `Vibrato-Setup-<버전>-x64.exe` 또는 zip |
+| 업데이트 | 앱 안에서 자동 | 새 설치 파일을 받아 덮어 설치 |
+
+> Windows 빌드는 **원격용**이다. 로컬 서버도 에이전트도 없고, 화면에는 원격 탭만 뜬다. Windows 에서 에이전트를 직접 돌리는 기능은 없다.
 
 ## 하이라이트
 
 | | |
 |---|---|
 | 🤖 **두 에이전트, 한 UI** | Claude Code 와 Codex 이벤트를 공통 스키마로 맞춰 같은 채팅 · 승인 카드 · 도구 카드로 그린다. 같은 프롬프트를 둘에게 worktree 로 나눠 돌리고 나은 쪽을 고를 수도 있다 |
+| 🛰 **원격 작업** | 밖에서 Windows · Mac 의 Vibrato 로 집 Mac 세션에 붙는다. 접속 코드 + 비밀번호 2중 로그인, TLS 1.3, 인증서 지문 고정. 화면 공유 없이 세션만 오간다 |
 | 🗂 **계획표 보기** | 도구 실행 기록을 에이전트 체크리스트 단계 아래로 묶어 단계별 진행률 · 작업량 · 실패를 한눈에 |
+| 🌐 **앱 안 브라우저** | Safari 엔진 창을 에이전트가 MCP 도구로 직접 조작. 클릭 · 입력 · 실측 · 콘솔 · 네트워크 · 목킹 |
 | ⏰ **스케줄러** | 스킬 · 프롬프트를 cron 으로 예약 실행. 창이 닫혀 있어도 서버가 돌리고, 잠든 Mac 을 깨우는 옵션까지 |
 | 🔒 **잠금화면** | ⌥L 로 모든 모니터를 덮는 PIN 잠금. 자리를 비워도 세션은 계속 돈다 |
-| 🧰 **도구 모드** | JSON · JWT · 정규식 · Diff · cURL · HTTP 요청 · 네트워크 포트 등 개발 유틸 30여 종을 앱 안에서 |
+| 🧰 **도구 모드** | JSON · JWT · 정규식 · Diff · cURL · HTTP 요청 · PDF 편집기 등 개발 유틸 30여 종을 앱 안에서 |
 | 🔁 **턴 단위 되돌리기** | 턴마다 바뀐 파일만 모아 hunk · 파일 · 턴 단위로 되돌리고, 검증 명령을 자동 실행 |
 
 ## 주요 기능
 
-상단 모드 탭은 **VIBE · 에이전트 · 도구 · 스케줄러** 네 가지다. VIBE 는 프로젝트 폴더 기준 작업 화면, 에이전트는 프로젝트 없이 홈 폴더에서 바로 여는 세션, 도구는 개발 유틸, 스케줄러는 예약 실행이다.
+상단 탭은 **VIBE · 에이전트 · 도구 · 스케줄러 · 원격** 다섯 가지이고, 옆의 🌐 버튼이 앱 안 브라우저를 연다.
+
+| 탭 | 하는 일 |
+|---|---|
+| **VIBE** | 프로젝트 폴더 기준 작업 화면. 세션 탭 · 채팅 · 파일 · 미리보기 · 터미널 · Git · 실행 |
+| **에이전트** | 프로젝트 없이 홈 폴더에서 바로 여는 자유 대화 |
+| **도구** | 개발 유틸 모음 (JSON · JWT · 암호화 · 정규식 · Diff · HTTP 요청 · PDF 편집기 …) |
+| **스케줄러** | 스킬 · 프롬프트 예약 실행과 실행 기록 |
+| **원격** | 다른 Vibrato 에 붙어 그 컴퓨터의 세션으로 작업, 이 Mac 의 원격 접속 허용 설정 |
+
+<details>
+<summary><b>전체 기능 목록 펼치기</b></summary>
 
 | 영역 | 내용 |
 |------|------|
@@ -86,7 +116,7 @@ Vibrato 는 그걸 한 창에 모은다. 폴더를 고르면 그 폴더를 루�
 | **파일** | 탐색기(싱글클릭 선택 · 더블클릭 열기, 확장자·파일명·폴더명별 [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) 아이콘), ⌘C/⌘X/⌘V 복사·이동, 복제, 이름 변경, 새 폴더, 휴지통(Finder 경유 · 복원 가능), 우클릭 메뉴, 현재 폴더 안 파일 이름 검색, 퀵오픈 ⌘P |
 | **미리보기** | Markdown(상대 경로 이미지 · 로컬 링크 해석 · 코드 하이라이트, 원문 복사, 내부 링크는 미리보기 안 레이어로, 답변 속 파일 경로도 눌러서 미리보기), 이미지(HEIC · TIFF · PSD · 카메라 RAW 등 브라우저가 못 여는 형식은 macOS ImageIO 로 렌더), 영상(탐색 가능), 오디오, PDF, 텍스트, 디스크가 바뀌면 자동 갱신. 이미지 우측 상단 **확장자/크기 변경**: PNG · JPEG · WebP · AVIF · HEIC · GIF · TIFF · BMP · JPEG 2000 · PSD · PDF · TGA · OpenEXR · PBM · ICO · ICNS · ASTC · KTX · PVR 로 변환, 크기 변경(비율 유지 · 25~100% 단축), 손실 형식 품질 조절. 저장은 같은 폴더 같은 이름에 확장자만 바꿔서, 다른 이름으로 저장도 가능. Markdown 은 **표 편집** 모드로 파일 안 표를 칸 단위로 고침(행 · 열 추가/삭제, 열 정렬, 스프레드시트 블록 붙여넣기, Enter 로 다음 행, 새 표 추가, MD · CSV · HTML 복사). 저장하면 고친 표만 한글 폭까지 맞춰 정렬해 다시 쓰고 나머지는 그대로, 줄바꿈(LF/CRLF) 유지, 디스크에서 바뀌었으면 덮어쓰지 않음 |
 | **IDE 창** | 파일 탭의 IDE 버튼 · 파일 우클릭 › IDE에서 열기로 별도 창. 현재 프로젝트를 CodeMirror 6 로 편집(js/ts/json/yaml/css/html/md/py/sh 등 하이라이트, ⌘F 찾기·바꾸기, 다중 커서, 접기), 탭(한 번 클릭은 미리보기 탭 · 편집하면 고정), 접히는 프로젝트 트리(가상 스크롤 · 새 파일/폴더 · 이름 변경 · 휴지통), 저장 ⌘S · 전체 저장 ⌥⌘S, 디스크 변경 자동 반영(편집 중이면 충돌 배너), 저장 안 한 내용은 재시작 뒤에도 복원, 줄바꿈(LF/CRLF)·BOM 유지, 2 MB 초과·UTF-8 아닌 파일은 읽기 전용. 테마는 Community Material Theme Darker High Contrast. Markdown 렌더 보기 · 이미지 · 영상 · 오디오 · PDF 도 같은 탭에서 |
-| **도구 모드** | 데이터 · 웹/API · 보안 · 시간 · 이미지/색상 · 시스템 그룹으로 나뉜 개발 유틸, 왼쪽 위 검색(⌘K). **JSON**(느슨한 파싱 · 트리 보기 · 키/값 검색 · 경로 복사 · 정렬/압축/키 정렬 · TypeScript 타입 생성), **JWT**(디코드 · 만료 표시 · HS/RS/PS/ES 서명 검증 · 수정 후 HS 재서명), **암호화**(AES-GCM/CBC/CTR 암복호화 — 키 직접 또는 PBKDF2 패스프레이즈, MD5/SHA 해시 · 파일 해시, HMAC), **인코딩**(Base64 · URL · HTML · Unicode · Hex · Binary 양방향, 쿼리 문자열 분해, 진법 변환), **시간**(Unix s/ms/µs/ns 자동 판별 · ISO · 시간대별 · 기간 계산), **정규식**(실시간 매치 하이라이트 · 그룹 · 치환 · 프리셋), **Diff**(Myers 줄 비교 · 나란히 · unified diff 복사), **UUID · 난수**(v4/v7 · 비밀번호 · 바이트 · 숫자), **텍스트**(케이스 변환 · 글자 수 · 정렬/중복 제거 등 줄 정리 · Lorem), **색상**(HEX/RGB/HSL/HSV/CMYK · 명도 단계 · WCAG 대비), **YAML · JSON · TOML** 상호 변환(형식 자동 감지), **SQL** 정렬 · 한 줄로(방언 12종 · 키워드 대소문자), **cURL** ↔ fetch · axios · Python requests(브라우저 "Copy as cURL/fetch" 붙여넣기), **이스케이프**(JSON · JS · 템플릿 · 셸 '…'/"…" · 정규식 · SQL · CSV · C/Java · XML 양방향), **Cron**(식 해석 · 필드별 값 · 다음 실행 10회 로컬/UTC · 프리셋), **Chmod**(755 ↔ rwxr-xr-x ↔ 체크박스, ls -l 줄 붙여넣기, u+x 같은 식 적용), **계산기**(줄마다 식 · 변수 · 0x/0b · 비트 연산 · 함수, CSS px/rem/pt/vw 변환, 용량 B/KB/KiB 와 전송 시간). **HTTP 요청**(메서드 · 파라미터/헤더/바디(JSON · 텍스트 · form) 표 편집 · Bearer/Basic 인증 · 리다이렉트 · TLS 검사 끄기 · 제한 시간, URL 칸에 curl 붙여넣으면 가져오기, 응답 상태 · 시간 · 크기 · 헤더 · JSON 하이라이트 · 이미지 미리보기, cURL 로 복사, 최근 30개 기록. 요청은 앱 로컬 서버가 보내서 CORS 없음), **네트워크**(호스트 이름 · LAN IP · 공인 IP 조회, 열린 TCP 포트와 프로세스 · 작업 폴더 · 접근 범위, 그 포트로 요청 · 종료/강제 종료, IPv4 서브넷 계산). **SVG**(Figma · Illustrator · Inkscape 내보내기 정리: 편집기 메타데이터 · 안 쓰는 id · 빈 그룹 제거, 소수점 반올림, width/height 제거, currentColor 치환, 미리보기, React 컴포넌트 · URL-encoded/Base64 data URI · CSS mask), **QR 코드**(텍스트/URL · Wi-Fi, 이 Mac LAN 주소로 개발 서버 QR, 오류 정정 · 여백 · 색, PNG/SVG 복사 · 저장, 네트워크 도구의 포트 행에서 바로 생성), **Data URI**(파일 · 붙여넣은 이미지 → data URI · CSS · HTML · Markdown, 반대로 data URI → 파일 저장), **파비콘 · 앱 아이콘**(이미지 하나로 favicon.ico · PNG 크기별 · apple-touch-icon · 안드로이드 · macOS icon.icns · site.webmanifest 생성, 여백 · 배경 · 모서리, 폴더에 한 번에 저장). **.env 비교**(현재 프로젝트의 .env* 파일을 하위 폴더까지 찾아 두 개 비교, 빠진 키 · 값 다름 · 빈 값 · 중복 · 읽을 수 없는 줄, 값은 기본으로 가림, .env.example 생성 · 빠진 키 덧붙일 줄 만들기. 파일 내용은 저장하지 않음). 입력은 기억되고 키 · 시크릿 · 평문은 저장 안 함. ⌘1~⌘0 으로 목록 앞 10개 전환 |
+| **도구 모드** | **PDF 편집기**(여러 파일 합치기, 페이지 순서 · 회전 · 삭제 · 복제, 이미지를 새 페이지로, 페이지를 이미지로 내보내기(DPI · 형식), 실행 취소, 확대 보기)와 데이터 · 웹/API · 보안 · 시간 · 이미지/색상 · 시스템 그룹으로 나뉜 개발 유틸, 왼쪽 위 검색(⌘K). **JSON**(느슨한 파싱 · 트리 보기 · 키/값 검색 · 경로 복사 · 정렬/압축/키 정렬 · TypeScript 타입 생성), **JWT**(디코드 · 만료 표시 · HS/RS/PS/ES 서명 검증 · 수정 후 HS 재서명), **암호화**(AES-GCM/CBC/CTR 암복호화 — 키 직접 또는 PBKDF2 패스프레이즈, MD5/SHA 해시 · 파일 해시, HMAC), **인코딩**(Base64 · URL · HTML · Unicode · Hex · Binary 양방향, 쿼리 문자열 분해, 진법 변환), **시간**(Unix s/ms/µs/ns 자동 판별 · ISO · 시간대별 · 기간 계산), **정규식**(실시간 매치 하이라이트 · 그룹 · 치환 · 프리셋), **Diff**(Myers 줄 비교 · 나란히 · unified diff 복사), **UUID · 난수**(v4/v7 · 비밀번호 · 바이트 · 숫자), **텍스트**(케이스 변환 · 글자 수 · 정렬/중복 제거 등 줄 정리 · Lorem), **색상**(HEX/RGB/HSL/HSV/CMYK · 명도 단계 · WCAG 대비), **YAML · JSON · TOML** 상호 변환(형식 자동 감지), **SQL** 정렬 · 한 줄로(방언 12종 · 키워드 대소문자), **cURL** ↔ fetch · axios · Python requests(브라우저 "Copy as cURL/fetch" 붙여넣기), **이스케이프**(JSON · JS · 템플릿 · 셸 '…'/"…" · 정규식 · SQL · CSV · C/Java · XML 양방향), **Cron**(식 해석 · 필드별 값 · 다음 실행 10회 로컬/UTC · 프리셋), **Chmod**(755 ↔ rwxr-xr-x ↔ 체크박스, ls -l 줄 붙여넣기, u+x 같은 식 적용), **계산기**(줄마다 식 · 변수 · 0x/0b · 비트 연산 · 함수, CSS px/rem/pt/vw 변환, 용량 B/KB/KiB 와 전송 시간). **HTTP 요청**(메서드 · 파라미터/헤더/바디(JSON · 텍스트 · form) 표 편집 · Bearer/Basic 인증 · 리다이렉트 · TLS 검사 끄기 · 제한 시간, URL 칸에 curl 붙여넣으면 가져오기, 응답 상태 · 시간 · 크기 · 헤더 · JSON 하이라이트 · 이미지 미리보기, cURL 로 복사, 최근 30개 기록. 요청은 앱 로컬 서버가 보내서 CORS 없음), **네트워크**(호스트 이름 · LAN IP · 공인 IP 조회, 열린 TCP 포트와 프로세스 · 작업 폴더 · 접근 범위, 그 포트로 요청 · 종료/강제 종료, IPv4 서브넷 계산). **SVG**(Figma · Illustrator · Inkscape 내보내기 정리: 편집기 메타데이터 · 안 쓰는 id · 빈 그룹 제거, 소수점 반올림, width/height 제거, currentColor 치환, 미리보기, React 컴포넌트 · URL-encoded/Base64 data URI · CSS mask), **QR 코드**(텍스트/URL · Wi-Fi, 이 Mac LAN 주소로 개발 서버 QR, 오류 정정 · 여백 · 색, PNG/SVG 복사 · 저장, 네트워크 도구의 포트 행에서 바로 생성), **Data URI**(파일 · 붙여넣은 이미지 → data URI · CSS · HTML · Markdown, 반대로 data URI → 파일 저장), **파비콘 · 앱 아이콘**(이미지 하나로 favicon.ico · PNG 크기별 · apple-touch-icon · 안드로이드 · macOS icon.icns · site.webmanifest 생성, 여백 · 배경 · 모서리, 폴더에 한 번에 저장). **.env 비교**(현재 프로젝트의 .env* 파일을 하위 폴더까지 찾아 두 개 비교, 빠진 키 · 값 다름 · 빈 값 · 중복 · 읽을 수 없는 줄, 값은 기본으로 가림, .env.example 생성 · 빠진 키 덧붙일 줄 만들기. 파일 내용은 저장하지 않음). 입력은 기억되고 키 · 시크릿 · 평문은 저장 안 함. ⌘1~⌘0 으로 목록 앞 10개 전환 |
 | **스케줄러** | 상단 `스케줄러` 탭. 스킬(켜 둔 Claude 플러그인 스킬 포함) · 프롬프트를 cron 으로 정해 둔 시각에 새 세션으로 실행, `@` 로 지난 세션을 골라 그 세션에 이어 보내기. 실행은 서버가 맡아 창이 닫혀 있어도 돌고, 결과는 실행 기록에서 열어 이어 본다. 잠자기 대응 3단계: 깨어난 뒤 허용 시간 안이면 한 번 실행, 실행 30분 전부터 `caffeinate` 로 자동 잠자기 차단, 선택 옵션으로 `pmset` 이 잠든 Mac 을 깨움(관리자 암호로 epoch 인자만 받는 helper 를 한 번 설치) |
 | **터미널** | xterm.js + node-pty 로그인 셸, `claude` / `codex` TUI 원클릭, 선택 영역 · 최근 출력 채팅으로 보내기, Terminal.app · Finder · VS Code · Cursor 로 열기 |
 | **Git** | 브랜치 전환 · 생성, fetch / pull / push, 상태 · diff · 스테이지 · 커밋 · Commit & Push, 커밋 그래프(커밋을 누르면 바뀐 파일 · diff, 무한 스크롤), **AI 메시지**(스테이지된 diff 로 설치된 claude/codex 가 레포 CLAUDE.md · AGENTS.md 와 최근 커밋 스타일에 맞춰 커밋 메시지 작성) |
@@ -98,14 +128,82 @@ Vibrato 는 그걸 한 창에 모은다. 폴더를 고르면 그 폴더를 루�
 | **에이전트 지침** | 시작 화면 · 열기 메뉴의 **에이전트 지침…**: 프로젝트 · 전역 CLAUDE.md 와 AGENTS.md 를 나란히 편집, 같은지 표시, 한쪽으로 복사하거나 CLAUDE.md 가 `@AGENTS.md` 를 불러오게 해 파일 하나로 합치기. 스킬 · 훅 · MCP 서버(.mcp.json · ~/.claude.json · ~/.codex/config.toml)를 출처와 함께 모아 보기, 누르면 IDE 에서 열기 |
 | **잠금화면** | ⌥L(메뉴 › 지금 잠그기)로 모든 모니터를 덮는다. 배경화면을 흐리게 깐 위에 메인 모니터엔 디지털 시계 · 숫자 4자리 PIN · 에이전트별 세션 요약 유리 카드, 복구 코드(20자)로도 열기. kiosk 옵션으로 ⌘Tab · 강제 종료 · 앱 숨기기를 막고, 전원 연결 중엔 화면 꺼짐을 막아 macOS 자동 잠금이 안 걸린다. 그동안 세션은 계속 돈다. 설정 › 잠금화면에서 PIN · 메인 모니터(배치 미니맵) 지정 |
 | **독 · 즐겨찾기** | 왼쪽 독에 폴더 즐겨찾기, 그룹(폴더)으로 묶기 · 접기, 드래그로 이동, 최근 폴더, 프로젝트 아이콘 자동 감지(public/favicon, Next app/icon, Godot project.godot, Tauri, Xcode AppIcon, .icns 등). 실행 중인 프로젝트는 노란 점, 끝났는데 아직 안 연 프로젝트는 초록 점 |
+| **앱 안 브라우저** | 상단 탭 옆 🌐 버튼(⇧⌘B)으로 여는 별도 창. 페이지는 Safari 엔진(WKWebView)이라 Google 로그인이 유지된다. 에이전트는 MCP 브라우저 도구로 같은 창을 조작하고(클릭 · 입력 · 스크린샷 · 실측 · 콘솔 · 네트워크 · 목킹), 세션마다 색이 다른 커서가 보인다. 결과는 Playwright 테스트로 내보내기 |
 | **헤더** | Claude 5시간 · 주간 · 모델별, Codex 5시간 · 주간 남은 % 바(마우스를 올리면 초기화까지 남은 시간, 최근 소진 속도로 리셋 전에 다 쓸 것 같으면 남은 시간 예측과 경고 점), 현재 버전 · 업데이트 배지 |
 | **설정** | 좌측 탭 구성: 일반 · AI 동작 방식(에이전트별 기본 모델 · 권한 모드) · 배경화면 · 커스텀 프롬프트(모든 에이전트 세션에 한 번만 주입) · Form 유형 · 잠금화면 · 에이전트 CLI(감지 + 설치/업데이트 버튼(공식 스크립트 · Homebrew · npm), 스킬 · 플러그인 목록과 사용 설정) · 권한(macOS 개인정보 권한 상태와 요청) |
+| **원격** | 상단 `원격` 탭. 다른 Vibrato(Mac · Windows)에 붙어 그 컴퓨터의 세션을 보고 답하고 새 세션을 연다. [원격 작업](#원격-작업) 참고 |
 | **디자인** | 글래스 디자인: 배경화면(원본 · 흐린 사본을 미리 만들어 둠) 위 유리 카드, 독, 원형 헤더 버튼. 에이전트 · 도구 · 스케줄러 탭 패널 크기 조절 핸들, 사이드 · 우측 패널 접기(애니메이션), 구분선 드래그로 폭 조절, 전부 기억됨, 2.5px 얇은 스크롤바 |
 | **운영** | 로그인 시 자동 실행, macOS 알림(다른 앱이나 다른 세션을 보고 있을 때 세션 이름과 함께 완료/실패/승인/질문 알림, 클릭하면 해당 세션으로 이동, 승인 알림은 허용 · 항상 허용 · 거부 버튼으로 앱을 열지 않고 바로 답하고 앱에서 처리되면 알림이 사라짐), 에이전트가 일하거나 터미널이 바쁜 동안 Mac 자동 절전 방지(설정에서 끌 수 있음), 절전에서 깨어나면 세션·셸 즉시 재연결, 연결이 끊긴 셸은 서버가 10분간 살려 두고 같은 탭에 다시 붙여 그동안의 출력까지 보여 줌 |
 
+</details>
+
+## 원격 작업
+
+밖에서 집 Mac 의 작업을 이어 하는 기능이다. 화면을 보내는 원격 데스크톱이 아니라 **세션만 주고받는다**: 대화 · 승인 · 질문 · 진행 상황. 그래서 느린 회선에서도 가볍고, 원격으로 할 수 있는 일이 세션으로 한정돼 안전하다.
+
+```
+ 회사 PC / 노트북                                  집 Mac
+┌───────────────────────┐   TLS 1.3 (포트 11399)   ┌───────────────────────────────┐
+│ Vibrato › 원격 탭      │ ───────────────────────▶ │ Vibrato 원격 호스트            │
+│ (Windows 또는 Mac)     │ ◀─────────────────────── │  └ claude / codex 세션 실행    │
+└───────────────────────┘   세션 이벤트 · 명령만     └───────────────────────────────┘
+```
+
+### 원격에서 할 수 있는 것
+
+| 된다 | 안 된다 |
+|---|---|
+| 호스트의 프로젝트(즐겨찾기 · 최근) 보기 | 파일 읽기 · 쓰기, 폴더 탐색 |
+| 실행 중 세션 목록, 승인 · 질문 대기 표시 | 터미널 · 셸 실행 |
+| 세션 채팅 보기 · 메시지 보내기 | 세션 영구 삭제 · 이름 변경 · 고정 |
+| 승인 · 거부, 질문 답변, 중단, 권한 모드 변경 | 설정 · Git · 업데이트 조작 |
+| 새 세션 시작, 이전 대화 이어하기, 세션 종료(기록은 남음) | 화면 보기 · 마우스 · 키보드 조작 |
+
+### 1. 집 Mac 에서 원격 접속 허용 (호스트)
+
+1. 상단 **원격** 탭 › 왼쪽 아래 **이 Mac 원격 접속 허용…**
+2. **비밀번호**(4자 이상)를 정한다. 처음이면 이때 **접속 코드**(20자)도 만들어지고 **한 번만** 보인다. 적어 둔다.
+3. **포트**를 고르고(기본 11399) **켜기**.
+4. 밖에서 접속하려면 공유기에서 그 **TCP 포트를 이 Mac 으로 포워딩**한다. 같은 네트워크면 화면에 나오는 `192.168.x.x:포트` 로 바로 된다.
+
+| 옵션 | 기본 | 설명 |
+|---|---|---|
+| 대기 중 잠자기 방지 | 켜짐 | 접속을 기다리는 동안 유휴 잠자기를 막는다(`caffeinate -i`). 화면은 꺼져도 된다 |
+| 로그인하면 화면 깨우기 | 켜짐 | 코드와 비밀번호가 맞은 접속에서만 디스플레이를 깨운다. 포트 스캔으로는 안 켜진다 |
+| 새 코드 발급 | | 코드를 바꾸면 연결된 클라이언트는 끊기고 새 코드가 필요하다 |
+| 인증서 지문 | | 클라이언트가 처음 접속할 때 고정하는 값. 의심되면 클라이언트 화면과 비교한다 |
+
+### 2. 밖에서 접속 (클라이언트)
+
+1. **Windows**: [최신 릴리스](https://github.com/HDomi/vibrato/releases/latest) 의 `Vibrato-Setup-<버전>-x64.exe` 로 설치. **Mac**: 같은 Vibrato 앱의 **원격** 탭.
+2. **호스트 추가**: 이름, 주소(집 공인 IP 또는 도메인), 포트.
+3. **접속 코드**와 **비밀번호**를 넣고 **연결**. 코드는 "이 컴퓨터에 코드 기억하기"로 저장할 수 있고(Windows DPAPI · macOS 키체인 암호화), 비밀번호는 저장하지 않아 매번 입력한다.
+4. 왼쪽에서 프로젝트 · 세션을 고르면 오른쪽에 채팅이 열린다.
+
+연결은 앱 메인 프로세스가 붙들고 있다. 다른 탭으로 옮기거나 창을 새로고침해도 끊기지 않고, 직접 **연결 끊기**를 누르거나 앱을 끝내야 끊긴다. 회선이 끊기면 자동으로 다시 붙고, 보던 세션은 끊긴 지점부터 이어 받는다.
+
+### 원격 보안
+
+| 항목 | 방식 |
+|---|---|
+| 노출 범위 | 원격 리스너는 기본 꺼짐. 켜도 세션 메서드 13개만 열린다. 앱의 로컬 서버(127.0.0.1)는 그대로 외부와 분리 |
+| 암호화 | TLS 1.3. 호스트는 처음 켤 때 만든 자체 서명 인증서(P-256)를 계속 쓴다 |
+| 호스트 확인 | 클라이언트가 첫 로그인 때 인증서 SHA-256 지문을 고정(TOFU)하고, 바뀌면 연결을 거부한 뒤 두 지문을 보여 준다 |
+| 2중 인증 | **접속 코드**(호스트가 만든 100비트 키, 클라이언트에 저장 가능) + **비밀번호**(호스트에서 정함, 매번 입력). 둘 다 네트워크로 보내지 않는다 |
+| 로그인 증명 | `HMAC(HMAC(PBKDF2(코드), PBKDF2(비밀번호)), nonce ‖ TLS exporter)`. TLS 채널 바인딩이라 중간자가 다른 연결로 중계할 수 없다. 틀리면 코드 · 비밀번호 중 어느 쪽인지 알려 주지 않는다 |
+| 상호 인증 | 호스트도 같은 키로 만든 증명을 돌려줘야 클라이언트가 연결을 유지한다. 지문은 그 뒤에만 저장 |
+| 무차별 대입 | 주소(IPv6 는 /64)별 5회 실패 시 30초 잠금, 이후 실패마다 두 배(최대 1시간). 잠긴 동안은 맞는 값도 거부. 주소당 동시 로그인 1개, 전체 1분 20회 실패면 30초 전부 거부. 로그인 전 연결 32개 · 메시지 4KB 제한 |
+| 저장 | 호스트에는 코드 · 비밀번호의 PBKDF2 결과만 저장(원문 없음, `~/.vibrato` 0600). 클라이언트의 코드는 OS 암호화 저장소에만 |
+
+> 포트를 인터넷에 열면 스캐너가 반드시 찾아온다. 위 장치들이 막아 주지만, 비밀번호는 추측하기 어렵게 정하고 코드가 새면 바로 새로 발급한다.
+
+### 통신
+
+세션 이벤트는 15ms 단위로 묶어 보내고, 토큰 단위 스트림 조각은 합친다. 원격 화면이 쓰지 않는 도구 출력 스트림은 보내지 않고, 긴 도구 입력 · 결과는 잘라서 보낸다(승인 카드는 전체 유지). 1KB 넘는 묶음은 deflate 로 압축한다. 묶음 · 압축은 양쪽이 지원할 때만 켜져서 버전이 달라도 연결된다.
+
 ## 설치
 
-### 요구 사항
+### macOS
 
 | 항목 | 내용 |
 |------|------|
@@ -114,11 +212,9 @@ Vibrato 는 그걸 한 창에 모은다. 폴더를 고르면 그 폴더를 루�
 | 로그인 | 앱 안 터미널 탭에서 `claude` → `/login`, `codex login` |
 | Node.js | 없어도 된다. 서버는 시스템 node(20 이상)가 있으면 그걸, 없으면 Electron 에 내장된 Node 로 뜬다 |
 
-### DMG (권장)
-
 1. [최신 릴리스](https://github.com/HDomi/vibrato/releases/latest) 에서 `Vibrato-<버전>-arm64.dmg` 를 받는다.
 2. 앱을 `응용 프로그램` 폴더로 끌어 놓는다. 레포 · git · Node 없이 혼자 돈다.
-3. Apple 개발자 서명이 없는(ad-hoc) 앱이라 처음 한 번은 macOS 가 막는다. 시스템 설정 › 개인정보 보호 및 보안 › "그래도 열기" 를 누르거나, 터미널에서 격리 표시를 지운다.
+3. Apple 개발자 서명이 없는 앱이라 처음 한 번은 macOS 가 막는다. 시스템 설정 › 개인정보 보호 및 보안 › "그래도 열기" 를 누르거나, 터미널에서 격리 표시를 지운다.
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Vibrato.app"
@@ -126,10 +222,16 @@ xattr -dr com.apple.quarantine "/Applications/Vibrato.app"
 
 첫 실행 때 macOS 가 "Vibrato 가 데스크탑 폴더에 접근하려 합니다" 를 물으면 허용한다. 이후 업데이트는 앱이 알아서 받는다(아래 [업데이트](#업데이트)). 예전 `install.sh` 런처를 쓰고 있었다면 DMG 의 앱으로 덮어쓰면 된다. 설정 · 세션은 그대로 남는다.
 
+### Windows (원격 클라이언트)
+
+1. [최신 릴리스](https://github.com/HDomi/vibrato/releases/latest) 에서 `Vibrato-Setup-<버전>-x64.exe` 를 받아 실행한다. 설치 없이 쓰려면 `Vibrato-<버전>-win-x64.zip` 을 풀어 `Vibrato.exe`.
+2. 코드 서명이 없어 처음 실행할 때 SmartScreen 이 경고한다. **추가 정보 › 실행**.
+3. 원격 탭에서 호스트를 추가하고 연결한다([원격 작업](#2-밖에서-접속-클라이언트)).
+
 <details>
 <summary><b>받은 파일 체크섬 확인</b></summary>
 
-릴리스마다 `SHA256SUMS.txt` 가 함께 올라간다. 앱 안 업데이트는 이걸 자동으로 대조하고, 직접 받은 DMG 는 이렇게 확인한다.
+릴리스마다 `SHA256SUMS.txt` 가 함께 올라간다. 앱 안 업데이트는 이걸 자동으로 대조하고, 직접 받은 파일은 이렇게 확인한다.
 
 ```bash
 cd ~/Downloads
@@ -137,9 +239,12 @@ curl -LO https://github.com/HDomi/vibrato/releases/latest/download/SHA256SUMS.tx
 shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 ```
 
+Windows PowerShell 에서는 `Get-FileHash .\Vibrato-Setup-<버전>-x64.exe -Algorithm SHA256` 결과를 `SHA256SUMS.txt` 와 비교한다.
+
 </details>
 
-### 소스에서 설치 (개발용)
+<details>
+<summary><b>소스에서 설치 (개발용, macOS)</b></summary>
 
 ```bash
 git clone https://github.com/HDomi/vibrato.git
@@ -157,9 +262,12 @@ cd vibrato
 | `scripts/update.sh` | 수동 업데이트(pull · install · build · 재실행) |
 | `scripts/uninstall.sh [--purge]` | 앱 · 로그인 항목 제거. `--purge` 는 `~/.vibrato` 까지 |
 
+</details>
+
 ### 삭제
 
-DMG 로 설치했다면 `/Applications/Vibrato.app` 을 휴지통에 넣는다. 설정 · 첨부까지 지우려면 `~/.vibrato` 도 지운다. 스케줄러의 Mac 깨우기 helper 를 설치했다면 `/etc/sudoers.d/vibrato` 가 남으니 스케줄러에서 먼저 해제한다. 소스 설치는 `scripts/uninstall.sh --purge`.
+- **macOS**: `/Applications/Vibrato.app` 을 휴지통에 넣는다. 설정 · 첨부 · 원격 인증서까지 지우려면 `~/.vibrato` 도 지운다. 스케줄러의 Mac 깨우기 helper 를 설치했다면 `/etc/sudoers.d/vibrato` 가 남으니 스케줄러에서 먼저 해제한다. 소스 설치는 `scripts/uninstall.sh --purge`.
+- **Windows**: 설정 › 앱에서 Vibrato 를 제거한다. 저장한 호스트 목록은 `%APPDATA%\Vibrato` 에 남으니 함께 지운다.
 
 ## 사용법
 
@@ -199,7 +307,7 @@ DMG 로 설치했다면 `/Applications/Vibrato.app` 을 휴지통에 넣는다. 
 
 ## 업데이트
 
-새 릴리스가 나오면 헤더의 버전 배지에 표시된다.
+새 릴리스가 나오면 Mac 앱 헤더의 버전 배지에 표시된다. Windows 클라이언트는 앱 안 업데이트가 없다. 새 설치 파일을 받아 덮어 설치한다(저장한 호스트는 유지).
 
 **DMG 로 설치한 앱**: 버전 배지 → 커밋 목록 확인 → 업데이트 적용.
 
@@ -218,13 +326,15 @@ DMG 로 설치했다면 `/Applications/Vibrato.app` 을 휴지통에 넣는다. 
 
 ### 받을 수 있는 파일
 
-릴리스마다 아래 세 파일이 [GitHub Releases](https://github.com/HDomi/vibrato/releases) 에 올라간다.
+릴리스마다 아래 파일이 [GitHub Releases](https://github.com/HDomi/vibrato/releases) 에 올라간다.
 
 | 파일 | 용도 |
 |------|------|
-| `Vibrato-<버전>-arm64.dmg` | 처음 설치 |
-| `Vibrato-<버전>-arm64-mac.zip` | 앱 안 업데이트가 받는 번들 |
-| `SHA256SUMS.txt` | 위 두 파일의 SHA-256. 업데이트가 대조한다 |
+| `Vibrato-<버전>-arm64.dmg` | macOS 처음 설치 |
+| `Vibrato-<버전>-arm64-mac.zip` | macOS 앱 안 업데이트가 받는 번들 |
+| `Vibrato-Setup-<버전>-x64.exe` | Windows 원격 클라이언트 설치 |
+| `Vibrato-<버전>-win-x64.zip` | Windows 원격 클라이언트, 설치 없이 실행 |
+| `SHA256SUMS.txt` | 위 파일들의 SHA-256. 업데이트가 대조한다 |
 
 ### 버전 규칙
 
@@ -242,15 +352,21 @@ DMG 로 설치했다면 `/Applications/Vibrato.app` 을 휴지통에 넣는다. 
 
 | 버전 | 날짜 | 주요 변화 |
 |------|------|------|
+| **v5.0.1** | 2026-11-11 | 원격 2중 인증(접속 코드 + 비밀번호), 대기 중 잠자기 방지 · 로그인 시 화면 깨우기, 통신 최적화(묶음 · 압축), Windows 채팅 스크롤 수정 |
+| **v5.0** | 2026-11-11 | 원격 탭, Windows 원격 클라이언트 |
+| **v4.7** | 2026-11-10 | 도구 탭 PDF 편집기, 업데이트 후에도 macOS 권한이 유지되는 고정 인증서 서명 |
+| **v4.6** | 2026-11-09 | 앱 안 브라우저 · 에이전트 브라우저 도구, 계획 단계 실시간 반영, 상단 브라우저 버튼 |
+| **v4.5** | 2026-11-06 | 첫 실행 인트로, 설정 스타일 탭, 우주 배경 |
+| **v4.4** | 2026-11-05 | 배경화면 그라데이션, Pretendard 폰트, IDE 텍스트 검색 |
 | **v4.3** | 2026-11-05 | Claude 대화형 명령(`/mcp` · `/model` · `/plugin` 등) 앱 안 처리, 패널 크기 조절 핸들 |
 | **v4.2** | 2026-11-04 | 계획표 보기, 지난 대화 전체 검색, AI 동작 방식 · 권한 · 스킬 설정, 계획 강제 |
-| **v4.1** | 2026-11-04 | 탭 전환 · 헤더 정리, 헤더에 현재 버전 |
-| **v4.0** | 2026-11-04 | 글래스 디자인 전면 개편, IDE 별도 창, PIN 잠금화면 (**호환 깨짐**: 잠금 PIN 다시 설정) |
+| **v4.0 ~ 4.1** | 2026-11-04 | 글래스 디자인 전면 개편, IDE 별도 창, PIN 잠금화면 (**호환 깨짐**: 잠금 PIN 다시 설정) |
 | **v3.x** | 2026-10-27 ~ 11-03 | worktree · 둘 다 비교, 턴 검증, 작업 백로그, 커스텀 프롬프트, Markdown 내보내기, 스케줄러, Form 전송, Vibrato 로 개명 |
 | **v2.0** | 2026-10-27 | 독립 앱 DMG 첫 릴리스, 릴리스 zip 자동 업데이트 |
 | **v1.0** | 2026-10-21 | 첫 정식 버전, 이후 잠금화면(v1.0.9) |
 
-### 릴리스 만드는 법 (메인테이너)
+<details>
+<summary><b>릴리스 만드는 법 (메인테이너)</b></summary>
 
 ```bash
 git log --oneline -5                      # 다른 작업과 섞이지 않았는지 확인
@@ -259,43 +375,52 @@ git commit -am "feat: <요약> 릴리스 (vX.Y.Z)"   # 제목 끝 (vX.Y.Z) → .
 git push origin main --follow-tags
 ```
 
-`vX.Y.Z` 태그가 push 되면 [`.github/workflows/release.yml`](.github/workflows/release.yml) 이 macOS 러너에서 다음을 한다.
+`vX.Y.Z` 태그가 push 되면 [`.github/workflows/release.yml`](.github/workflows/release.yml) 이 두 러너에서 동시에 빌드한다.
 
-1. 태그와 `package.json` 버전이 같은지 확인(다르면 실패)
-2. `npm ci`(GitHub 다운로드 502 대비 3회 재시도) → `npm run typecheck` → `npm test`
-3. `npm run dist`(electron-builder) → DMG · zip
-4. `SHA256SUMS.txt` 생성 → 태그 메시지를 노트로 GitHub 릴리스 게시
+| 잡 | 하는 일 |
+|---|---|
+| `mac` | 태그 = `package.json` 버전 확인 → `npm ci`(3회 재시도) → `typecheck` · `test` → `npm run dist`(DMG · zip, 고정 인증서 서명) |
+| `windows` | `npm ci` → `npm run dist:win`(NSIS 설치본 · zip) |
+| `publish` | 두 잡의 결과를 모아 `SHA256SUMS.txt` 생성 → 태그 메시지를 노트로 릴리스 게시. Windows 가 실패해도 mac 릴리스는 나간다 |
 
-로컬 빌드는 `npm run dist` → `release/`. 앱 번들에는 SDK 가 딸려 보내는 Claude Code 바이너리(~250 MB)를 넣지 않는다(설치된 `claude` 를 쓴다). 서명은 `scripts/after-pack.cjs` 의 ad-hoc 서명이고 공증은 하지 않는다.
+손으로 실행(workflow_dispatch)하면 빌드만 하고 게시는 하지 않는다. 로컬 빌드는 `npm run dist` / `npm run dist:win` → `release/`. 앱 번들에는 SDK 가 딸려 보내는 Claude Code 바이너리(~250 MB)를 넣지 않는다(설치된 `claude` 를 쓴다).
+
+</details>
 
 ## 동작 원리
 
 ```
-┌─ Vibrato.app (Electron) ─────────────────────────────┐
+┌─ Vibrato.app (Electron) ────────────────────────────────────────────────────┐
 │  renderer: React SPA  ──HTTP/WS──▶  server (Node, 127.0.0.1:11398)
-│                                        ├─ agents/claude.ts  → @anthropic-ai/claude-agent-sdk → 로컬 claude 바이너리
+│                                        ├─ agents/claude.ts  → claude-agent-sdk → 로컬 claude 바이너리
 │                                        ├─ agents/codex.ts   → codex app-server (JSON-RPC/stdio)
 │                                        ├─ pty.ts            → node-pty 로그인 셸
 │                                        ├─ scheduler.ts      → cron 예약 실행 · caffeinate · pmset 깨우기
+│                                        ├─ remote/host.ts    → 원격 호스트 (TLS 1.3, 기본 꺼짐) ◀── 다른 Vibrato
 │                                        ├─ fs · git · worktree · turns · usage · updater
 │                                        └─ 통합 이벤트 스키마 (agents/types.ts)
-└──────────────────────────────────────────────────────────────┘
+│  main: remote.cts → 원격 클라이언트 연결 (탭 · 새로고침과 무관하게 유지) ──▶ 다른 Mac 의 원격 호스트
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **서버는 Electron 안이 아니라 시스템 Node 자식 프로세스**로 돈다. 네이티브 모듈(node-pty)을 Electron ABI 로 다시 빌드할 필요가 없고, 브라우저에서 `http://127.0.0.1:11398` 로 열어도 똑같이 동작한다. macOS 는 자식의 파일 접근을 부모 앱 권한으로 보므로 권한 팝업엔 앱 이름이 뜬다.
 - **Claude** 는 Agent SDK 를 쓰되 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를 지정한다. SDK 가 번들하는 바이너리와 `--bare` 모드는 OAuth 를 읽지 않으므로 쓰지 않는다.
 - **Codex** 는 `codex app-server` 를 세션마다 띄워 `thread/start`, `turn/start`, 승인 요청(`item/*/requestApproval`), `turn/steer` 로 대화한다. 프로토콜 타입은 `codex app-server generate-ts` 결과를 기준으로 맞췄다.
-- 두 에이전트의 이벤트를 `text.delta / tool.start / approval.request / question.request / result` 같은 공통 스키마로 정규화해서 같은 UI 로 그린다.
-- 잠금화면 cover(`/?lock=main|sub`) 와 IDE 창(`/?ide=<root>`) 은 같은 웹 번들을 따로 로드한다.
+- 두 에이전트의 이벤트를 `text.delta / tool.start / approval.request / question.request / result` 같은 공통 스키마로 정규화해서 같은 UI 로 그린다. 원격 탭도 같은 이벤트를 같은 리듀서로 그린다.
+- **원격**은 로컬 HTTP 서버와 별개의 TLS 리스너다. 로그인한 클라이언트는 세션 레지스트리에 구독자로 붙어 이벤트를 받고, 허용된 세션 메서드만 부를 수 있다.
+- **Windows 빌드**는 같은 코드에서 서버를 띄우지 않는 원격 전용 모드(`REMOTE_ONLY`)로 돈다. 웹 번들은 메인 프로세스의 작은 정적 서버가 서빙한다.
+- 잠금화면 cover(`/?lock=main|sub`), IDE 창(`/?ide=<root>`), 브라우저 창(`/?browser=1`)은 같은 웹 번들을 따로 로드한다.
 
 ## 파일 위치
 
 | 경로 | 내용 |
 |------|------|
-| `~/.vibrato/config.json` | 즐겨찾기 · 그룹 · 최근 폴더 · 저장한 프롬프트 · 프로젝트별 검증 명령과 작업 백로그 · 예약 실행 |
+| `~/.vibrato/config.json` | 즐겨찾기 · 그룹 · 최근 폴더 · 저장한 프롬프트 · 프로젝트별 검증 명령과 작업 백로그 · 예약 실행 · 원격 호스트 설정(코드 · 비밀번호는 해시만) |
+| `~/.vibrato/remote/` | 원격 호스트의 TLS 인증서 · 개인 키(본인만 읽기). 지우면 새로 만들고, 클라이언트는 지문을 다시 신뢰해야 한다 |
 | `~/.vibrato/schedule-runs.json` | 예약 실행 기록 |
 | `~/.vibrato/wallpaper/` | 배경화면 원본 · 흐린 사본 |
 | `~/.vibrato/attachments/` | 붙여넣기 첨부 사본, `tool-images/` 에 도구가 돌려준 이미지(내용 해시 이름) |
+| `~/Library/Application Support/Vibrato/remote-hosts.json` | 원격 클라이언트가 저장한 호스트 · 고정 지문 · 암호화된 코드 (Windows: `%APPDATA%\Vibrato\`) |
 | `~/.claude/projects/` | Claude 세션(CLI 와 공유, 이름 변경·삭제도 반영) |
 | `~/.codex/` | Codex 세션 · 로그인(앱이 읽기만 함) |
 | `~/Library/Caches/com.hdomi.vibrato/update/` | 받아 둔 업데이트 · `install.log` |
@@ -304,8 +429,8 @@ git push origin main --follow-tags
 
 ## 개인정보 · 보안
 
-- 서버는 `127.0.0.1` 에만 바인드한다. 외부 네트워크엔 노출되지 않고, 요청 출처(Origin)를 검증한다.
-- 앱이 스스로 보내는 외부 요청은 업데이트 확인 · 다운로드(GitHub)와 사용량 조회(claude.ai · chatgpt.com)뿐이고, 그 밖엔 도구 모드에서 직접 누른 요청(HTTP 요청, 공인 IP 조회)이다. 분석 · 텔레메트리 코드는 없다. 대화 내용은 각 CLI 가 원래 보내는 곳(Anthropic · OpenAI)으로만 간다.
+- 앱 서버는 `127.0.0.1` 에만 바인드하고 요청 출처(Origin)를 검증한다. 외부에서 닿는 건 직접 켠 원격 리스너뿐이고, 그건 [원격 보안](#원격-보안) 장치를 거친 세션 메서드만 연다.
+- 앱이 스스로 보내는 외부 요청은 업데이트 확인 · 다운로드(GitHub)와 사용량 조회(claude.ai · chatgpt.com)뿐이고, 그 밖엔 도구 모드에서 직접 누른 요청(HTTP 요청, 공인 IP 조회)과 직접 연결한 원격 호스트다. 분석 · 텔레메트리 코드는 없다. 대화 내용은 각 CLI 가 원래 보내는 곳(Anthropic · OpenAI)으로만 간다.
 - API 키를 받거나 저장하지 않는다. 인증은 각 CLI 의 로그인을 그대로 쓴다.
 - 도구 모드의 키 · 시크릿 · 평문 입력과 `.env` 내용은 저장하지 않는다.
 - 스케줄러의 깨우기 helper 는 root 소유, sudoers 는 그 helper 만 허용하고 helper 는 epoch 인자만 받는다(`pmset` 의 다른 기능에 못 쓴다).
@@ -314,17 +439,21 @@ git push origin main --follow-tags
 
 | 증상 | 원인 · 해결 |
 |------|------------|
-| "손상되었기 때문에 열 수 없습니다" / "확인되지 않은 개발자" | ad-hoc 서명 앱이라 그렇다. `xattr -dr com.apple.quarantine "/Applications/Vibrato.app"` 후 다시 연다 |
+| "손상되었기 때문에 열 수 없습니다" / "확인되지 않은 개발자" | Apple 개발자 서명이 없는 앱이라 그렇다. `xattr -dr com.apple.quarantine "/Applications/Vibrato.app"` 후 다시 연다 |
+| Windows "PC 보호" (SmartScreen) | 코드 서명이 없어서다. **추가 정보 › 실행** |
+| 원격: 연결하지 못함(시간 초과 · 거부) | 호스트에서 원격 접속이 켜져 있는지, 공유기 포트 포워딩(TCP)과 Mac 방화벽, 주소 · 포트를 확인. 같은 와이파이에서 내부 IP 로 먼저 시험한다 |
+| 원격: "접속 코드 또는 비밀번호가 틀림" | 둘 중 무엇이 틀렸는지는 알려 주지 않는다. 비밀번호는 대소문자 · 띄어쓰기를 구분하고, 코드는 구분하지 않는다. 5번 틀리면 잠깐 잠긴다 |
+| 원격: "호스트에 비밀번호가 없음" | v5.0.0 에서 켜 둔 호스트. 호스트의 원격 › 원격 접속 허용에서 비밀번호를 정한다 |
+| 원격: "인증서가 바뀌었다" | 호스트가 `~/.vibrato/remote` 를 새로 만들었거나 중간에 누군가 끼어든 것. 호스트 설정 화면의 지문과 같을 때만 신뢰한다 |
+| 원격: 밤사이 접속이 안 됨 | 배터리로 뚜껑을 닫으면 Mac 은 잠든다. 전원을 연결하고 "대기 중 잠자기 방지"를 켜 둔다 |
 | 업데이트가 "응용 프로그램 폴더로 옮기라" 고 함 | DMG 안이나 다운로드 폴더에서 바로 실행한 것. `/Applications` 로 옮긴 뒤 실행 |
 | 업데이트 후 앱이 안 바뀜 | `~/Library/Caches/com.hdomi.vibrato/update/install.log` 확인. 교체 실패 시 원래 앱으로 복구된다 |
 | 파일 목록이 `EACCES` | Desktop/Documents/Downloads 는 macOS 보호 폴더. 권한 팝업을 허용하거나 설정 › 권한 탭, 또는 시스템 설정 › 개인정보 보호 및 보안 › 전체 디스크 접근 권한에 Vibrato 추가. 오류 카드에 바로가기 있음 |
 | 잠금 PIN 을 잊음 | 잠금화면에서 **복구 코드로 열기**(20자). v4.0.0 이전 비밀번호는 쓸 수 없으니 설정 › 잠금화면에서 PIN 을 새로 정한다 |
 | 예약 실행이 잠자기 중에 안 돎 | 기본은 깨어난 뒤 허용 시간 안에 한 번 실행. 정시 실행이 필요하면 스케줄러에서 Mac 깨우기 helper 를 설치 |
-| "Node.js 를 찾을 수 없음" 대화상자 | 구버전. 지금은 `runtime/node` → 시스템 node(인터랙티브 셸에서 nvm 포함 탐색) → Electron 내장 Node 순으로 자동 선택한다 |
 | `npm run app` 했는데 Electron 이 Node 로 실행됨 | VS Code 통합 터미널이 `ELECTRON_RUN_AS_NODE=1` 을 심는다. npm 스크립트와 `install.sh` 는 이 변수를 지우니 그걸로 실행 |
 | 메뉴바 · Dock 에 "Electron" 으로 표시 | `npm run brand` 한 번 실행 후 재시작. `npm install` 뒤엔 자동 적용 |
 | Codex 세션이 시작 화면에 안 보임 | 그 폴더에서 Codex 로 작업한 적이 없는 것. 목록은 폴더(cwd) 기준으로 필터된다 |
-| "Open in Cursor" 가 안 됨 | Cursor 미설치. `open -a Cursor` 를 그대로 쓴다 |
 | 로그인 필요 표시 | 터미널 탭에서 `claude` 실행 후 `/login`, 또는 `codex login` |
 
 버그 · 제안은 [Issues](https://github.com/HDomi/vibrato/issues) 로.
@@ -341,18 +470,20 @@ npm test           # node:test
 npm run build      # dist/ + web/dist/ + build-info
 npm run app        # 빌드된 결과로 Electron 실행 (node_modules 런타임)
 npm run dist       # build + electron-builder → release/ (DMG, zip)
+npm run dist:win   # Windows 원격 클라이언트 (NSIS 설치본, zip)
 ```
 
-실행 중인 앱 옆에서 테스트 사본을 띄울 땐 `VIBRATO_PORT` · `VIBRATO_USER_DATA` · `VIBRATO_CONFIG_DIR` · `VIBRATO_UPDATE_DIR` · `VIBRATO_UPDATE_FEED`(가짜 릴리스 API) 로 포트 · 프로필 · 설정 · 업데이트 경로를 분리한다.
+실행 중인 앱 옆에서 테스트 사본을 띄울 땐 `VIBRATO_PORT` · `VIBRATO_USER_DATA` · `VIBRATO_CONFIG_DIR` · `VIBRATO_UPDATE_DIR` · `VIBRATO_UPDATE_FEED`(가짜 릴리스 API) 로 포트 · 프로필 · 설정 · 업데이트 경로를 분리한다. Mac 에서 Windows 와 같은 원격 전용 모드를 보려면 `VIBRATO_REMOTE_ONLY=1`.
 
 ```
 server/            Hono 서버 · 에이전트 어댑터 · PTY · git · worktree · 사용량 · 업데이트 · 스케줄러 · 잠금 감시
+  remote/          원격 호스트 · 프로토콜 · 클라이언트 코어(.cts 는 Electron 과 공유)
   agents/types.ts  통합 이벤트 스키마 (web/src/lib/agent.ts 와 수동 동기화)
 web/               React + Vite + Tailwind v4 (UI 문자열은 web/src/lib/i18n.ts 에 en / ko)
-electron/          메인 프로세스(CommonJS) · preload · 잠금화면
+electron/          메인 프로세스(CommonJS) · preload · 잠금화면 · 앱 안 브라우저 · 원격 클라이언트(remote.cts)
 scripts/           brand-electron · launchd · update · uninstall · bump-version · 아이콘 생성 · after-pack(ad-hoc 서명)
 tests/             node:test
-.github/workflows/ 태그 push → DMG 릴리스
+.github/workflows/ 태그 push → macOS DMG · Windows 설치본 릴리스
 docs/              가능성 조사 보고서 · 로드맵 · 점검 기록
 ```
 
@@ -376,6 +507,6 @@ docs/              가능성 조사 보고서 · 로드맵 · 점검 기록
 ## 참고
 
 - 개인용으로 만든 프로젝트다. Anthropic 은 서드파티 제품이 claude.ai 로그인을 **제공**하는 것을 허용하지 않는다. 이 앱은 본인 Mac 에 본인이 설치한 CLI 를 띄울 뿐이지만, 남에게 배포할 생각이면 API 키 기반으로 바꿔야 한다.
-- Apple Developer 계정 · 공증 없이 ad-hoc 서명으로 동작한다. 스토어 배포 목적이 아니다.
+- Apple Developer ID · 공증 없이 동작한다. 릴리스는 고정된 자체 서명 인증서로 서명해 업데이트 뒤에도 macOS 권한이 유지되고, 인증서가 없는 로컬 빌드는 ad-hoc 서명이다. Windows 빌드는 코드 서명이 없다. 스토어 배포 목적이 아니다.
 - Claude 는 Anthropic, Codex · ChatGPT 는 OpenAI 의 상표다. 이 프로젝트는 두 회사와 관계없다.
 - 라이선스 파일은 아직 없다. 별도 표기가 없으면 저작권은 작성자(HDomi)에게 있다.

@@ -31,12 +31,13 @@ export interface RemoteBridge {
   removeHost: (id: string) => Promise<void>;
   forgetCode: (id: string) => Promise<void>;
   trust: (id: string, fingerprint: string) => Promise<void>;
-  connect: (req: { hostId: string; code?: string; remember?: boolean }) => Promise<RemoteState>;
+  connect: (req: { hostId: string; code?: string; password?: string; remember?: boolean }) => Promise<RemoteState>;
   disconnect: () => Promise<void>;
   state: () => Promise<RemoteState | null>;
   call: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>;
   onState: (cb: (s: RemoteState) => void) => () => void;
-  onEvent: (cb: (m: { sessionId: string; seq: number; ts: number; event: AgentEvent }) => void) => () => void;
+  /** Session events, a batch at a time (oldest first). */
+  onEvents: (cb: (list: { sessionId: string; seq: number; ts: number; event: AgentEvent }[]) => void) => () => void;
   onSessions: (cb: () => void) => () => void;
 }
 
@@ -63,7 +64,7 @@ function wire() {
     // Another host, or a fresh connection after "Disconnect": nothing of the old chats applies.
     if (s.hostId !== was.hostId) resetChats();
   });
-  b.onEvent((m) => applyMessage(m));
+  b.onEvents((list) => { let changed = false; for (const m of list) changed = applyMessage(m) || changed; if (changed) bump(); });
   void b.state().then((s) => { if (s) { state = s; for (const l of stateListeners) l(); } });
 }
 
@@ -86,13 +87,14 @@ function blankChat(s: Pick<RemoteSessionSummary, 'id' | 'agent' | 'cwd'> & { per
   return { id: s.id, agent: s.agent, cwd: s.cwd, permissionMode: (s.permissionMode as PermissionModeId) ?? 'default', status: 'starting', items: [], totalCostUsd: 0, lastSeq: 0 };
 }
 
-function applyMessage(m: { sessionId: string; seq: number; ts: number; event: AgentEvent }) {
-  const c = chats.get(m.sessionId);
-  if (!c || !m.event) return;
+/** Apply one event to its chat; true when something changed (the caller renders once per batch). */
+function applyMessage(m: { sessionId: string; seq: number; ts: number; event: AgentEvent }): boolean {
+  const c = m && chats.get(m.sessionId);
+  if (!c || !m.event) return false;
   // Replays after a reconnect overlap what is already here; seq 0 (errors) is never a duplicate.
-  if (m.seq > 0 && m.seq <= c.lastSeq) return;
+  if (m.seq > 0 && m.seq <= c.lastSeq) return false;
   chats.set(m.sessionId, reduceEvent(c, m.event, m.seq, m.ts));
-  bump();
+  return true;
 }
 
 export function useRemoteChat(id: string | null): ChatSession | null {
@@ -141,7 +143,7 @@ export function useRemoteSessions(connected: boolean) {
 
 export interface HostStatus {
   configured: boolean; enabled: boolean; port: number; listening: boolean; error: string | null; fingerprint: string | null;
-  codeCreatedAt: number | null; clients: { address: string; since: number }[]; addresses: string[];
+  codeCreatedAt: number | null; passwordSetAt: number | null; keepAwake: boolean; wakeOnConnect: boolean; awake: boolean; clients: { address: string; since: number }[]; addresses: string[];
 }
 
 async function hostCall<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -153,7 +155,8 @@ async function hostCall<T>(method: string, path: string, body?: unknown): Promis
 
 export const hostApi = {
   status: () => hostCall<HostStatus>('GET', '/api/remote/host'),
-  configure: (patch: { enabled?: boolean; port?: number }) => hostCall<HostStatus & { code: string | null }>('PUT', '/api/remote/host', patch),
+  configure: (patch: { enabled?: boolean; port?: number; keepAwake?: boolean; wakeOnConnect?: boolean }) => hostCall<HostStatus & { code: string | null }>('PUT', '/api/remote/host', patch),
+  setPassword: (password: string) => hostCall<HostStatus>('PUT', '/api/remote/host/password', { password }),
   newCode: () => hostCall<HostStatus & { code: string }>('POST', '/api/remote/host/code'),
   disconnectAll: () => hostCall<HostStatus>('POST', '/api/remote/host/disconnect'),
 };

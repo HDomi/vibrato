@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -11,8 +12,9 @@ import { listHistory, isCompactSummary } from '../history.js';
 import { readBuildInfo } from '../updater.js';
 import { loadIdentity } from './identity.js';
 import {
-  addressKey, AuthLimiter, DEFAULT_REMOTE_PORT, deriveKey, encodeFrame, EXPORTER_LABEL, FrameReader, generateCode, MAX_FRAME,
-  PBKDF2_ITERATIONS, PREAUTH_MAX_FRAME, proof, proofMatches, PROTOCOL_VERSION, REMOTE_METHODS, type RemoteHistoryRow, type RemoteMethod,
+  addressKey, agreeCaps, AuthLimiter, DEFAULT_REMOTE_PORT, deriveKey, derivePassword, loginKey, PASSWORD_MAX, PASSWORD_MIN, encodeFrame, EXPORTER_LABEL, FrameReader, generateCode, MAX_FRAME,
+  PBKDF2_ITERATIONS, PREAUTH_MAX_FRAME, proof, proofMatches, PROTOCOL_VERSION, queueMessage, REMOTE_METHODS, slimForRemote,
+  type Cap, type RemoteHistoryRow, type RemoteMethod, type WireMessage,
 } from './protocol.cjs';
 
 /*
@@ -27,6 +29,10 @@ const MAX_CLIENTS = 4;
 /** A client that stops reading (half-open link) is dropped before its queue eats memory. */
 const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
 const IDLE_TIMEOUT_MS = 90_000;
+/** Session events wait this long to go out together (and stream pieces get merged): fewer frames and TLS records. */
+const BATCH_MS = 15;
+/** A long replay is cut into batches of this many messages so the first ones show while the rest is on the way. */
+const BATCH_MAX = 400;
 const MODES: PermissionModeId[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto'];
 
 export interface RemoteHostStatus {
@@ -37,6 +43,12 @@ export interface RemoteHostStatus {
   error: string | null;
   fingerprint: string | null;
   codeCreatedAt: number | null;
+  keepAwake: boolean;
+  wakeOnConnect: boolean;
+  /** A password (second factor) is set; when it was. */
+  passwordSetAt: number | null;
+  /** The no-idle-sleep assertion is held right now. */
+  awake: boolean;
   clients: { address: string; since: number }[];
   addresses: string[];
 }
@@ -53,6 +65,8 @@ export class RemoteHost {
   private pruneTimer = setInterval(() => this.limiter.prune(), 10 * 60_000);
   private applying: Promise<void> = Promise.resolve();
   private sessionsTimer: NodeJS.Timeout | null = null;
+  /** `caffeinate -i` while listening: an idle-sleeping Mac would not answer at all. */
+  private caffeinate: ChildProcess | null = null;
 
   constructor(readonly registry: SessionRegistry) {
     this.pruneTimer.unref();
@@ -73,7 +87,7 @@ export class RemoteHost {
   private async applyNow() {
     const cfg = (await loadConfig()).remote;
     const want = cfg?.enabled ? cfg.port : 0;
-    if (this.server && this.listeningPort === want) return;
+    if (this.server && this.listeningPort === want) { this.holdAwake(cfg?.keepAwake !== false); return; }
     await this.stop();
     if (!cfg?.enabled) return;
     try {
@@ -91,13 +105,43 @@ export class RemoteHost {
       this.listeningPort = cfg.port;
       this.error = null;
       console.log(`[vibrato] remote host listening on port ${cfg.port}`);
+      this.holdAwake(cfg.keepAwake !== false);
     } catch (err) {
       this.error = (err as Error).message;
       console.warn(`[vibrato] remote host failed: ${this.error}`);
     }
   }
 
+  /**
+   * Like legato's host: no idle system sleep while waiting for clients (the display may still sleep).
+   * Tied to this process (-w) so it never outlives the server. A closed lid on battery still sleeps.
+   */
+  private holdAwake(on: boolean) {
+    if (process.platform !== 'darwin') return;
+    if (on && !this.caffeinate) {
+      const child = spawn('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
+      child.on('error', (err) => { console.warn(`[vibrato] remote keep-awake failed: ${err.message}`); if (this.caffeinate === child) this.caffeinate = null; });
+      child.on('exit', () => { if (this.caffeinate === child) this.caffeinate = null; });
+      this.caffeinate = child;
+    } else if (!on && this.caffeinate) {
+      this.caffeinate.kill();
+      this.caffeinate = null;
+    }
+  }
+
+  /** A client got in: wake the display (user activity for a few seconds), as legato does on connect. */
+  clientLoggedIn() {
+    if (process.platform !== 'darwin') return;
+    void loadConfig().then((cfg) => {
+      if (cfg.remote?.wakeOnConnect === false) return;
+      const child = spawn('/usr/bin/caffeinate', ['-u', '-t', '3'], { stdio: 'ignore' });
+      child.on('error', () => { /* best effort */ });
+      child.unref();
+    }).catch(() => {});
+  }
+
   async stop() {
+    this.holdAwake(false);
     const server = this.server;
     this.server = null;
     this.listeningPort = 0;
@@ -117,13 +161,17 @@ export class RemoteHost {
       error: this.error,
       fingerprint: this.fingerprint,
       codeCreatedAt: cfg?.codeCreatedAt ?? null,
+      keepAwake: cfg?.keepAwake !== false,
+      wakeOnConnect: cfg?.wakeOnConnect !== false,
+      passwordSetAt: cfg?.password?.setAt ?? null,
+      awake: !!this.caffeinate,
       clients: [...this.conns].filter((c) => c.authed).map((c) => ({ address: c.address, since: c.since })),
       addresses: localAddresses(),
     };
   }
 
   /** Settings: turn on/off, change the port. The first time also creates the identity and an access code. */
-  async configure(patch: { enabled?: boolean; port?: number }): Promise<{ code: string | null }> {
+  async configure(patch: { enabled?: boolean; port?: number; keepAwake?: boolean; wakeOnConnect?: boolean }): Promise<{ code: string | null }> {
     let code: string | null = null;
     await withConfigLock(async () => {
       const cfg = await loadConfig();
@@ -132,7 +180,11 @@ export class RemoteHost {
         code = generateCode();
         remote = await keyFor(code, { enabled: false, port: DEFAULT_REMOTE_PORT });
       }
+      // Two factors always: no turning on before a password is set.
+      if (patch.enabled === true && !remote.password) throw new RemoteError('Set a password first.');
       if (typeof patch.enabled === 'boolean') remote.enabled = patch.enabled;
+      if (typeof patch.keepAwake === 'boolean') remote.keepAwake = patch.keepAwake;
+      if (typeof patch.wakeOnConnect === 'boolean') remote.wakeOnConnect = patch.wakeOnConnect;
       if (patch.port !== undefined) {
         if (!Number.isInteger(patch.port) || patch.port < 1024 || patch.port > 65535) throw new RemoteError('Port must be between 1024 and 65535.');
         remote.port = patch.port;
@@ -145,12 +197,29 @@ export class RemoteHost {
     return { code };
   }
 
+  /**
+   * Set (or with null remove) the login password. Connected clients are dropped: they logged in under the old rule.
+   * The host must be set up (have a code) first.
+   */
+  async setPassword(password: string | null): Promise<void> {
+    if (password === null) throw new RemoteError('The password cannot be removed; change it instead.');
+    if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) throw new RemoteError(`Password must be ${PASSWORD_MIN}–${PASSWORD_MAX} characters.`);
+    await withConfigLock(async () => {
+      const cfg = await loadConfig();
+      if (!cfg.remote) throw new RemoteError('Create an access code first.');
+      const salt = crypto.randomBytes(16);
+      cfg.remote.password = { salt: salt.toString('base64'), iterations: PBKDF2_ITERATIONS, key: (await derivePassword(password, salt, PBKDF2_ITERATIONS)).toString('base64'), setAt: Date.now() };
+      await saveConfig(cfg);
+    });
+    this.disconnectAll();
+  }
+
   /** A new access code; every connected client is dropped and must log in with it. */
   async newCode(): Promise<string> {
     const code = generateCode();
     await withConfigLock(async () => {
       const cfg = await loadConfig();
-      cfg.remote = await keyFor(code, { enabled: cfg.remote?.enabled ?? false, port: cfg.remote?.port ?? DEFAULT_REMOTE_PORT });
+      cfg.remote = { ...cfg.remote, ...(await keyFor(code, { enabled: cfg.remote?.enabled ?? false, port: cfg.remote?.port ?? DEFAULT_REMOTE_PORT })) };
       await saveConfig(cfg);
     });
     for (const c of this.conns) c.destroy();
@@ -204,12 +273,19 @@ class Conn {
   /** Stands in for a WebSocket subscriber in the session registry. */
   private sink: WebSocket;
   private attached = new Set<string>();
+  /** Features both sides support (protocol.cts CAPS), agreed in the hello. */
+  private caps = new Set<Cap>();
+  /** Compression starts only after the login answer went out uncompressed. */
+  private compressOut = false;
+  private queue: WireMessage[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
 
   constructor(private host: RemoteHost, private socket: tls.TLSSocket) {
     this.address = (socket.remoteAddress ?? '').replace(/^::ffff:/i, '');
     this.limiterKey = addressKey(socket.remoteAddress);
     this.loginTimer = setTimeout(() => this.destroy(), LOGIN_TIMEOUT_MS);
-    this.reader = new FrameReader((m) => void this.onFrame(m), () => this.destroy(), () => (this.authed ? MAX_FRAME : PREAUTH_MAX_FRAME));
+    // The client never sends compressed frames.
+    this.reader = new FrameReader((m) => void this.onFrame(m), () => this.destroy(), () => (this.authed ? MAX_FRAME : PREAUTH_MAX_FRAME), () => false);
     socket.setTimeout(IDLE_TIMEOUT_MS, () => this.destroy());
     socket.setNoDelay(true);
     socket.on('data', (chunk: Buffer) => this.reader.push(chunk));
@@ -218,25 +294,50 @@ class Conn {
     this.sink = {
       OPEN: 1,
       get readyState() { return conn.socket.destroyed ? 3 : 1; },
-      send(data: string) { conn.sendRaw(Buffer.from(`{"t":"event","message":${data}}`, 'utf8')); },
+      send(data: string) { conn.queueEvent(data); },
     } as unknown as WebSocket;
   }
 
-  send(msg: unknown) { this.sendRaw(Buffer.from(JSON.stringify(msg), 'utf8')); }
+  /** A session event from the registry: slimmed, merged with the stream piece before it, sent with the next batch. */
+  private queueEvent(data: string) {
+    if (this.socket.destroyed) return;
+    let m: WireMessage | null;
+    try { m = slimForRemote(JSON.parse(data) as WireMessage); } catch { return; }
+    if (!m) return;
+    queueMessage(this.queue, m);
+    if (this.queue.length >= BATCH_MAX) this.flush();
+    else this.flushTimer ??= setTimeout(() => { this.flushTimer = null; this.flush(); }, BATCH_MS);
+  }
 
-  private sendRaw(body: Buffer) {
+  private flush() {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    if (!this.queue.length) return;
+    const messages = this.queue;
+    this.queue = [];
+    if (this.caps.has('batch')) this.write({ t: 'events', messages });
+    else for (const message of messages) this.write({ t: 'event', message });
+  }
+
+  /** Anything else goes out after the events queued before it, so a reply never overtakes its replay. */
+  send(msg: unknown) {
+    this.flush();
+    this.write(msg);
+  }
+
+  private write(msg: unknown) {
     if (this.socket.destroyed) return;
     if (this.socket.writableLength > MAX_QUEUED_BYTES) { this.destroy(); return; }
-    const head = Buffer.alloc(4);
-    head.writeUInt32BE(body.length, 0);
-    this.socket.write(Buffer.concat([head, body]));
+    this.socket.write(encodeFrame(msg, this.compressOut && this.caps.has('deflate')));
   }
 
   destroy() { this.socket.destroy(); }
 
   cleanup() {
     clearTimeout(this.loginTimer);
-    if (this.limiterHeld) { this.host.limits.end(this.limiterKey, false); this.limiterHeld = false; }
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    this.queue = [];
+    // Leaving before sending a proof (no password at hand, user cancelled) guessed nothing: no failure counted.
+    if (this.limiterHeld) { if (this.stage === 'auth') this.host.limits.cancel(this.limiterKey); else this.host.limits.end(this.limiterKey, false); this.limiterHeld = false; }
     this.host.registry.detachAll(this.sink);
     this.attached.clear();
   }
@@ -257,9 +358,15 @@ class Conn {
     this.limiterHeld = true;
     const cfg = (await loadConfig()).remote;
     if (!cfg?.enabled) { this.host.limits.cancel(this.limiterKey); this.limiterHeld = false; this.deny('disabled'); return; }
-    this.key = Buffer.from(cfg.key, 'base64');
+    const pw = cfg.password;
+    // A host turned on before passwords existed (v5.0.0) takes no logins until one is set.
+    if (!pw) { this.host.limits.cancel(this.limiterKey); this.limiterHeld = false; this.deny('nopassword'); return; }
+    // Both factors fold into one key: a wrong code and a wrong password look the same from outside.
+    this.key = loginKey(Buffer.from(cfg.key, 'base64'), pw ? Buffer.from(pw.key, 'base64') : null);
+    this.caps = agreeCaps(msg.caps);
     this.stage = 'auth';
-    this.send({ t: 'challenge', v: PROTOCOL_VERSION, salt: cfg.salt, iter: cfg.iterations, nonce: this.nonce.toString('base64'), host: os.hostname() });
+    this.send({ t: 'challenge', v: PROTOCOL_VERSION, salt: cfg.salt, iter: cfg.iterations, nonce: this.nonce.toString('base64'), host: os.hostname(), caps: [...this.caps],
+      ...(pw ? { pw: { salt: pw.salt, iter: pw.iterations } } : {}) });
   }
 
   private async onAuth(msg: Record<string, unknown>) {
@@ -276,7 +383,9 @@ class Conn {
     this.authed = true;
     this.stage = 'ready';
     this.send({ t: 'ok', proof: proof(this.key, 'host', this.nonce, cnonce, exporter).toString('base64') });
-    console.log(`[vibrato] remote client logged in from ${this.address}`);
+    this.compressOut = true;
+    console.log(`[vibrato] remote client logged in from ${this.address}${this.caps.size ? ` (${[...this.caps].join(', ')})` : ''}`);
+    this.host.clientLoggedIn();
   }
 
   private deny(reason: string, retryAfterMs?: number) {

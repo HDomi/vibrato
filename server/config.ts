@@ -82,6 +82,12 @@ export interface RemoteHostConfig {
   /** base64 PBKDF2-SHA256(code, salt, iterations) */
   key: string;
   codeCreatedAt: number;
+  /** Keep the Mac from idle-sleeping while the host waits, so it can still be reached (display may sleep). Absent means on. */
+  keepAwake?: boolean;
+  /** Wake the display when a client logs in. Absent means on. */
+  wakeOnConnect?: boolean;
+  /** Second factor: a password set on this Mac and typed on the client at every login. Only its PBKDF2 result. */
+  password?: { salt: string; iterations: number; key: string; setAt: number };
 }
 
 export const CUSTOM_PROMPT_MAX = 20000;

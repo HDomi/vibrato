@@ -26,6 +26,8 @@ let conn: RemoteConnection | null = null;
 let state: State = { status: 'idle', hostId: null, hostName: null, error: null, since: null, attempt: 0 };
 /** Kept for reconnects while the app runs, whether or not it is saved. */
 let liveCode: string | null = null;
+/** The host's password (second factor): typed at every connect, kept in memory for reconnects only, never saved. */
+let livePassword: string | null = null;
 let retryTimer: NodeJS.Timeout | null = null;
 /** Sessions the page attached to; a reconnect attaches them again after the last event seq forwarded. */
 const watched = new Set<string>();
@@ -75,20 +77,22 @@ function dropConnection() {
   if (c) { c.removeAllListeners(); c.on('error', () => {}); c.close(); }
 }
 
-async function open(host: SavedHost, code: string, reconnect: boolean): Promise<void> {
+async function open(host: SavedHost, code: string, password: string | null, reconnect: boolean): Promise<void> {
   clearRetry();
   dropConnection();
   setState({ status: reconnect ? 'reconnecting' : 'connecting', hostId: host.id, hostName: state.hostId === host.id ? state.hostName : null, error: null });
   const c = new RemoteConnection();
   conn = c;
   try {
-    const r = await c.connect({ address: host.address, port: host.port, code, pinned: host.fingerprint });
+    const r = await c.connect({ address: host.address, port: host.port, code, password: password ?? undefined, pinned: host.fingerprint });
     if (conn !== c) { c.close(); return; }
     if (!host.fingerprint) updateHost(host.id, { fingerprint: r.fingerprint });
     liveCode = code;
-    c.on('event', (msg: { sessionId?: string; seq?: number }) => {
-      if (msg?.sessionId && typeof msg.seq === 'number' && msg.seq > (lastSeq.get(msg.sessionId) ?? 0)) lastSeq.set(msg.sessionId, msg.seq);
-      broadcast('remote:event', msg);
+    livePassword = password;
+    // One IPC message per batch the host sent: the page applies it and renders once.
+    c.on('events', (list: { sessionId?: string; seq?: number }[]) => {
+      for (const msg of list) if (msg?.sessionId && typeof msg.seq === 'number' && msg.seq > (lastSeq.get(msg.sessionId) ?? 0)) lastSeq.set(msg.sessionId, msg.seq);
+      broadcast('remote:events', list);
     });
     c.on('sessions', () => broadcast('remote:sessions'));
     c.on('close', (err: RemoteClientError | null) => {
@@ -109,7 +113,7 @@ async function open(host: SavedHost, code: string, reconnect: boolean): Promise<
       scheduleRetry(host.id, e.message);
       return;
     }
-    if (e.code === 'DENIED' && e.extra.reason === 'code') liveCode = null;
+    if (e.code === 'DENIED' && e.extra.reason === 'code') { liveCode = null; livePassword = null; }
     setState({ status: 'error', error: { code: e.code === 'DENIED' ? `DENIED_${String(e.extra.reason ?? '').toUpperCase()}` : e.code, message: e.message, fingerprint: e.extra.fingerprint, retryAfterMs: e.extra.retryAfterMs }, since: null });
   }
 }
@@ -122,7 +126,7 @@ function scheduleRetry(hostId: string, message: string) {
     retryTimer = null;
     const host = readHosts().find((h) => h.id === hostId);
     if (!host || !liveCode || state.hostId !== hostId) { setState({ status: 'idle', hostId: null, error: null }); return; }
-    void open(host, liveCode, true);
+    void open(host, liveCode, livePassword, true);
   }, RETRY_MS[Math.min(attempt - 1, RETRY_MS.length - 1)]);
 }
 
@@ -132,6 +136,7 @@ function disconnect() {
   watched.clear();
   lastSeq.clear();
   liveCode = null;
+  livePassword = null;
   setState({ status: 'idle', hostId: null, hostName: null, error: null, since: null, attempt: 0 });
 }
 
@@ -180,15 +185,16 @@ export function initRemote(opts: { fromApp: (e: IpcMainInvokeEvent | IpcMainEven
     if (!fromApp(e) || typeof id !== 'string' || typeof fingerprint !== 'string' || !/^[0-9A-F:]{95}$/.test(fingerprint)) return;
     updateHost(id, { fingerprint });
   });
-  ipcMain.handle('remote:connect', async (e, raw: { hostId?: unknown; code?: unknown; remember?: unknown }) => {
+  ipcMain.handle('remote:connect', async (e, raw: { hostId?: unknown; code?: unknown; password?: unknown; remember?: unknown }) => {
     if (!fromApp(e) || !raw || typeof raw.hostId !== 'string') return state;
     const host = readHosts().find((h) => h.id === raw.hostId);
     if (!host) throw new Error('Unknown host.');
     const typed = typeof raw.code === 'string' && raw.code.trim() ? raw.code.trim().slice(0, 200) : null;
     const code = typed ?? (state.hostId === host.id ? liveCode : null) ?? savedCode(host);
     if (!code) { setState({ status: 'error', hostId: host.id, error: { code: 'NEED_CODE', message: 'Enter the access code.' } }); return state; }
+    const password = typeof raw.password === 'string' && raw.password ? raw.password.slice(0, 200) : (state.hostId === host.id ? livePassword : null);
     if (state.hostId !== host.id) { watched.clear(); lastSeq.clear(); }
-    await open(host, code, false);
+    await open(host, code, password, false);
     if (state.status === 'connected' && typed && raw.remember === true && safeStorage.isEncryptionAvailable()) {
       updateHost(host.id, { code: safeStorage.encryptString(typed).toString('base64') });
     }

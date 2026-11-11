@@ -9,7 +9,7 @@ import tls from 'node:tls';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibrato-remote-'));
 process.env.VIBRATO_CONFIG_DIR = dir;
 
-const { AuthLimiter, addressKey, generateCode, normalizeCode, encodeFrame } = await import('../server/remote/protocol.cjs');
+const { AuthLimiter, addressKey, generateCode, normalizeCode, encodeFrame, FrameReader, agreeCaps, slimForRemote, queueMessage, REMOTE_TEXT_MAX } = await import('../server/remote/protocol.cjs');
 const { RemoteConnection, RemoteClientError } = await import('../server/remote/client.cjs');
 const { RemoteHost } = await import('../server/remote/host.js');
 const { SessionRegistry } = await import('../server/sessions.js');
@@ -18,12 +18,18 @@ const port = 30000 + Math.floor(Math.random() * 20000);
 let registry: InstanceType<typeof SessionRegistry>;
 let host: InstanceType<typeof RemoteHost>;
 let code = '';
+const password = 'pa55 word';
 
 before(async () => {
   registry = new SessionRegistry();
   host = new RemoteHost(registry);
-  const r = await host.configure({ enabled: true, port });
+  // No caffeinate from tests: neither the keep-awake assertion nor waking the display on login.
+  const r = await host.configure({ port, keepAwake: false, wakeOnConnect: false });
   code = r.code!;
+  await assert.rejects(host.configure({ enabled: true }), /password first/, 'two factors: no turning on without a password');
+  await assert.rejects(host.setPassword('123'), /4/);
+  await host.setPassword(password);
+  await host.configure({ enabled: true });
 });
 
 after(async () => {
@@ -32,9 +38,9 @@ after(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const login = (c: string, pinned: string | null = null) => {
+const login = (c: string, pinned: string | null = null, pw: string | undefined = password) => {
   const conn = new RemoteConnection();
-  return conn.connect({ address: '127.0.0.1', port, code: c, pinned }).then((r) => ({ conn, ...r }));
+  return conn.connect({ address: '127.0.0.1', port, code: c, password: pw, pinned }).then((r) => ({ conn, ...r }));
 };
 
 test('access codes: 20 characters in groups, typed loosely', () => {
@@ -86,7 +92,9 @@ test('login with the code, calls work, fingerprint is the host certificate', asy
     assert.deepEqual(await conn.call('sessions'), []);
     const info = await conn.call<{ host: string; home: string }>('info');
     assert.equal(info.home, os.homedir());
-    await assert.rejects(conn.call('fs.read', { path: '/etc/passwd' }), /Unknown method/);
+    // Nothing outside the session methods: no files, no shell, no deleting or renaming conversations.
+    for (const m of ['fs.read', 'history.delete', 'delete', 'rename', 'pin', 'pty', 'settings']) await assert.rejects(conn.call(m, { path: '/etc/passwd', id: 'x' }), /Unknown method/);
+    assert.ok(conn.caps.has('batch') && conn.caps.has('deflate'), 'both optional features agreed');
     await assert.rejects(conn.call('start', { agent: 'claude', cwd: 'relative/dir' }), /absolute/);
     await assert.rejects(conn.call('send', { sessionId: 'nope', text: 'hi' }), /gone/);
     assert.equal((await host.status()).clients.length, 1);
@@ -95,6 +103,13 @@ test('login with the code, calls work, fingerprint is the host certificate', asy
 
 test('a pinned fingerprint that does not match is refused before login', async () => {
   await assert.rejects(login(code, 'AA:BB'), (e: unknown) => e instanceof RemoteClientError && e.code === 'FINGERPRINT_MISMATCH' && !!e.extra.fingerprint);
+});
+
+test('the password is the second factor: missing is asked for, wrong is refused like a wrong code', async () => {
+  await assert.rejects(login(code, null, ''), (e: unknown) => e instanceof RemoteClientError && e.code === 'NEED_PASSWORD');
+  await assert.rejects(login(code, null, 'PA55 WORD'), (e: unknown) => e instanceof RemoteClientError && e.code === 'DENIED' && e.extra.reason === 'code', 'case counts in the password');
+  const ok = await login(code.toLowerCase());
+  ok.conn.close();
 });
 
 test('wrong codes are refused and lock the address after five', async () => {
@@ -112,6 +127,44 @@ test('a big frame before login drops the connection', async () => {
   sock.on('error', () => {});
   sock.write(encodeFrame({ t: 'hello', v: 1, pad: 'x'.repeat(10_000) }));
   await closed;
+});
+
+test('frames: compressed, split into tiny reads, read back the same', () => {
+  const big = { t: 'events', messages: Array.from({ length: 300 }, (_, i) => ({ sessionId: 's', seq: i + 1, ts: 0, event: { kind: 'text.delta', text: 'hello world '.repeat(20), parent: null } })) };
+  const plain = encodeFrame(big);
+  const packed = encodeFrame(big, true);
+  assert.ok(packed.length < plain.length / 5, `compressed ${packed.length} vs ${plain.length}`);
+  const got: unknown[] = [];
+  const r = new FrameReader((m: unknown) => got.push(m), (e: Error) => { throw e; }, () => 16 * 1024 * 1024, () => true);
+  const stream = Buffer.concat([plain, packed, encodeFrame({ t: 'pong' }, true)]);
+  for (let i = 0; i < stream.length; i += 7) r.push(stream.subarray(i, i + 7));
+  assert.deepEqual(got, [big, big, { t: 'pong' }]);
+  // A compressed frame where none was agreed is an error.
+  let err = '';
+  new FrameReader(() => {}, (e: Error) => { err = e.message; }, () => 1 << 20).push(packed);
+  assert.match(err, /bad frame/);
+});
+
+test('caps: only features both sides list', () => {
+  assert.deepEqual([...agreeCaps(['deflate', 'teleport'])], ['deflate']);
+  assert.deepEqual([...agreeCaps(undefined)], [], 'an older peer sends none');
+});
+
+test('events for the remote tab: stream pieces merged, tool output dropped, long inputs cut', () => {
+  const m = (seq: number, event: Record<string, unknown>) => ({ sessionId: 's', seq, ts: seq, event: event as { kind: string } });
+  const q: ReturnType<typeof m>[] = [];
+  queueMessage(q, m(1, { kind: 'text.delta', text: 'Hel', parent: null }));
+  queueMessage(q, m(2, { kind: 'text.delta', text: 'lo', parent: null }));
+  queueMessage(q, m(3, { kind: 'text.delta', text: '!', parent: 'task' }));
+  queueMessage(q, m(5, { kind: 'text.delta', text: '?', parent: 'task' }));
+  assert.deepEqual(q.map((x) => [x.seq, (x.event as { text: string }).text]), [[2, 'Hello'], [3, '!'], [5, '?']], 'merged only when contiguous, same parent');
+  assert.equal(slimForRemote(m(6, { kind: 'tool.output', toolUseId: 't', chunk: 'x' })), null);
+  const r = slimForRemote(m(7, { kind: 'tool.result', toolUseId: 't', content: 'y'.repeat(REMOTE_TEXT_MAX + 50), isError: false, parent: null }))!;
+  assert.ok((r.event as { content: string }).content.length < REMOTE_TEXT_MAX + 30);
+  const w = slimForRemote(m(8, { kind: 'tool.start', toolUseId: 't', name: 'Write', input: { file_path: '/a', content: 'z'.repeat(50_000) }, parent: null }))!;
+  assert.equal(((w.event as { input: { file_path: string } }).input).file_path, '/a');
+  const a = slimForRemote(m(9, { kind: 'approval.request', requestId: 'r', toolUseId: null, toolName: 'Write', input: { content: 'z'.repeat(50_000) }, canAlwaysAllow: true }))!;
+  assert.equal(((a.event as { input: { content: string } }).input).content.length, 50_000, 'approval cards keep the whole input');
 });
 
 test('a new code drops connected clients', async () => {

@@ -498,10 +498,18 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   const remoteHost = () => { if (!remote) throw new Error('Remote host unavailable'); return remote; };
   app.get('/api/remote/host', async (c) => c.json(await remoteHost().status()));
   app.put('/api/remote/host', async (c) => {
-    const b = await c.req.json<{ enabled?: unknown; port?: unknown }>();
+    const b = await c.req.json<{ enabled?: unknown; port?: unknown; keepAwake?: unknown; wakeOnConnect?: unknown }>();
+    const bool = (v: unknown) => (typeof v === 'boolean' ? v : undefined);
     try {
-      const { code } = await remoteHost().configure({ enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, port: b.port === undefined ? undefined : Number(b.port) });
+      const { code } = await remoteHost().configure({ enabled: bool(b.enabled), port: b.port === undefined ? undefined : Number(b.port), keepAwake: bool(b.keepAwake), wakeOnConnect: bool(b.wakeOnConnect) });
       return c.json({ code, ...(await remoteHost().status()) });
+    } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  });
+  app.put('/api/remote/host/password', async (c) => {
+    const b = await c.req.json<{ password?: unknown }>();
+    try {
+      await remoteHost().setPassword(typeof b.password === 'string' ? b.password : null);
+      return c.json(await remoteHost().status());
     } catch (err) { return c.json({ error: (err as Error).message }, 400); }
   });
   app.post('/api/remote/host/code', async (c) => c.json({ code: await remoteHost().newCode(), ...(await remoteHost().status()) }));
