@@ -3,7 +3,7 @@ import { t, useLang } from '../../lib/i18n';
 import type { ChatItem } from '../../lib/chatStore';
 import type { AgentId, PermissionModeId } from '../../lib/agent';
 import {
-  closeSession, remoteBridge, remoteOnly, startSession, useRemoteChat, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
+  closeSession, remoteBridge, remoteOnly, startSession, useRemoteChat, useRemoteDraft, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
   type RemoteHistoryRow, type RemoteHostView, type RemoteModel, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
@@ -343,7 +343,7 @@ function NewSession({ cwd, resume, onStarted, onCancel }: { cwd: string; resume?
   const conn = useRemoteState();
   const models = useRemoteModels(agent, conn.since ? String(conn.hostId) : null);
   useEffect(() => { setModel(''); }, [agent]);
-  const [text, setText] = useState('');
+  const [text, setText] = useRemoteDraft(`new:${cwd}`);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const start = async () => {
@@ -351,6 +351,7 @@ function NewSession({ cwd, resume, onStarted, onCancel }: { cwd: string; resume?
     try {
       const id = await startSession({ agent, cwd, permissionMode: mode, resume: resume?.sessionId, model: model || undefined });
       if (text.trim()) await b.call('send', { sessionId: id, text: text.trim() });
+      setText('');
       onStarted(id);
     } catch (e) { setError(cleanErr(e)); setBusy(false); }
   };
@@ -404,7 +405,7 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   useLang();
   const b = remoteBridge()!;
   const chat = useRemoteChat(id);
-  const [text, setText] = useState('');
+  const [text, setText] = useRemoteDraft(id);
   const [error, setError] = useState('');
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);

@@ -126,6 +126,21 @@ export async function closeSession(id: string) {
 
 export interface RemoteModel { id: string; name: string; description?: string; isDefault?: boolean }
 
+/**
+ * What was being typed for one session (or the new-session form, scope "new:<folder>"), per host. Kept in
+ * localStorage so it survives switching sessions, reconnects and restarts, like the local composer's drafts.
+ */
+export function useRemoteDraft(scope: string): [string, (v: string) => void] {
+  const key = `vibe.remote.draft.${state.hostId ?? 'none'}.${scope}`;
+  const [text, setText] = useState(() => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } });
+  useEffect(() => { try { setText(localStorage.getItem(key) ?? ''); } catch { setText(''); } }, [key]);
+  const set = (v: string) => {
+    setText(v);
+    try { if (v) localStorage.setItem(key, v); else localStorage.removeItem(key); } catch { /* storage full or off: keep it in memory only */ }
+  };
+  return [text, set];
+}
+
 /** Model lists of the connected host, per agent; dropped when the connection changes. */
 const modelLists = new Map<AgentId, Promise<RemoteModel[] | null>>();
 let modelsFor: string | null = null;
