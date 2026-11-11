@@ -98,7 +98,11 @@ async function open(host: SavedHost, code: string, password: string | null, reco
     c.on('close', (err: RemoteClientError | null) => {
       if (conn !== c) return;
       conn = null;
-      if (err?.code === 'KICKED') setState({ status: 'error', error: { code: 'KICKED', message: err.message }, since: null, attempt: 0 });
+      if (err?.code === 'KICKED') {
+        // Closed on purpose (idle logout, host action): forget what reconnecting would use; logging in again is a choice.
+        liveCode = null; livePassword = null; watched.clear(); lastSeq.clear();
+        setState({ status: 'error', error: { code: err.extra.reason === 'idle' ? 'KICKED_IDLE' : 'KICKED', message: err.message }, since: null, attempt: 0 });
+      }
       else if (err) scheduleRetry(host.id, err.message);
     });
     setState({ status: 'connected', hostName: r.hostName, since: Date.now(), attempt: 0, error: null });

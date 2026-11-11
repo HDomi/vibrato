@@ -46,8 +46,8 @@ export class RemoteConnection extends EventEmitter {
   /** Logged in at some point: only then does a lost connection emit 'close'. */
   private ready = false;
   private closeEmitted = false;
-  /** The host said it closes this connection on purpose. */
-  private kicked = false;
+  /** The host said it closes this connection on purpose, and why. */
+  private kicked: 'host' | 'idle' | null = null;
   /** Features the host agreed to (protocol.cts CAPS); an older host agrees to none. */
   caps = new Set<Cap>();
 
@@ -79,7 +79,7 @@ export class RemoteConnection extends EventEmitter {
       });
       socket.on('close', () => {
         if (!settled) { fail(new RemoteClientError('CLOSED', 'The host closed the connection.')); return; }
-        this.finish(this.closedByUs ? null : this.kicked ? new RemoteClientError('KICKED', 'The host closed this connection.') : new RemoteClientError('CLOSED', 'Connection lost.'));
+        this.finish(this.closedByUs ? null : this.kicked ? new RemoteClientError('KICKED', this.kicked === 'idle' ? 'Logged out after an hour without activity.' : 'The host closed this connection.', { reason: this.kicked }) : new RemoteClientError('CLOSED', 'Connection lost.'));
       });
       socket.once('secureConnect', () => {
         fingerprint = socket.getPeerX509Certificate()?.fingerprint256 ?? '';
@@ -182,7 +182,7 @@ export class RemoteConnection extends EventEmitter {
   private onMessage(msg: Record<string, unknown>) {
     if (msg.t === 'pong') { this.lastPong = Date.now(); return; }
     // The host is closing us on purpose (turned off, new code or password, "disconnect all"): do not come back.
-    if (msg.t === 'kicked') { this.kicked = true; return; }
+    if (msg.t === 'kicked') { this.kicked = msg.reason === 'idle' ? 'idle' : 'host'; return; }
     if (msg.t === 'events') { if (Array.isArray(msg.messages)) this.emit('events', msg.messages); return; }
     if (msg.t === 'event') { this.emit('events', [msg.message]); return; }
     if (msg.t === 'sessions') { this.emit('sessions'); return; }

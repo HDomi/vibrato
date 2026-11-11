@@ -34,6 +34,10 @@ const MAX_CLIENTS = 4;
 /** A client that stops reading (half-open link) is dropped before its queue eats memory. */
 const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
 const IDLE_TIMEOUT_MS = 90_000;
+/** A logged-in client that does nothing for this long is logged out (pings and automatic refreshes do not count). */
+export const INACTIVE_LOGOUT_MS = 60 * 60_000;
+/** Calls that mean the person is working; list refreshes the app makes on its own do not. */
+const USER_ACTIONS = new Set<RemoteMethod>(['start', 'attach', 'send', 'approve', 'answer', 'interrupt', 'mode', 'model', 'close', 'history']);
 /** Session events wait this long to go out together (and stream pieces get merged): fewer frames and TLS records. */
 const BATCH_MS = 15;
 /** A long replay is cut into batches of this many messages so the first ones show while the rest is on the way. */
@@ -91,6 +95,10 @@ export class RemoteHost {
   private conns = new Set<Conn>();
   private limiter = new AuthLimiter();
   private pruneTimer = setInterval(() => this.limiter.prune(), 10 * 60_000);
+  /** Once a minute: log out clients idle for INACTIVE_LOGOUT_MS. */
+  private idleTimer = setInterval(() => this.logoutIdle(), 60_000);
+  /** Overridable in tests. */
+  inactiveLogoutMs = INACTIVE_LOGOUT_MS;
   private applying: Promise<void> = Promise.resolve();
   private sessionsTimer: NodeJS.Timeout | null = null;
   /** `caffeinate -i` while listening: an idle-sleeping Mac would not answer at all. */
@@ -101,6 +109,7 @@ export class RemoteHost {
 
   constructor(readonly registry: SessionRegistry) {
     this.pruneTimer.unref();
+    this.idleTimer.unref();
     registry.onChange(() => {
       // Bursts (a turn start fires status + user) become one notice.
       if (this.sessionsTimer) return;
@@ -213,6 +222,13 @@ export class RemoteHost {
     const url = (await loadConfig()).remote?.discordWebhook;
     if (!url) throw new RemoteError('No webhook is set.');
     await sendDiscord(url, testMessage(os.hostname()));
+  }
+
+  logoutIdle(now = Date.now()) {
+    for (const c of this.conns) if (c.authed && now - c.lastAction >= this.inactiveLogoutMs) {
+      console.log(`[vibrato] remote client ${c.address} idle for ${Math.round(this.inactiveLogoutMs / 60_000)} min: logged out`);
+      c.kick('idle');
+    }
   }
 
   async stop() {
@@ -351,6 +367,8 @@ class Conn {
   private attached = new Set<string>();
   /** Features both sides support (protocol.cts CAPS), agreed in the hello. */
   private caps = new Set<Cap>();
+  /** Last thing the person did (login counts): the idle logout measures from here. */
+  lastAction = Date.now();
   /** The client said goodbye ({ t: 'bye' }) or this host closed it on purpose; otherwise the link dropped. */
   private closedCleanly = false;
   /** Compression starts only after the login answer went out uncompressed. */
@@ -411,10 +429,10 @@ class Conn {
   destroy() { this.socket.destroy(); }
 
   /** Closed on purpose by this host (turned off, new code, new password, disconnect all): a clean logout. */
-  kick() {
+  kick(reason: 'host' | 'idle' = 'host') {
     this.closedCleanly = true;
     // Say so first: a client that only saw the link drop would reconnect right away.
-    if (this.authed) this.send({ t: 'kicked' });
+    if (this.authed) this.send({ t: 'kicked', reason });
     this.socket.end();
     setTimeout(() => this.destroy(), 500).unref();
   }
@@ -493,6 +511,7 @@ class Conn {
     const params = (msg.params && typeof msg.params === 'object' ? msg.params : {}) as Record<string, unknown>;
     try {
       if (!(REMOTE_METHODS as readonly string[]).includes(method)) throw new RemoteError(`Unknown method: ${String(method)}`);
+      if (USER_ACTIONS.has(method) || (method === 'usage' && params.force === true)) this.lastAction = Date.now();
       const result = await this.call(method, params);
       this.send({ t: 'reply', id, result: result ?? null });
     } catch (err) {

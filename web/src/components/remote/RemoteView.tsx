@@ -7,6 +7,8 @@ import {
   type RemoteHistoryRow, type RemoteHostView, type RemoteModel, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
+import AgentIcon from '../AgentIcon';
+import Icon from '../Icon';
 import HostSettings from './HostSettings';
 
 /*
@@ -186,6 +188,7 @@ function ConnectError({ host, err, onTrusted }: { host: RemoteHostView | null; e
     : err.code === 'DENIED_NOPASSWORD' ? t('remote.err.hostNoPassword')
     : err.code === 'NEED_PASSWORD' ? t('remote.err.needPassword')
     : err.code === 'KICKED' ? t('remote.err.kicked')
+    : err.code === 'KICKED_IDLE' ? t('remote.err.idle')
     : err.code === 'NEED_CODE' ? t('remote.err.needCode')
     : err.code === 'FINGERPRINT_MISMATCH' ? t('remote.err.fingerprint')
     : err.code === 'BAD_HOST' ? t('remote.err.badHost', { message: err.message })
@@ -261,74 +264,127 @@ function Browser({ sessions, project, setProject, sel, setSel }: {
 
   const live = (cwd: string) => sessions.filter((s) => s.cwd === cwd).sort((a, z) => z.lastActivity - a.lastActivity);
   const selectedId = sel?.kind === 'session' ? sel.id : null;
+  const resumeId = sel?.kind === 'new' ? sel.resume?.sessionId : undefined;
 
   if (project) {
     const mine = live(project);
     return (
-      <div className="flex-1 min-h-0 overflow-auto p-2 space-y-3">
-        <div className="flex items-center gap-1 px-1">
-          <button className="text-zinc-400 hover:text-white text-[13px] px-1" onClick={() => { setProject(null); }}>‹</button>
-          <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-zinc-100" title={project}>{base(project)}</span>
-          <button className={primaryCls} onClick={() => setSel({ kind: 'new', cwd: project })}>{t('remote.newSession')}</button>
-        </div>
-        <Group title={t('remote.liveSessions')}>
-          {mine.length === 0 ? <Empty text={t('remote.noLive')} /> : mine.map((s) => <SessionRow key={s.id} s={s} active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
-        </Group>
-        <Group title={t('remote.history')}>
-          {history === null ? <Empty text={t('common.loading')} /> : history.length === 0 ? <Empty text={t('remote.noHistory')} /> : history.map((h) => (
-            <button key={`${h.agent}:${h.sessionId}`} className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-fill-2" onClick={() => setSel({ kind: 'new', cwd: project, resume: h })}>
-              <div className="text-[12px] text-zinc-200 truncate">{h.title}</div>
-              <div className="text-[11px] text-zinc-500">{h.agent === 'claude' ? 'Claude' : 'Codex'} · {ago(h.lastModified)}</div>
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="shrink-0 px-3 pt-3 pb-3 border-b border-line">
+          <div className="flex items-center gap-2.5">
+            <button className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-fill-2 transition-colors"
+              title={t('remote.projects')} aria-label={t('remote.projects')} onClick={() => setProject(null)}>
+              <Icon name="back" size={14} />
             </button>
-          ))}
-        </Group>
+            <ProjectBadge name={base(project)} size={32} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[14px] font-semibold text-zinc-100 truncate">{base(project)}</div>
+              <div className="text-[11px] text-zinc-500 truncate" title={project}>{tildify(project)}</div>
+            </div>
+          </div>
+          <button className={`mt-3 w-full h-9 flex items-center justify-center gap-2 rounded-xl border text-[13px] font-medium transition-colors ${sel?.kind === 'new' && !sel.resume ? 'bg-selected text-on-selected border-transparent' : 'border-white/10 bg-white/[0.05] text-zinc-100 hover:bg-white/[0.09]'}`}
+            onClick={() => setSel({ kind: 'new', cwd: project })}>
+            <Icon name="plus" size={14} />
+            {t('remote.newSession')}
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-auto px-2 py-3 space-y-4">
+          <Group title={t('remote.liveSessions')} count={mine.length}>
+            {mine.length === 0 ? <Empty text={t('remote.noLive')} /> : mine.map((s) => <SessionRow key={s.id} s={s} active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
+          </Group>
+          <Group title={t('remote.history')} count={history?.length}>
+            {history === null ? <Empty text={t('common.loading')} /> : history.length === 0 ? <Empty text={t('remote.noHistory')} /> : history.map((h) => (
+              <button key={`${h.agent}:${h.sessionId}`} title={h.title}
+                className={`group w-full flex items-start gap-2.5 text-left rounded-xl px-2.5 py-2 transition-colors ${resumeId === h.sessionId ? 'bg-fill-3' : 'hover:bg-fill-2'}`}
+                onClick={() => setSel({ kind: 'new', cwd: project, resume: h })}>
+                <AgentIcon agent={h.agent} size={16} className="mt-0.5 shrink-0 opacity-80 group-hover:opacity-100" />
+                <span className="flex-1 min-w-0 text-[12.5px] leading-[18px] text-zinc-200 line-clamp-2 break-words">{h.title}</span>
+                <span className="shrink-0 mt-0.5 text-[10.5px] text-zinc-500 tabular-nums">{ago(h.lastModified)}</span>
+              </button>
+            ))}
+          </Group>
+        </div>
       </div>
     );
   }
 
   const active = [...sessions].sort((a, z) => Number(z.waiting > 0) - Number(a.waiting > 0) || Number(z.running) - Number(a.running) || z.lastActivity - a.lastActivity);
+  const open = () => { if (path.trim()) setProject(path.trim()); };
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-2 space-y-3">
-      <Group title={t('remote.liveSessions')}>
+    <div className="flex-1 min-h-0 overflow-auto px-2 py-3 space-y-4">
+      <Group title={t('remote.liveSessions')} count={active.length}>
         {active.length === 0 ? <Empty text={t('remote.noLive')} /> : active.map((s) => <SessionRow key={s.id} s={s} showProject active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
       </Group>
-      <Group title={t('remote.projects')}>
+      <Group title={t('remote.projects')} count={projects ? list.length : undefined}>
         {projects === null ? <Empty text={t('common.loading')} /> : list.length === 0 ? <Empty text={t('remote.noProjects')} /> : list.map((p) => {
           const n = live(p.path).length;
           return (
-            <button key={p.path} className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5 hover:bg-fill-2" onClick={() => setProject(p.path)} title={p.path}>
-              <span className="flex-1 min-w-0 truncate text-[13px] text-zinc-200">{p.name}</span>
-              {n > 0 && <span className="text-[10px] rounded-full bg-fill-3 px-1.5 py-0.5 text-zinc-200">{n}</span>}
+            <button key={p.path} className="w-full flex items-center gap-2.5 text-left rounded-xl px-2.5 py-2 hover:bg-fill-2 transition-colors" onClick={() => setProject(p.path)} title={p.path}>
+              <ProjectBadge name={p.name} size={28} />
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-medium text-zinc-100 truncate">{p.name}</span>
+                <span className="block text-[10.5px] text-zinc-500 truncate">{tildify(p.path)}</span>
+              </span>
+              {n > 0 && <span className="shrink-0 flex items-center gap-1 rounded-full bg-sky-400/15 px-2 py-0.5 text-[10.5px] text-sky-200"><span className="w-1.5 h-1.5 rounded-full bg-sky-400" />{n}</span>}
             </button>
           );
         })}
-        <div className="flex gap-1 px-1 pt-1">
-          <input className={`${inputCls} h-7 text-[12px]`} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('remote.pathPh')} spellCheck={false}
-            onKeyDown={(e) => { if (e.key === 'Enter' && path.trim()) setProject(path.trim()); }} />
-          <button className={`${ghostCls} h-7`} disabled={!path.trim()} onClick={() => setProject(path.trim())}>{t('remote.open')}</button>
+        <div className="mt-1.5 mx-1 flex items-center rounded-xl border border-white/10 bg-black/25 focus-within:border-white/25 transition-colors">
+          <input className="flex-1 min-w-0 h-8 bg-transparent px-3 text-[12px] text-zinc-100 outline-none placeholder:text-zinc-600" value={path} onChange={(e) => setPath(e.target.value)}
+            placeholder={t('remote.pathPh')} spellCheck={false} onKeyDown={(e) => { if (e.key === 'Enter') open(); }} />
+          <button className="h-8 px-3 shrink-0 text-[12px] text-zinc-300 hover:text-white disabled:opacity-30" disabled={!path.trim()} onClick={open}>{t('remote.open')}</button>
         </div>
       </Group>
     </div>
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return <div><div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</div><div className="space-y-0.5">{children}</div></div>;
+/** Home folder as "~", the way paths read in a terminal. */
+const tildify = (p: string) => p.replace(/^\/Users\/[^/]+(?=\/|$)/, '~').replace(/^C:\\Users\\[^\\]+/i, '~');
+
+const BADGE_TONES = ['from-sky-400/40 to-indigo-500/40', 'from-emerald-400/40 to-teal-500/40', 'from-amber-300/40 to-orange-500/40', 'from-fuchsia-400/40 to-violet-500/40', 'from-rose-400/40 to-pink-500/40', 'from-lime-300/40 to-emerald-500/40'];
+
+/** A folder's first letter on a tinted square; the tint follows the name, so a project keeps its colour. */
+function ProjectBadge({ name, size }: { name: string; size: number }) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (
+    <span className={`shrink-0 flex items-center justify-center rounded-lg bg-gradient-to-br ${BADGE_TONES[h % BADGE_TONES.length]} border border-white/10 font-semibold text-white/90`}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}>
+      {(name.match(/[\p{L}\p{N}]/u)?.[0] ?? '·').toUpperCase()}
+    </span>
+  );
+}
+
+function Group({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 px-2.5 pb-1.5">
+        <span className="text-[11px] font-semibold tracking-wide text-zinc-400">{title}</span>
+        {count !== undefined && count > 0 && <span className="rounded-full bg-fill-2 px-1.5 text-[10px] leading-4 text-zinc-400 tabular-nums">{count}</span>}
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="px-2 py-1 text-[12px] text-zinc-500">{text}</div>;
+  return <div className="mx-1 rounded-xl border border-dashed border-white/10 px-3 py-2.5 text-center text-[11.5px] text-zinc-500">{text}</div>;
 }
 
 function SessionRow({ s, active, showProject, onClick }: { s: RemoteSessionSummary; active: boolean; showProject?: boolean; onClick: () => void }) {
+  const dot = s.waiting ? 'bg-amber-400' : s.running ? 'bg-sky-400 animate-pulse' : 'bg-zinc-500';
   return (
-    <button className={`w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5 ${active ? 'bg-fill-3' : 'hover:bg-fill-2'}`} onClick={onClick}>
-      <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${s.waiting ? 'bg-amber-400' : s.running ? 'bg-sky-400 animate-pulse' : 'bg-zinc-500'}`} />
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] text-zinc-100 truncate">{s.title || t('remote.untitled')}</div>
-        <div className="text-[11px] text-zinc-500 truncate">{s.agent === 'claude' ? 'Claude' : 'Codex'}{showProject ? ` · ${base(s.cwd)}` : ''} · {ago(s.lastActivity)}</div>
-      </div>
-      {s.waiting > 0 && <span className="text-[10px] rounded-full bg-amber-500/25 text-amber-200 px-1.5 py-0.5">{t('remote.waiting', { n: s.waiting })}</span>}
+    <button className={`w-full flex items-center gap-2.5 text-left rounded-xl px-2.5 py-2 transition-colors ${active ? 'bg-fill-3' : 'hover:bg-fill-2'}`} onClick={onClick}>
+      <span className="relative shrink-0">
+        <AgentIcon agent={s.agent} size={18} />
+        <span className={`absolute -right-0.5 -bottom-0.5 w-2 h-2 rounded-full ring-2 ring-[#16181d] ${dot}`} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[12.5px] text-zinc-100 truncate">{s.title || t('remote.untitled')}</span>
+        <span className="block text-[10.5px] text-zinc-500 truncate">{showProject ? `${base(s.cwd)} · ` : ''}{s.running ? t('remote.working') : ago(s.lastActivity)}</span>
+      </span>
+      {s.waiting > 0 && <span className="shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10.5px] text-amber-200">{t('remote.waiting', { n: s.waiting })}</span>}
     </button>
   );
 }
@@ -554,44 +610,49 @@ function UsagePanel({ hostKey }: { hostKey: string }) {
   };
   useEffect(() => { setUsage(null); load(false); }, [hostKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (state === 'unsupported') return null;
-  const rows: { agent: string; label: string; win: UsageWindow | null }[] = usage ? [
-    ...(usage.claude ? [
-      { agent: 'Claude', label: '5h', win: usage.claude.fiveHour },
-      { agent: 'Claude', label: t('usage.week'), win: usage.claude.weekly },
-      ...(usage.claude.model ? [{ agent: 'Claude', label: usage.claude.model.name, win: usage.claude.model }] : []),
-    ] : []),
-    ...(usage.codex ? [
-      { agent: 'Codex', label: '5h', win: usage.codex.fiveHour },
-      { agent: 'Codex', label: t('usage.week'), win: usage.codex.weekly },
-    ] : []),
+  const groups: { agent: 'claude' | 'codex'; rows: { label: string; win: UsageWindow | null }[] }[] = usage ? [
+    ...(usage.claude ? [{ agent: 'claude' as const, rows: [
+      { label: '5h', win: usage.claude.fiveHour },
+      { label: t('usage.week'), win: usage.claude.weekly },
+      ...(usage.claude.model ? [{ label: usage.claude.model.name, win: usage.claude.model }] : []),
+    ] }] : []),
+    ...(usage.codex ? [{ agent: 'codex' as const, rows: [
+      { label: '5h', win: usage.codex.fiveHour },
+      { label: t('usage.week'), win: usage.codex.weekly },
+    ] }] : []),
   ] : [];
   return (
-    <div className="shrink-0 border-t border-line px-3 py-2.5 space-y-1.5">
+    <div className="shrink-0 border-t border-line px-3 pt-2.5 pb-3 space-y-2">
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{t('remote.usage')}</span>
-        {usage && <span className="text-[10px] text-zinc-500">{t('remote.usageAt', { time: new Date(usage.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}</span>}
-        <button className="h-6 px-2 rounded-md text-[11px] text-zinc-300 hover:bg-fill-2 hover:text-white disabled:opacity-40" disabled={state === 'loading'} onClick={() => load(true)}>
-          {state === 'loading' ? t('common.loading') : t('common.refresh')}
+        <span className="flex-1 text-[11px] font-semibold tracking-wide text-zinc-400">{t('remote.usage')}</span>
+        {usage && <span className="text-[10px] text-zinc-500 tabular-nums">{t('remote.usageAt', { time: new Date(usage.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}</span>}
+        <button className="w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:bg-fill-2 hover:text-white disabled:opacity-40" disabled={state === 'loading'}
+          title={t('common.refresh')} aria-label={t('common.refresh')} onClick={() => load(true)}>
+          <Icon name="reload" size={12} className={state === 'loading' ? 'animate-spin' : ''} />
         </button>
       </div>
       {state === 'error' && <div className="text-[11px] text-red-300">{t('remote.usageFailed')}</div>}
-      {usage && rows.length === 0 && <div className="text-[11px] text-zinc-500">{t('remote.usageNone')}</div>}
-      {rows.map((r) => {
-        const left = r.win ? Math.max(0, 100 - r.win.usedPct) : null;
-        return (
-          <div key={`${r.agent}:${r.label}`} className="text-[11px]" title={r.win ? resetIn(r.win.resetsAt) : undefined}>
-            <div className="flex items-center gap-2">
-              <span className="w-12 shrink-0 text-zinc-400">{r.agent}</span>
-              <span className="flex-1 min-w-0 truncate text-zinc-500">{r.label}</span>
-              <span className={`tabular-nums ${left === null ? 'text-zinc-600' : left <= 10 ? 'text-red-300' : left <= 30 ? 'text-amber-300' : 'text-zinc-200'}`}>{left === null ? '–' : `${left}%`}</span>
-            </div>
-            <div className="mt-0.5 h-1 rounded-full bg-white/10 overflow-hidden">
-              {left !== null && <div className={`h-full rounded-full ${left <= 10 ? 'bg-red-400' : left <= 30 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${left}%` }} />}
-            </div>
-            {r.win && <div className="mt-0.5 text-[10px] text-zinc-500">{resetIn(r.win.resetsAt)}</div>}
+      {usage && groups.length === 0 && <div className="text-[11px] text-zinc-500">{t('remote.usageNone')}</div>}
+      {groups.map((g) => (
+        <div key={g.agent} className="flex gap-2.5">
+          <AgentIcon agent={g.agent} size={14} className="mt-[3px] shrink-0 opacity-80" title={g.agent === 'claude' ? 'Claude' : 'Codex'} />
+          <div className="flex-1 min-w-0 space-y-1">
+            {g.rows.map((r) => {
+              const left = r.win ? Math.max(0, 100 - r.win.usedPct) : null;
+              const tone = left === null ? '' : left <= 10 ? 'bg-red-400' : left <= 30 ? 'bg-amber-400' : 'bg-emerald-400';
+              return (
+                <div key={r.label} className="flex items-center gap-2 text-[11px]" title={r.win ? resetIn(r.win.resetsAt) : undefined}>
+                  <span className="w-10 shrink-0 truncate text-zinc-500">{r.label}</span>
+                  <span className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                    {left !== null && <span className={`block h-full rounded-full ${tone}`} style={{ width: `${left}%` }} />}
+                  </span>
+                  <span className={`w-9 shrink-0 text-right tabular-nums ${left === null ? 'text-zinc-600' : left <= 10 ? 'text-red-300' : left <= 30 ? 'text-amber-300' : 'text-zinc-300'}`}>{left === null ? '–' : `${left}%`}</span>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }

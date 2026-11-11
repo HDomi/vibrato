@@ -243,3 +243,18 @@ test('a message sent through the remote host keeps its origin in the chat (plan 
   const local = reduceEvent(base, { kind: 'user', text: 'hi', attachments: [], messageId: 'm2' }, 1);
   assert.equal((local.items[0] as { remote?: unknown }).remote, undefined);
 });
+
+test('an hour without remote activity logs the client out; automatic refreshes do not count', async () => {
+  const { conn } = await login(code);
+  const lost = new Promise<unknown>((r) => conn.once('close', r));
+  const t0 = Date.now();
+  await conn.call('sessions');                         // the app refreshing its list: not activity
+  host.logoutIdle(t0 + 30 * 60_000);
+  await conn.call('history', { cwd: os.tmpdir() });    // opening a project: activity
+  const acted = Date.now();
+  host.logoutIdle(acted + 59 * 60_000);                // 59 minutes after that: still in
+  assert.equal((await host.status()).clients.length, 1);
+  host.logoutIdle(acted + 60 * 60_000);
+  const err = await lost;
+  assert.ok(err instanceof RemoteClientError && err.code === 'KICKED' && err.extra.reason === 'idle');
+});
