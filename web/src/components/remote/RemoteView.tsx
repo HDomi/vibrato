@@ -8,6 +8,7 @@ import {
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
 import AgentIcon from '../AgentIcon';
+import PlanView from '../PlanView';
 import Icon from '../Icon';
 import HostSettings from './HostSettings';
 
@@ -481,6 +482,14 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   const [pickedModel, setPickedModel] = useState<{ value: string; from: string | undefined } | null>(null);
   const shownModel = pickedModel && pickedModel.from === chat?.model ? pickedModel.value : chat?.model ?? '';
 
+  // Plan view first: from afar the steps and results matter, not every shell command. The choice is remembered.
+  const [view, setViewState] = useState<'plan' | 'chat'>(() => { try { return localStorage.getItem(VIEW_KEY) === 'chat' ? 'chat' : 'plan'; } catch { return 'plan'; } });
+  const setView = (v: 'plan' | 'chat') => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ } };
+  useEffect(() => { if (view === 'chat') { stick.current = true; const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; } }, [view]);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (!running) return; const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, [running]);
+  const activity = running && chat ? activityOf(chat.items, chat.status) : null;
+
   const act = (p: Promise<unknown>) => void p.catch((e) => setError(cleanErr(e)));
   const send = () => {
     const v = text.trim();
@@ -498,6 +507,11 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
           <div className="text-[13px] font-medium text-zinc-100 truncate">{summary?.title || t('remote.untitled')}</div>
           <div className="text-[11px] text-zinc-500 truncate">{(chat?.agent ?? summary?.agent) === 'codex' ? 'Codex' : 'Claude'} · {base(chat?.cwd ?? summary?.cwd ?? '')}</div>
         </div>
+        <div className="shrink-0 flex items-center p-0.5 rounded-full bg-black/30 border border-white/10 text-[11.5px]">
+          {(['plan', 'chat'] as const).map((v) => (
+            <button key={v} className={`h-6 px-2.5 rounded-full transition-colors ${view === v ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:text-white'}`} onClick={() => setView(v)}>{t(`plan.view.${v}`)}</button>
+          ))}
+        </div>
         {models && models.length > 0 && (
           <ModelSelect models={models} value={shownModel} disabled={gone}
             onChange={(v) => { setPickedModel({ value: v, from: chat?.model }); act(b.call('model', { sessionId: id, model: v || null })); }}
@@ -510,7 +524,17 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
         {running && <button className={`${btnCls} bg-red-500/20 text-red-200 hover:bg-red-500/30`} onClick={() => act(b.call('interrupt', { sessionId: id }))}>{t('remote.interrupt')}</button>}
         {!gone && <button className={ghostCls} onClick={() => { if (confirm(t('remote.closeConfirm'))) act(closeSession(id).then(onClosed)); }}>{t('remote.closeSession')}</button>}
       </div>
-      <div ref={scroller} className="flex-1 min-h-0 overflow-auto px-5 py-4 space-y-3"
+      {view === 'plan' && (
+        <div className="flex-1 min-h-0 relative">
+          {chat ? (
+            <PlanView remote items={chat.items} cwd={chat.cwd} running={running} tasks={chat.tasks} activity={activity} now={now}
+              onJump={() => setView('chat')}
+              onApprove={(requestId, decision, message) => act(b.call('approve', { sessionId: id, requestId, decision, message }))}
+              onAnswer={(requestId, answers) => act(b.call('answer', { sessionId: id, requestId, answers }))} />
+          ) : <div className="text-center text-[12px] text-zinc-500 pt-8">{t('common.loading')}</div>}
+        </div>
+      )}
+      <div ref={scroller} className={`flex-1 min-h-0 overflow-auto px-5 py-4 space-y-3 ${view === 'plan' ? 'hidden' : ''}`}
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
         {items.length === 0 && <div className="text-center text-[12px] text-zinc-500 pt-8">{chat ? t('remote.emptyChat') : t('common.loading')}</div>}
         {items.map((it) => <Item key={it.id} it={it} cwd={chat?.cwd} sessionId={id} onError={setError} />)}
@@ -667,4 +691,26 @@ export function matchModel(models: RemoteModel[], id: string): string {
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const hit = models.find((m) => { const n = slug(m.name); return n.length > 2 && (want === n || want.endsWith(`-${n}`) || want.includes(`-${n}-`)); });
   return hit?.id ?? id;
+}
+
+const VIEW_KEY = 'vibe.remote.view';
+
+/** One line on what the agent is doing now, like the chat's status line (shown under the plan step in progress). */
+function activityOf(items: ChatItem[], status: string): string | null {
+  if (status === 'compacting') return t('activity.compacting');
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'user') break;
+    if (it.kind === 'approval' && !it.decision) return t('activity.waitingApproval');
+    if (it.kind === 'question' && !it.resolved) return t('activity.waitingAnswer');
+  }
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === 'tool' && !it.done) {
+      const isSub = ['Agent', 'Task', 'SubAgent'].includes(it.name);
+      const detail = summarizeInput(it.name, it.input).split('\n')[0].slice(0, 60);
+      return `${isSub ? t('activity.subagent') : t('activity.running', { tool: it.name })}${detail ? ` · ${detail}` : ''}`;
+    }
+  }
+  return null;
 }

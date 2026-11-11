@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import type { TaskInfo } from '../lib/agent';
 import type { ChatItem } from '../lib/chatStore';
@@ -28,6 +28,8 @@ interface Props {
   onJump: (itemId: string) => void;
   onApprove: (requestId: string, decision: 'allow' | 'allow_always' | 'deny', message?: string) => void;
   onAnswer: (requestId: string, answers: Record<string, string>) => void;
+  /** Shown in the Remote tab: the files are on the host, so they are listed by name without preview or download. */
+  remote?: boolean;
   /** Scroll to this turn's card once (from a checklist in the chat view). */
   focusTurn?: string | null;
 }
@@ -206,8 +208,12 @@ function ProgressLog({ turn, onJump }: { turn: PlanTurn; onJump: (id: string) =>
 const CREATED_SHOWN = 6;
 
 /** Files the turn created: click to preview, or download a copy. */
+/** Rendering a remote host's session (RemoteView): no local file access. */
+const RemotePlan = createContext(false);
+
 function CreatedFiles({ paths }: { paths: string[] }) {
   useLang();
+  const remote = useContext(RemotePlan);
   const [all, setAll] = useState(false);
   const shown = all ? paths : paths.slice(0, CREATED_SHOWN);
   const open = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path } }));
@@ -219,17 +225,21 @@ function CreatedFiles({ paths }: { paths: string[] }) {
         const name = p.slice(slash + 1);
         return (
           <div key={p} className="group flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-fill transition-colors">
-            <button type="button" onClick={() => open(p)} title={p} className="min-w-0 flex-1 flex items-center gap-2.5 text-left">
+            <button type="button" onClick={() => { if (!remote) open(p); }} title={p} className={`min-w-0 flex-1 flex items-center gap-2.5 text-left ${remote ? 'cursor-default' : ''}`}>
               <FileIcon name={name} isDir={false} className="w-4 h-4 shrink-0" />
               <span className="shrink-0 max-w-[60%] truncate text-[13px] text-zinc-100">{name}</span>
               <span className="min-w-0 truncate font-mono text-[11px] text-zinc-500">{p.slice(0, slash)}</span>
             </button>
-            <button type="button" onClick={() => open(p)} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
-              <Icon name="file" size={11} />{t('plan.preview')}
-            </button>
-            <a href={api.rawUrl(p)} download={name} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
-              <Icon name="download" size={11} />{t('plan.download')}
-            </a>
+            {!remote && (
+              <button type="button" onClick={() => open(p)} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
+                <Icon name="file" size={11} />{t('plan.preview')}
+              </button>
+            )}
+            {!remote && (
+              <a href={api.rawUrl(p)} download={name} className="shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-zinc-300 hover:text-white hover:bg-fill-2 transition-colors">
+                <Icon name="download" size={11} />{t('plan.download')}
+              </a>
+            )}
           </div>
         );
       })}
@@ -256,11 +266,14 @@ const uniqueFiles = (paths: string[]) => [...new Map(paths.map((p) => [fileKey(p
  * exist and were created while it ran. One entry per file, however it was named.
  */
 function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
+  const remote = useContext(RemotePlan);
   const [checked, setChecked] = useState<string[] | null>(null);
   const result = turn.result;
   const key = [...turn.created, '', ...turn.mentioned].join('\n');
   useEffect(() => {
     setChecked(null);
+    // The host's files cannot be looked at from here: list what the agent's own edit tools created.
+    if (remote) { setChecked(turn.created); return; }
     if (!result?.at || !(turn.created.length + turn.mentioned.length)) return;
     const from = Math.min(turn.startedAt ?? Infinity, result.at - result.durationMs) - TURN_SLACK_MS;
     const to = result.at + TURN_SLACK_MS;
@@ -281,13 +294,15 @@ function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
     });
     return () => { live = false; };
     // turn.created / turn.mentioned are covered by the joined key; the rest only changes with the result.
-  }, [result?.id, key, cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result?.id, key, cwd, remote]); // eslint-disable-line react-hooks/exhaustive-deps
   return checked ?? uniqueFiles(turn.created);
 }
 
 function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
   useLang();
   const created = useCreatedFiles(turn, cwd);
+  // In the Remote tab every request came from afar: the chip only means something on the host.
+  const viewedRemotely = useContext(RemotePlan);
   const done = turn.steps.filter((s) => s.status === 'completed').length;
   const total = turn.steps.length;
   // Subagents still running after the turn ended: the request is not over yet, so no "done" until they finish.
@@ -317,7 +332,7 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
             <div key={i} className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.replace(/\s+/g, ' ').trim()}</span></div>
           ))}
         </div>
-        {turn.user?.remote && <RemoteChip origin={turn.user.remote} />}
+        {turn.user?.remote && !viewedRemotely && <RemoteChip origin={turn.user.remote} />}
         {agents > 0 && (
           <span className="shrink-0 mt-0.5 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] leading-4 bg-violet-500/15 text-violet-200" data-plan-agents="">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
@@ -408,7 +423,7 @@ function SessionSummary({ turns }: { turns: PlanTurn[] }) {
 }
 
 /** The session as a checklist per turn: each plan step with what was done for it. */
-function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove, onAnswer, focusTurn }: Props) {
+function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove, onAnswer, focusTurn, remote = false }: Props) {
   useLang();
   const turns = useMemo(() => buildPlan(items), [items]);
   const turnTasks = useMemo(() => liveTasksByTurn(turns, tasks), [turns, tasks]);
@@ -447,7 +462,7 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
     if (b) holdFocus.current = false;
   };
   return (
-    <>
+    <RemotePlan.Provider value={remote}>
       <div ref={scroller} className="absolute inset-0 overflow-y-auto" onScroll={onScroll}>
         <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
           {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
@@ -458,7 +473,7 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
       {!atBottom && (
         <button onClick={jump} className="absolute z-10 bottom-3 left-1/2 -translate-x-1/2 glass-pop pop-in !rounded-full px-3.5 py-1.5 text-xs text-zinc-200 hover:text-white">{t('chat.jumpLatest')}</button>
       )}
-    </>
+    </RemotePlan.Provider>
   );
 }
 
