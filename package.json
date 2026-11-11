@@ -19,6 +19,7 @@
     "build:web": "vite build",
     "build": "npm run build:main && npm run build:native && npm run build:web && node scripts/build-info.cjs",
     "dist": "npm run build && electron-builder --mac --arm64 --publish never",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
     "start": "npm run build && env -u ELECTRON_RUN_AS_NODE electron .",
     "serve": "tsx server/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",

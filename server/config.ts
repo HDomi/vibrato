@@ -68,6 +68,20 @@ export interface Config {
   formTypes?: FormType[];
   /** Skills / plugins turned off for new sessions (Settings > Agent CLIs); everything else stays as the CLI has it. */
   extensionsOff?: ExtensionsConfig;
+  /** Remote sessions host (server/remote/host.ts). Absent until set up; off by default. */
+  remote?: RemoteHostConfig;
+}
+
+/** Only the PBKDF2 result of the access code is stored; the code itself is shown once when generated. */
+export interface RemoteHostConfig {
+  enabled: boolean;
+  port: number;
+  /** base64 */
+  salt: string;
+  iterations: number;
+  /** base64 PBKDF2-SHA256(code, salt, iterations) */
+  key: string;
+  codeCreatedAt: number;
 }
 
 export const CUSTOM_PROMPT_MAX = 20000;

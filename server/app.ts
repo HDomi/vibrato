@@ -17,9 +17,6 @@ import { codexThreadOp, listCodexModels, listCodexThreads } from './agents/codex
 import { listClaudeModels } from './agents/claude.js';
 import { which, run } from './shell.js';
 import { applyUpdate, checkUpdate, isUpdating, readBuildInfo, REPO_ROOT, RESTART_EXIT_CODE, UPDATE_SOURCE } from './updater.js';
-/** Claude Code stores its compaction summary as a user turn; never surface it as a session title. */
-const isCompactSummary = (text?: string | null) => (text ?? '').trimStart().startsWith('This session is being continued from a previous conversation');
-
 import { rejectReason } from './guard.js';
 import { readPasteboardFiles, writePasteboardFiles } from './pasteboard.js';
 import { watch } from 'node:fs';
@@ -36,11 +33,13 @@ import { listExtensions, sanitizeExtensions } from './agentExtensions.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
 import { searchHistory } from './historySearch.js';
+import { isCompactSummary, listHistory } from './history.js';
 import { loadWallpaper, saveWallpaperImages, updateWallpaper, WALL_MAX_BYTES, wallpaperPath, WallpaperError, type Wallpaper } from './wallpaper.js';
 import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.js';
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
 import { killProcess, listeningPorts, netInfo, proxyHttp, type ProxyRequest } from './net.js';
 import type { Scheduler } from './scheduler.js';
+import type { RemoteHost } from './remote/host.js';
 import { openSettingsPane, PermissionsError, permissionsSnapshot, removeClaudeRule, removeCodexRule, requestPermission, resetPermission, type ClaudeList } from './permissions.js';
 import { ScheduleError } from './schedule.js';
 import { cleanFormTypes, FormTypeError } from '../web/src/lib/promptForm.js';
@@ -50,7 +49,7 @@ const WEB_DIST = path.join(REPO_ROOT, 'web', 'dist');
 // Version/commit of the running build (dist/build-info.json), not of the checkout.
 const BUILD = readBuildInfo();
 
-export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: Scheduler) {
+export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: Scheduler, remote?: RemoteHost) {
   const app = new Hono();
 
   // Reject requests that a web page in the user's browser could forge (see guard.ts).
@@ -392,22 +391,10 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   // Claude Code transcript history for a project directory.
   app.get('/api/history', async (c) => {
     const dir = resolvePath(c.req.query('cwd') ?? '~');
-    const agent = c.req.query('agent') ?? 'all';
-    const wantClaude = agent === 'claude' || agent === 'all';
-    const wantCodex = agent === 'codex' || agent === 'all';
+    const q = c.req.query('agent');
+    const agent = q === 'claude' || q === 'codex' ? q : 'all';
     const limit = Math.min(300, Math.max(1, Number(c.req.query('limit')) || 30));
-    const [claude, codexPath] = await Promise.all([
-      wantClaude ? listSessions({ dir, limit }).catch(() => []) : Promise.resolve([]),
-      wantCodex ? which('codex') : Promise.resolve(null),
-    ]);
-    const codex = codexPath ? await listCodexThreads(codexPath, dir, limit).catch(() => []) : [];
-    const pinned = new Set((await loadConfig()).pinnedSessions);
-    const rows = [
-      ...claude.map((s) => ({ ...s, agent: 'claude' as const, firstPrompt: isCompactSummary(s.firstPrompt) ? '' : s.firstPrompt })),
-      ...codex.map((s) => ({ ...s, agent: 'codex' as const })),
-    ].map((s) => ({ ...s, pinned: pinned.has(`${s.agent}:${s.sessionId}`) }))
-      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastModified - a.lastModified);
-    return c.json(rows);
+    return c.json(await listHistory(dir, agent, limit));
   });
   app.post('/api/history/rename', async (c) => {
     const b = await c.req.json<{ agent: 'claude' | 'codex'; id: string; title: string; cwd?: string }>();
@@ -507,6 +494,18 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.post('/api/schedules/:id/run', async (c) => { await sched().runNow(c.req.param('id')); return c.json(await sched().snapshot()); });
   app.delete('/api/schedule-runs', async (c) => { sched().clearRuns(); return c.json(await sched().snapshot()); });
   // Installs or removes the wake helper (schedulePower.ts) behind the system's admin password prompt.
+  // Remote sessions host (server/remote/host.ts): local settings only; the remote side never reaches these routes.
+  const remoteHost = () => { if (!remote) throw new Error('Remote host unavailable'); return remote; };
+  app.get('/api/remote/host', async (c) => c.json(await remoteHost().status()));
+  app.put('/api/remote/host', async (c) => {
+    const b = await c.req.json<{ enabled?: unknown; port?: unknown }>();
+    try {
+      const { code } = await remoteHost().configure({ enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, port: b.port === undefined ? undefined : Number(b.port) });
+      return c.json({ code, ...(await remoteHost().status()) });
+    } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  });
+  app.post('/api/remote/host/code', async (c) => c.json({ code: await remoteHost().newCode(), ...(await remoteHost().status()) }));
+  app.post('/api/remote/host/disconnect', async (c) => { remoteHost().disconnectAll(); return c.json(await remoteHost().status()); });
   app.post('/api/schedules/wake-helper', async (c) => {
     const b = await c.req.json<{ install?: unknown; prompt?: unknown }>();
     const result = await sched().power.setHelper(b.install === true, typeof b.prompt === 'string' && b.prompt ? b.prompt.slice(0, 300) : 'Vibrato wants to wake this Mac for scheduled runs.');

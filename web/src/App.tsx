@@ -41,6 +41,7 @@ import { shortcutKey } from './lib/keys';
 // The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
 const ScheduleView = lazy(() => import('./components/ScheduleView'));
+const RemoteView = lazy(() => import('./components/remote/RemoteView'));
 
 const LS_CWD = 'vibe.cwd';
 const LS_PROJECT = 'vibe.project';
@@ -498,6 +499,8 @@ function AppInner() {
           <AgentView home={home?.home ?? '~'} S={S} active={agentActive} setActive={setAgentActive} onFocusSession={(id) => focusSession.current(id)} />
           ) : v === 'tools' ? (
           toolbox
+          ) : v === 'remote' ? (
+          <Suspense fallback={null}><RemoteView /></Suspense>
           ) : v === 'schedule' ? (
           <Suspense fallback={null}><ScheduleView defaultCwd={project} projects={[...favorites.favorites.map((f) => f.path), ...recent]} onOpenRun={openRun} /></Suspense>
         ) : (

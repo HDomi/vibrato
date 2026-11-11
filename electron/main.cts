@@ -6,6 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import { blocksQuit, initLockScreen, isLocked, isLockShortcut, lockNow, openLockSettings, rememberLockForRelaunch } from './lockScreen.cjs';
 import { initBrowser, openBrowser } from './browser.cjs';
+import { initRemote, remoteResume } from './remote.cjs';
 
 /*
  * Electron shell. The Node server (dist/server/index.js) runs as a child process.
@@ -28,6 +29,11 @@ const APP_NAME = 'Vibrato';
 const APP_BUNDLE = (() => { const i = __dirname.indexOf('.app/Contents/Resources/app/'); return i < 0 ? null : __dirname.slice(0, i + 4); })();
 /** Shared with server/releaseUpdate.ts: where a downloaded update waits until the app restarts. */
 const UPDATE_DIR = process.env.VIBRATO_UPDATE_DIR || path.join(os.homedir(), 'Library', 'Caches', 'com.hdomi.vibrato', 'update');
+/**
+ * Remote-only app (the Windows build, or VIBRATO_REMOTE_ONLY=1 for testing on a Mac): no local server, agents, lock
+ * screen or browser; the page shows just the Remote tab, served from web/dist by a small static server below.
+ */
+const REMOTE_ONLY = process.platform === 'win32' || process.env.VIBRATO_REMOTE_ONLY === '1';
 const EXPECTED_BUILD = (() => { try { return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'dist/build-info.json'), 'utf8')); } catch { return null; } })();
 
 // Name used by dialogs, the app menu title and notifications. The menu bar / Dock label of the
@@ -223,6 +229,24 @@ let mainWin: BrowserWindow | null = null;
 /** IDE windows by project root: opening the same root again focuses the window it already has. */
 const ideWindows = new Map<string, BrowserWindow>();
 
+/** Remote-only: web/dist on the same loopback origin the full app uses, so the page and IPC checks stay the same. */
+function startStaticServer(): Promise<void> {
+  const root = path.join(REPO_ROOT, 'web', 'dist');
+  const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ico': 'image/x-icon', '.json': 'application/json', '.webp': 'image/webp' };
+  const srv = http.createServer((req, res) => {
+    const host = String(req.headers.host ?? '').replace(/:\d+$/, '');
+    if (host !== '127.0.0.1' && host !== 'localhost') { res.writeHead(403).end(); return; }
+    let rel: string;
+    try { rel = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname); } catch { res.writeHead(400).end(); return; }
+    let file = path.resolve(root, '.' + rel);
+    if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
+    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html');
+    res.writeHead(200, { 'Content-Type': types[path.extname(file).toLowerCase()] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    fs.createReadStream(file).pipe(res);
+  });
+  return new Promise((resolve, reject) => { srv.once('error', reject); srv.listen(PORT, '127.0.0.1', () => resolve()); });
+}
+
 async function createWindow() {
   const win = createAppWindow({ width: 1440, height: 920, minWidth: 900, minHeight: 600, title: APP_NAME });
   mainWin = win;
@@ -250,10 +274,11 @@ async function openIdeWindow(root: string, file?: string) {
 
 /** `buttons`: where the window buttons sit (the IDE has a 28px strip instead of the 46px title bar). */
 function createAppWindow(size: { width: number; height: number; minWidth: number; minHeight: number; title: string }, buttons = { x: 14, y: 16 }) {
+  const mac = process.platform === 'darwin';
   const win = new BrowserWindow({
     ...size,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: buttons, // main window: unchanged from before the 88px title bar (UsageBar)
+    // Windows keeps its standard frame (no traffic lights to make room for).
+    ...(mac ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: buttons } : { autoHideMenuBar: true }), // main window: unchanged from before the 88px title bar (UsageBar)
     backgroundColor: '#0b0d12',
     icon: APP_ICON,
     webPreferences: {
@@ -261,6 +286,7 @@ function createAppWindow(size: { width: number; height: number; minWidth: number
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: [...(REMOTE_ONLY ? ['--vibrato-remote-only'] : []), `--vibrato-platform=${process.platform}`],
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -278,7 +304,7 @@ function createAppWindow(size: { width: number; height: number; minWidth: number
   };
   // Option+L locks the screen (see lockScreen.cts). Handled here rather than as a menu accelerator so it
   // fires from any focused field; the menu item only displays it.
-  win.webContents.on('before-input-event', (e, input) => { if (isLockShortcut(input)) { e.preventDefault(); lockNow(); } });
+  win.webContents.on('before-input-event', (e, input) => { if (!REMOTE_ONLY && isLockShortcut(input)) { e.preventDefault(); lockNow(); } });
   win.webContents.on('will-navigate', keepInApp);
   win.webContents.on('will-redirect', keepInApp);
   // The title bar leaves room for the window buttons, which macOS hides in full screen.
@@ -447,6 +473,14 @@ function buildMenu() {
       { label: ko ? '잠금화면 설정…' : 'Lock Screen Settings…', click: () => openLockSettings() },
     ],
   };
+  if (REMOTE_ONLY) {
+    // Remote-only: nothing to lock and no in-app browser. Windows hides the bar (Alt shows it).
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : [{ role: 'fileMenu' as const }]),
+      { role: 'editMenu' }, { role: 'viewMenu' }, languageMenu, { role: 'windowMenu' },
+    ]));
+    return;
+  }
   const template: Electron.MenuItemConstructorOptions[] = [
     { role: 'appMenu' },
     { role: 'fileMenu' },
@@ -474,6 +508,14 @@ app.whenReady().then(async () => {
   if (!primaryInstance || quitting) return;
   app.dock?.setIcon(APP_ICON);
   buildMenu();
+  initRemote({ fromApp });
+  if (REMOTE_ONLY) {
+    await startStaticServer().catch((err) => { throw new Error(`Port ${PORT} is in use (${(err as Error).message}).`); });
+    await createWindow();
+    powerMonitor.on('resume', () => remoteResume());
+    app.on('activate', () => { if (!mainWin) void createWindow(); });
+    return;
+  }
   // The installed app is a bundle the server can reopen if it has to kill a hung, locked app.
   const exe = app.getPath('exe');
   const bundle = app.isPackaged && exe.includes('.app/Contents/MacOS/') ? exe.slice(0, exe.indexOf('.app/Contents/MacOS/') + 4) : null;
@@ -491,7 +533,7 @@ app.whenReady().then(async () => {
   await createWindow();
   if (lock.resumeLocked) lockNow();
   // After sleep the renderer's sockets may be half-open; tell it to reconnect now rather than wait for the heartbeat.
-  powerMonitor.on('resume', () => { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('power-resume'); });
+  powerMonitor.on('resume', () => { remoteResume(); for (const w of BrowserWindow.getAllWindows()) w.webContents.send('power-resume'); });
   app.on('activate', () => {
     // The app window may be closed while IDE windows stay open; clicking the Dock icon brings it back.
     if (!mainWin && !isLocked()) void createWindow();

@@ -10,6 +10,7 @@ import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME, registerBrowserSessio
 import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agentExtensions.js';
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
+import type { RemoteSessionSummary } from './remote/protocol.cjs';
 
 const BUFFER_LIMIT = 5000;
 const BUFFER_BYTES = 16 * 1024 * 1024;
@@ -45,6 +46,7 @@ interface Entry {
 export class SessionRegistry {
   private entries = new Map<string, Entry>();
   private closing = false;
+  private changeListeners = new Set<() => void>();
   private reaper: NodeJS.Timeout = setInterval(() => void this.reap(), REAP_EVERY_MS);
 
   constructor() { this.reaper.unref(); }
@@ -67,6 +69,37 @@ export class SessionRegistry {
   }
 
   get(id: string) { return this.entries.get(id)?.session; }
+
+  /**
+   * Live sessions with what a remote client shows in its list: a title (the first message), whether a turn is
+   * running, how many approvals / questions wait, the current permission mode.
+   */
+  summaries(): RemoteSessionSummary[] {
+    return [...this.entries.values()].filter((e) => !e.closed).map((e) => {
+      let title = '';
+      let mode: string | undefined;
+      const open = new Set<string>();
+      for (const m of e.buffer) {
+        const ev = m.event;
+        if (ev.kind === 'user' && !title) title = ev.text.trim().split('\n')[0].slice(0, 120);
+        else if (ev.kind === 'session.init' && ev.permissionMode) mode = ev.permissionMode;
+        else if (ev.kind === 'status' && ev.permissionMode) mode = ev.permissionMode;
+        else if (ev.kind === 'approval.request' || ev.kind === 'question.request') open.add(ev.requestId);
+        else if (ev.kind === 'approval.resolved' || ev.kind === 'question.resolved') open.delete(ev.requestId);
+      }
+      return { id: e.session.id, agent: e.session.agent, cwd: e.session.cwd, title, createdAt: e.createdAt, lastActivity: e.lastActivity, running: e.running, waiting: open.size, permissionMode: mode };
+    });
+  }
+
+  /** `cb` runs when a session starts, closes, starts or ends a turn, or gets / settles a request. */
+  onChange(cb: () => void): () => void {
+    this.changeListeners.add(cb);
+    return () => { this.changeListeners.delete(cb); };
+  }
+
+  private changed() {
+    for (const cb of this.changeListeners) { try { cb(); } catch { /* a listener's problem */ } }
+  }
 
   /** Sessions in the middle of a turn; restarting now would cut that turn off. */
   runningCount() { return [...this.entries.values()].filter((e) => !e.closed && e.running).length; }
@@ -117,6 +150,7 @@ export class SessionRegistry {
     const entry: Entry = { session, buffer: [], seq: 0, subscribers: new Set(ws ? [ws] : []), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, bufferBytes: 0, touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
     this.entries.set(session.id, entry);
     session.onEvent((event) => this.broadcast(entry, event));
+    this.changed();
     return session;
   }
 
@@ -126,6 +160,10 @@ export class SessionRegistry {
     e.subscribers.add(ws);
     for (const m of e.buffer) if (m.seq > after) safeSend(ws, m);
     return true;
+  }
+
+  detach(id: string, ws: WebSocket) {
+    this.entries.get(id)?.subscribers.delete(ws);
   }
 
   detachAll(ws: WebSocket) {
@@ -144,6 +182,7 @@ export class SessionRegistry {
     if (!e) return;
     this.entries.delete(id);
     e.verifying?.cancel();
+    this.changed();
     await e.session.close();
   }
 
@@ -241,6 +280,7 @@ export class SessionRegistry {
       while (e.buffer.length > 1 && (e.buffer.length > BUFFER_LIMIT || e.bufferBytes > BUFFER_BYTES)) e.bufferBytes -= Buffer.byteLength(JSON.stringify(e.buffer.shift()!));
     }
     for (const ws of e.subscribers) safeSend(ws, msg);
+    if (event.kind === 'status' || event.kind === 'approval.request' || event.kind === 'approval.resolved' || event.kind === 'question.request' || event.kind === 'question.resolved' || (event.kind === 'user' && e.buffer.filter((m) => m.event.kind === 'user').length === 1)) this.changed();
     // Once the turn has settled (the adapters send `status: idle` right after `result`): changes, then verify.
     if (event.kind === 'result' && (e.touched || e.turnBase)) {
       setTimeout(() => void this.finishTurn(e).catch((err) => console.warn(`[vibrato] turn wrap-up failed: ${(err as Error).message}`)), 50);

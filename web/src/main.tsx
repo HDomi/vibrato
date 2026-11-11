@@ -22,6 +22,9 @@ if (lock === 'main' || lock === 'sub') {
   // The in-app browser window (electron/browser.cts); no chat app either.
   initWallpaper();
   void import('./components/browser/BrowserApp').then(({ default: BrowserApp }) => root.render(<React.StrictMode><BrowserApp /></React.StrictMode>));
+} else if ((window.vibe as { remoteOnly?: boolean } | undefined)?.remoteOnly) {
+  // Remote-only app (Windows build, electron/main.cts REMOTE_ONLY): there is no local server to talk to.
+  void import('./components/remote/RemoteApp').then(({ default: RemoteApp }) => root.render(<React.StrictMode><ErrorBoundary><RemoteApp /></ErrorBoundary></React.StrictMode>));
 } else if (ide) {
   void import('./components/editor/IdeApp').then(({ default: IdeApp }) => root.render(<React.StrictMode><IdeApp root={ide} file={params.get('file')} /></React.StrictMode>));
 } else {

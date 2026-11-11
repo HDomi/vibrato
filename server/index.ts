@@ -11,17 +11,20 @@ import { stopAllRuns } from './runner.js';
 import { Scheduler } from './scheduler.js';
 import { warmHistorySearch } from './historySearch.js';
 import { attachBrowserHost } from './browserMcp.js';
+import { RemoteHost } from './remote/host.js';
 
 export async function startServer(port = PORT): Promise<ServerType> {
   await syncLoginShellPath();
   return new Promise((resolve, reject) => {
     const registry = new SessionRegistry();
     const scheduler = new Scheduler(registry);
-    const app = createApp(registry, port, scheduler);
+    const remote = new RemoteHost(registry);
+    const app = createApp(registry, port, scheduler, remote);
     const server = serve({ fetch: app.fetch, hostname: HOST, port }, (info) => {
       console.log(`[vibrato] http://${info.address}:${info.port}`);
       void scheduler.start().catch((err) => console.warn(`[vibrato] scheduler failed to start: ${(err as Error).message}`));
       warmHistorySearch();
+      void remote.apply().catch((err) => console.warn(`[vibrato] remote host: ${(err as Error).message}`));
       resolve(server);
     });
     const http = server as import('node:http').Server;
@@ -42,6 +45,7 @@ export async function startServer(port = PORT): Promise<ServerType> {
       http.close();
       const timer = setTimeout(() => process.exit(code), 4000);
       scheduler.stop();
+      void remote.stop();
       killAllPtys();
       stopAllRuns();
       registry.closeAll().finally(() => { clearTimeout(timer); process.exit(code); });

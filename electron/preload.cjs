@@ -4,8 +4,29 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 let fullScreen = false;
 ipcRenderer.on('full-screen', (_e, on) => { fullScreen = !!on; });
 
+const remoteOnly = process.argv.includes('--vibrato-remote-only');
+const platform = (process.argv.find((a) => a.startsWith('--vibrato-platform=')) || '').slice('--vibrato-platform='.length) || 'darwin';
+
 contextBridge.exposeInMainWorld('vibe', {
   isElectron: true,
+  // Remote-only app (Windows build): the page shows just the Remote tab; there is no local server.
+  remoteOnly,
+  platform,
+  // Remote tab (electron/remote.cts): saved hosts, the one live connection, calls and pushed events.
+  remote: {
+    hosts: () => ipcRenderer.invoke('remote:hosts'),
+    saveHost: (h) => ipcRenderer.invoke('remote:save-host', h),
+    removeHost: (id) => ipcRenderer.invoke('remote:remove-host', id),
+    forgetCode: (id) => ipcRenderer.invoke('remote:forget-code', id),
+    trust: (id, fingerprint) => ipcRenderer.invoke('remote:trust', id, fingerprint),
+    connect: (req) => ipcRenderer.invoke('remote:connect', req),
+    disconnect: () => ipcRenderer.invoke('remote:disconnect'),
+    state: () => ipcRenderer.invoke('remote:state'),
+    call: (method, params) => ipcRenderer.invoke('remote:call', method, params),
+    onState: (cb) => { const h = (_e, s) => cb(s); ipcRenderer.on('remote:state', h); return () => ipcRenderer.removeListener('remote:state', h); },
+    onEvent: (cb) => { const h = (_e, m) => cb(m); ipcRenderer.on('remote:event', h); return () => ipcRenderer.removeListener('remote:event', h); },
+    onSessions: (cb) => { const h = () => cb(); ipcRenderer.on('remote:sessions', h); return () => ipcRenderer.removeListener('remote:sessions', h); },
+  },
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   openIde: (root, file) => ipcRenderer.invoke('open-ide', root, file),
   // In-app browser window (electron/browser.cts); `url` opens in a new tab.

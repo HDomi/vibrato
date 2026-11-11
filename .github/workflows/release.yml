@@ -1,10 +1,13 @@
-# Builds the standalone macOS app for every pushed version tag (vX.Y.Z) and publishes a GitHub release
-# with the DMG (first install), the zip (in-app updater) and SHA256SUMS.txt (the updater checks it).
+# Builds the standalone macOS app and the Windows remote client for every pushed version tag (vX.Y.Z) and publishes
+# a GitHub release with the DMG (first install), the mac zip (in-app updater), the Windows installer and zip, and
+# SHA256SUMS.txt (the updater checks it).
+# Run by hand (workflow_dispatch) it only builds both apps and keeps them as workflow artifacts: no release.
 name: Release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,6 +24,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Tag matches package.json
+        if: github.ref_type == 'tag'
         run: |
           want="v$(node -p 'require("./package.json").version')"
           [ "$want" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME but package.json says $want"; exit 1; }
@@ -74,10 +78,85 @@ jobs:
           done
           exit 1
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      # package.json scripts are written for a POSIX shell (cp, ||, 2>/dev/null): run them with Git Bash.
+      npm_config_script_shell: C:\Program Files\Git\bin\bash.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Cache Electron download
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Install
+        run: |
+          for i in 1 2 3; do
+            npm ci --no-audit --no-fund && exit 0
+            echo "::warning::npm ci failed (attempt $i of 3)"
+            [ "$i" -lt 3 ] && sleep $((i * 30))
+          done
+          exit 1
+
+      - name: Build app
+        run: |
+          for i in 1 2 3; do
+            npm run dist:win && exit 0
+            echo "::warning::npm run dist:win failed (attempt $i of 3)"
+            rm -rf release
+            [ "$i" -lt 3 ] && sleep $((i * 60))
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            release/*.exe
+            release/*-win-*.zip
+          if-no-files-found: error
+
+  publish:
+    # A failed Windows build must not hold back the mac release (installed apps update from it).
+    needs: [mac, windows]
+    if: always() && github.ref_type == 'tag' && needs.mac.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
       - name: Checksums
         working-directory: release
         run: |
-          shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+          [ "${{ needs.windows.result }}" = success ] || echo "::warning::Windows build failed; releasing the mac app only"
+          sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Publish release
@@ -88,5 +167,5 @@ jobs:
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
           if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
-          gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.zip release/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" release/* \
             --title "Vibrato $GITHUB_REF_NAME" --verify-tag "${notes[@]}"

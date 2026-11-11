@@ -5,8 +5,8 @@ import { t, useLang } from '../lib/i18n';
 import { UpdateBadge } from './UpdatePanel';
 import Icon from './Icon';
 
-export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule';
-export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule'];
+export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule' | 'remote';
+export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule', 'remote'];
 
 interface Props {
   mode: ViewMode;

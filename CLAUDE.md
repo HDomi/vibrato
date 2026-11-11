@@ -10,11 +10,14 @@ Claude 는 Agent SDK 에 `pathToClaudeCodeExecutable` 로 설치된 `claude` 를
 electron/   메인 프로세스(CommonJS .cts) · preload · 잠금화면(lockScreen.cts)
             앱 안 브라우저(browser.cts, browserScripts.cts): `/?browser=1` 창, 페이지는 네이티브 WKWebView.
             에이전트 도구 실행 · 세션별 커서(네이티브 오버레이) · 자동 대기 · 구조화된 에러(agent-desktop 참고)
+            원격 탭 클라이언트(remote.cts): 연결을 메인 프로세스에 유지(탭 전환 · 새로고침에도 살아 있음)
 native/     네이티브 모듈(N-API, node-gyp). webview: Electron 창에 WKWebView 를 붙인다 → dist/native (scripts/build-native.cjs)
 server/     Hono 서버 · 에이전트 어댑터 · PTY · git · 업데이트(updater.ts, releaseUpdate.ts) · 잠금 감시(lockWatch.ts)
             예약 실행(scheduler.ts, schedule.ts, schedulePower.ts: caffeinate · pmset 깨우기 helper)
             배경화면(wallpaper.ts: ~/.vibrato/wallpaper 에 원본 · 흐린 사본 저장)
             에이전트 브라우저 도구(browserMcp.ts): /mcp/browser MCP, 호출은 /browser-host 소켓으로 Electron 이 실행
+            원격 세션(remote/): TLS 1.3 리스너(기본 포트 11399, 기본 꺼짐), 자체 서명 인증서 + 지문 고정,
+            PBKDF2 · HMAC 채널 바인딩 로그인(legato 방식), 세션 메서드 허용 목록만 노출. protocol/client 는 .cts 로 Electron 과 공유
 web/        React 앱. 잠금화면 cover 는 `/?lock=main|sub`, IDE 창은 `/?ide=<root>` 로 같은 번들을 따로 로드(main.tsx)
             글래스 디자인: index.css 의 @theme 토큰 · .glass(미리 흐린 배경을 fixed 로 깐 카드) · .glass-pop(진짜 backdrop blur)
 tests/      node:test (`npm test`)
@@ -22,7 +25,8 @@ tests/      node:test (`npm test`)
 electron-builder.yml            독립 앱 번들 설정(asar 끔, node-pty prebuild, SDK 바이너리 제외)
 ```
 
-실행 형태가 둘이다.
+실행 형태가 둘이다(맥 기준). Windows 빌드는 원격 전용 클라이언트다: 로컬 서버 없이 원격 탭만 뜬다
+(`electron/main.cts` REMOTE_ONLY, 맥에서 확인할 때는 `VIBRATO_REMOTE_ONLY=1`). 릴리스 워크플로가 설치본 · zip 을 함께 올린다.
 
 - **독립 앱**: DMG 로 설치한 `.app`. 코드는 `Contents/Resources/app`. 업데이트는 GitHub 릴리스 zip 을 받아 앱 종료 후 번들 교체(`server/releaseUpdate.ts`, `electron/main.cts` `startBundleSwap`).
 - **체크아웃**: `npm run app`, 또는 `install.sh` 가 만든 런처 앱. 업데이트는 git(`scripts/apply-update.sh`).
