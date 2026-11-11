@@ -121,10 +121,14 @@ function runInTerminal(cwd: string, command: string): boolean {
 
 type SessionView = 'chat' | 'plan';
 const LS_VIEW = 'vibe.sessionView';
-/** This session's last view, else the default for new sessions (Settings > General). */
+/**
+ * This session's last view, else the default (Settings > AI behavior). With "remember per session" off the default
+ * always wins: every session opens in the same view.
+ */
 function readSessionView(id: string): SessionView {
   try {
-    const v = localStorage.getItem(`${LS_VIEW}.${id}`) ?? localStorage.getItem(LS_VIEW);
+    const remember = localStorage.getItem(`${LS_VIEW}.remember`) !== '0';
+    const v = (remember ? localStorage.getItem(`${LS_VIEW}.${id}`) : null) ?? localStorage.getItem(LS_VIEW);
     return v === 'plan' ? 'plan' : 'chat';
   } catch { return 'chat'; }
 }

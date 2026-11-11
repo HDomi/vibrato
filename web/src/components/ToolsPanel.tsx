@@ -61,15 +61,6 @@ function GeneralSettings() {
           {LANGS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
         </select>
       </label>
-      <label className="flex items-center gap-3 text-sm">
-        <span className="w-28 text-zinc-400">{t('settings.defaultView')}</span>
-        <select defaultValue={(() => { try { return localStorage.getItem('vibe.sessionView') === 'plan' ? 'plan' : 'chat'; } catch { return 'chat'; } })()}
-          onChange={(e) => { try { localStorage.setItem('vibe.sessionView', e.target.value); } catch { /* ignore */ } }}
-          className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
-          <option value="chat">{t('plan.view.chat')}</option>
-          <option value="plan">{t('plan.view.plan')}</option>
-        </select>
-      </label>
       <div className="flex flex-col gap-1">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={!!alwaysPlan} disabled={alwaysPlan === null}
