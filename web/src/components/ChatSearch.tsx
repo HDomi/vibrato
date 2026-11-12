@@ -57,12 +57,16 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
   }, []);
   useEffect(() => clearHighlights, []);
 
+  // Query the current ranges were computed for: only a new query auto-jumps, not new conversation content.
+  const searched = useRef('');
+  const jumpPending = useRef(false);
   // Recompute after typing settles or the conversation changes; keep the current position when possible.
   useEffect(() => {
     const timer = setTimeout(() => {
       const root = content.current;
       const next = root && query.trim() ? findRanges(root, query) : [];
-      setRanges(next);
+      if (searched.current !== query) { searched.current = query; jumpPending.current = true; }
+      setRanges((prev) => (!next.length && !prev.length ? prev : next));
       setIndex((i) => (next.length ? Math.min(i, next.length - 1) : 0));
     }, 120);
     return () => clearTimeout(timer);
@@ -87,8 +91,13 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
     const view = box.getBoundingClientRect();
     if (rect.top < view.top + 40 || rect.bottom > view.bottom - 40) box.scrollTop += rect.top - view.top - view.height / 3;
   };
-  // Bring the first match into view as soon as results arrive.
-  useEffect(() => { if (ranges.length) jump(index); }, [ranges]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Bring the first match into view as soon as results for a new query arrive. Content updates (streaming)
+  // only refresh the highlights, so the chat is not scrolled or unstuck from the bottom on every change.
+  useEffect(() => {
+    if (!jumpPending.current) return;
+    jumpPending.current = false;
+    if (ranges.length) jump(index);
+  }, [ranges]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="absolute top-2 right-4 z-20 flex items-center gap-1 glass-pop rounded-xl px-2 py-1 text-xs">

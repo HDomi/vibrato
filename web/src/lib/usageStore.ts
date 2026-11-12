@@ -70,7 +70,8 @@ function start() {
   if (started) return;
   started = true;
   loadUsage();
-  setInterval(() => loadUsage(), 5 * 60 * 1000);
+  // Skipped while hidden: the visibilitychange handler below catches up as soon as the window is back.
+  setInterval(() => { if (!document.hidden) loadUsage(); }, 5 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadUsage(); });
   // A finished turn is when usage moves; refresh then, at most every 90 seconds.
   window.addEventListener('vibe:usage-refresh', () => { if (Date.now() - lastLoad > 90000) loadUsage(); });

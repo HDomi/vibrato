@@ -60,7 +60,16 @@ export function useBacklogs(S: ReturnType<typeof useSessions>) {
   const setItem = useCallback((cwd: string, id: string, patch: Partial<BacklogItem>) =>
     update(cwd, (b) => ({ ...b, items: b.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) })), [update]);
 
+  // `S` is a new object on every session update; the effect only depends on the sessions and the id map,
+  // and reaches start / send through a ref.
+  const sessionsApi = useRef(S);
+  sessionsApi.current = S;
+  const { sessions, replaced } = S;
+  // Check once more when the grace period below ends, even if no session changed meanwhile.
+  const [graceOver, setGraceOver] = useState(false);
+  useEffect(() => { const timer = window.setTimeout(() => setGraceOver(true), 10000); return () => window.clearTimeout(timer); }, []);
   useEffect(() => {
+    const S = { sessions, replaced };
     for (const [cwd, b] of Object.entries(backlogs)) {
       const running = b.items.find((i) => i.status === 'running');
       if (running) {
@@ -90,12 +99,12 @@ export function useBacklogs(S: ReturnType<typeof useSessions>) {
           let sessionId: string;
           if (b.worktree) {
             const wt = await api.worktreeCreate(cwd, `todo/${next.id.slice(0, 6)}`);
-            sessionId = await S.start(wt.path, { agent, permissionMode: mode, model, worktree: { ...wt, origin: cwd }, title });
+            sessionId = await sessionsApi.current.start(wt.path, { agent, permissionMode: mode, model, worktree: { ...wt, origin: cwd }, title });
           } else {
-            sessionId = await S.start(cwd, { agent, permissionMode: mode, model, title });
+            sessionId = await sessionsApi.current.start(cwd, { agent, permissionMode: mode, model, title });
           }
           setItem(cwd, next.id, { sessionId });
-          S.send(sessionId, next.text, []);
+          sessionsApi.current.send(sessionId, next.text, []);
         } catch (e) {
           setItem(cwd, next.id, { status: 'failed', endedAt: Date.now() });
           update(cwd, (x) => ({ ...x, auto: false }));
@@ -105,7 +114,7 @@ export function useBacklogs(S: ReturnType<typeof useSessions>) {
         }
       })();
     }
-  }, [backlogs, S, setItem, update]);
+  }, [backlogs, sessions, replaced, graceOver, setItem, update]);
 
   return { backlogs, update, setItem };
 }

@@ -13,6 +13,7 @@ const MdTableEditor = lazy(() => import('./MdTableEditor'));
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
 import { toast } from './Toast';
+import { useEvent } from '../lib/useEvent';
 
 interface Props {
   entry: Entry | null;
@@ -261,11 +262,13 @@ export default Preview;
 
 /** The preview as a dialog, for views without the right-hand panel (Agents, Tools, Schedules). */
 export function PreviewDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) {
+  // Registered once: the app passes a new `onClose` on every render.
+  const close = useEvent(onClose);
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); onClose(); } };
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); close(); } };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
+  }, [close]);
   return (
     // no-drag: the dialog's header sits inside the title bar's 100px drag region, and Electron hands the cursor and
     // clicks there to the window regardless of z-index (the close button showed an arrow and started a window drag).

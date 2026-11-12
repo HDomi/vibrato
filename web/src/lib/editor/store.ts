@@ -60,7 +60,9 @@ function readBackup(path: string): Backup | null {
   try { const raw = localStorage.getItem(BACKUP + path); return raw ? JSON.parse(raw) as Backup : null; } catch { return null; }
 }
 function hasBackup(path: string) { try { return localStorage.getItem(BACKUP + path) !== null; } catch { return false; } }
-function dropBackup(path: string) { try { localStorage.removeItem(BACKUP + path); } catch { /* ignore */ } }
+/** The buffer (and base mtime) last written as each path's backup, so an unchanged buffer is not stringified and stored again. */
+const lastBackup = new Map<string, { text: Text; mtime: number | null }>();
+function dropBackup(path: string) { lastBackup.delete(path); try { localStorage.removeItem(BACKUP + path); } catch { /* ignore */ } }
 
 export type FsChange = string[] | '*';
 
@@ -228,6 +230,7 @@ class EditorStore {
       this.docs.delete(p); doc.path = next; doc.name = nameOf(next); this.docs.set(next, doc);
       // Move the backup as stored: a tab that was never loaded has no buffer to rewrite it from.
       try { const raw = localStorage.getItem(BACKUP + p); if (raw !== null) { localStorage.setItem(BACKUP + next, raw); localStorage.removeItem(BACKUP + p); } } catch { /* ignore */ }
+      lastBackup.delete(p);
       const timer = this.backupTimers.get(p); if (timer) { clearTimeout(timer); this.backupTimers.delete(p); this.scheduleBackup(doc); }
       for (const tab of this.tabs) if (tab.path === p) tab.path = next;
       if (this.active === p) this.active = next;
@@ -306,11 +309,18 @@ class EditorStore {
   // Hot exit: unsaved buffers survive a crash, an update relaunch or a quit, like VS Code.
   private scheduleBackup(doc: Doc) {
     clearTimeout(this.backupTimers.get(doc.path));
-    this.backupTimers.set(doc.path, window.setTimeout(() => this.writeBackup(doc), 800));
+    const path = doc.path;
+    // The entry goes once the timer fires, so flushBackups only writes backups that are still pending.
+    this.backupTimers.set(path, window.setTimeout(() => { this.backupTimers.delete(path); this.writeBackup(doc); }, 800));
   }
   private writeBackup(doc: Doc) {
     if (!doc.state || !doc.dirty || doc.state.doc.length > BACKUP_MAX) return;
-    try { localStorage.setItem(BACKUP + doc.path, JSON.stringify({ content: doc.state.doc.toString(), mtime: doc.mtime } satisfies Backup)); } catch { /* quota: skip */ }
+    const text = doc.state.doc, last = lastBackup.get(doc.path);
+    if (last && last.text === text && last.mtime === doc.mtime) return;
+    try {
+      localStorage.setItem(BACKUP + doc.path, JSON.stringify({ content: text.toString(), mtime: doc.mtime } satisfies Backup));
+      lastBackup.set(doc.path, { text, mtime: doc.mtime });
+    } catch { /* quota: skip */ }
   }
   /** Write pending backups now (project switch, reload, quit, update relaunch). */
   flushBackups() {

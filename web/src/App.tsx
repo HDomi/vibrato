@@ -441,49 +441,60 @@ function AppInner() {
 
   const rightTabs = [['files', t('app.tab.files')], ['preview', t('app.tab.preview')], ['terminal', t('app.tab.terminal')], ['git', t('app.tab.git')], ['run', t('app.tab.run')]] as const;
   const TAB_KEYS = ['1', '2', '3', '4', '5'];
-  // Global keyboard shortcuts.
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (document.querySelector('[data-update-locked="true"]')) return;
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const k = shortcutKey(e);
-      const inText = (e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]');
-      // The editor owns ⌘W (close tab), ⌘/ (toggle comment), ⌘S and ⇧⌘K (delete line) while it has focus.
-      const inEditor = !!(e.target as HTMLElement)?.closest?.('[data-editor-scope]');
-      if (inEditor && (k === 'w' || k === '/' || k === 's' || k === 'k')) return;
-      // Tools mode has no sessions or panels; its own ⌘1-9 switch tools (see ToolboxView). Schedules have none either.
-      if (view === 'tools' || view === 'schedule') return;
-      if (k === 'p' && !e.shiftKey) { e.preventDefault(); if (project && view === 'vibe') setQuickOpen((v) => !v); }
-      else if (k === 'j') { e.preventDefault(); setRightCollapsed((v) => !v); }
-      else if (k === 'k') { e.preventDefault(); window.dispatchEvent(new Event('vibe:focus-composer')); }
-      else if (k === 'f' && !e.shiftKey && !(e.target as HTMLElement)?.closest?.('[data-own-find]')) { e.preventDefault(); window.dispatchEvent(new Event('vibe:chat-search')); }
-      else if (k === 'n' && !e.shiftKey) { e.preventDefault(); if (view === 'agent') setAgentActive('new'); else if (project) setActiveSession('new'); }
-      else if (k === 'w') {
-        e.preventDefault();
-        const target = view === 'agent' ? S.sessions[agentActive ?? ''] : session;
-        if (target) {
-          if ((target.status === 'running' || target.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
-          S.close(target.id);
-          if (view === 'agent') setAgentActive(null); else setActiveSession(null);
-        }
+  // Global keyboard shortcuts. Registered once; the handler always sees the latest state.
+  const onGlobalKey = useEvent((e: KeyboardEvent) => {
+    if (document.querySelector('[data-update-locked="true"]')) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const k = shortcutKey(e);
+    const inText = (e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]');
+    // The editor owns ⌘W (close tab), ⌘/ (toggle comment), ⌘S and ⇧⌘K (delete line) while it has focus.
+    const inEditor = !!(e.target as HTMLElement)?.closest?.('[data-editor-scope]');
+    if (inEditor && (k === 'w' || k === '/' || k === 's' || k === 'k')) return;
+    // Tools mode has no sessions or panels; its own ⌘1-9 switch tools (see ToolboxView). Schedules have none either.
+    if (view === 'tools' || view === 'schedule') return;
+    if (k === 'p' && !e.shiftKey) { e.preventDefault(); if (project && view === 'vibe') setQuickOpen((v) => !v); }
+    else if (k === 'j') { e.preventDefault(); setRightCollapsed((v) => !v); }
+    else if (k === 'k') { e.preventDefault(); window.dispatchEvent(new Event('vibe:focus-composer')); }
+    else if (k === 'f' && !e.shiftKey && !(e.target as HTMLElement)?.closest?.('[data-own-find]')) { e.preventDefault(); window.dispatchEvent(new Event('vibe:chat-search')); }
+    else if (k === 'n' && !e.shiftKey) { e.preventDefault(); if (view === 'agent') setAgentActive('new'); else if (project) setActiveSession('new'); }
+    else if (k === 'w') {
+      e.preventDefault();
+      const target = view === 'agent' ? S.sessions[agentActive ?? ''] : session;
+      if (target) {
+        if ((target.status === 'running' || target.status === 'compacting') && !window.confirm(t('app.confirmCloseRunning'))) return;
+        S.close(target.id);
+        if (view === 'agent') setAgentActive(null); else setActiveSession(null);
       }
-      else if (k === '/') { e.preventDefault(); setShowTools(true); }
-      else if (TAB_KEYS.includes(e.key) && !inText) { e.preventDefault(); setRightTab(rightTabs[Number(e.key) - 1][0]); setRightCollapsed(false); }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [project, session, S, view, agentActive]);
+    }
+    else if (k === '/') { e.preventDefault(); setShowTools(true); }
+    else if (TAB_KEYS.includes(e.key) && !inText) { e.preventDefault(); setRightTab(rightTabs[Number(e.key) - 1][0]); setRightCollapsed(false); }
+  });
+  useEffect(() => {
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, [onGlobalKey]);
 
   const waiting = Object.values(S.sessions).reduce((n, s) => n + pendingRequests(s), 0);
   // Same element every render: the toolbox takes no props, so React skips it when the app re-renders.
   const toolbox = useMemo(() => <Suspense fallback={null}><ToolboxView /></Suspense>, []);
   /** Per project: 'running' while any of its sessions (or their subagents) works, else 'done' if one finished unseen. */
-  const projectBadge = (path: string): 'running' | 'done' | null => {
-    const mine = Object.values(S.sessions).filter((s) => inProject(s, path));
-    if (mine.some(isWorking)) return 'running';
-    return mine.some((s) => unseen.has(s.id)) ? 'done' : null;
-  };
+  // Computed once per session change (each session belongs to the folders `inProject` matches), and kept as the
+  // same function while no badge changes, so the memoized dock skips the app's streaming re-renders.
+  const badgeKey = useMemo(() => {
+    const badges: Record<string, 'running' | 'done'> = {};
+    for (const s of Object.values(S.sessions)) {
+      const state = isWorking(s) ? 'running' : unseen.has(s.id) ? 'done' : null;
+      if (!state) continue;
+      for (const path of [s.cwd, s.worktree?.origin, s.worktree?.root]) if (path && badges[path] !== 'running') badges[path] = state;
+    }
+    return JSON.stringify(Object.entries(badges).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  }, [S.sessions, unseen]);
+  const projectBadge = useMemo(() => {
+    const badges = new Map(JSON.parse(badgeKey) as [string, 'running' | 'done'][]);
+    return (path: string): 'running' | 'done' | null => badges.get(path) ?? null;
+  }, [badgeKey]);
+  const dockResume = useEvent((s: RecentSession) => resumeSession(s));
   const tabIcons: Record<typeof rightTabs[number][0], IconName> = { files: 'list', preview: 'file', terminal: 'terminal', git: 'branch', run: 'play' };
 
   return (
@@ -513,7 +524,7 @@ function AppInner() {
         ) : (
         <div className="flex-1 min-w-0 flex px-[42px] pb-4">
           <div className="w-[61px] shrink-0 flex items-center">
-            <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={resumeSession} waiting={waiting} badge={projectBadge} />
+            <Dock favorites={favorites} project={project} onNavigate={openProject} onFavoritesChange={setFavorites} onResumeSession={dockResume} waiting={waiting} badge={projectBadge} />
           </div>
           <main className="flex-1 min-w-0 flex ml-8">
             <section className="glass flex-1 min-w-0 flex flex-col overflow-hidden">

@@ -21,13 +21,16 @@ export interface TerminalTab {
   ws?: WebSocket;
   /** Server-side shell id: a reconnect within the server's grace period reattaches to the same process. */
   key: string;
-  /** When the shell last printed something; recent output counts as work worth keeping the Mac awake for. */
-  lastOutputAt: number;
 }
 /** Close code sent by the server when the shell process itself ended (do not reconnect). */
 const CLOSE_EXITED = 4000;
 const retryTimers = new Map<number, number>();
 const retries = new Map<number, number>();
+/**
+ * When each shell last printed something; recent output counts as work worth keeping the Mac awake for.
+ * Kept out of the published state: output can arrive hundreds of times per second, and nothing renders it.
+ */
+const lastOutputAt = new Map<number, number>();
 
 export interface TerminalState { tabs: TerminalTab[]; active: number | null }
 
@@ -50,7 +53,7 @@ export function useTerminals(): TerminalState {
 export function openTerminal(cwd: string, cmd?: string, title?: string): TerminalTab {
   const host = document.createElement('div');
   host.className = 'absolute inset-0 p-2';
-  const tab: TerminalTab = { id: nextId++, title: title ?? (cmd ? cmd.split(' ')[0] : cwd.split('/').pop() || 'shell'), cwd, cmd, status: 'connecting', host, key: crypto.randomUUID(), lastOutputAt: 0 };
+  const tab: TerminalTab = { id: nextId++, title: title ?? (cmd ? cmd.split(' ')[0] : cwd.split('/').pop() || 'shell'), cwd, cmd, status: 'connecting', host, key: crypto.randomUUID() };
   publish({ tabs: [...state.tabs, tab], active: tab.id });
   return tab;
 }
@@ -62,6 +65,7 @@ export function closeTerminal(id: number) {
   if (!tab) return;
   const timer = retryTimers.get(id); if (timer) { window.clearTimeout(timer); retryTimers.delete(id); }
   retries.delete(id);
+  lastOutputAt.delete(id);
   // Tell the server this is deliberate so it kills the shell now instead of keeping it for a reattach.
   try { if (tab.ws?.readyState === WebSocket.OPEN) tab.ws.send(JSON.stringify({ type: 'close' })); tab.ws?.close(); } catch { /* already closed */ }
   tab.term?.dispose();
@@ -99,7 +103,7 @@ function connect(id: number) {
   if (tab.cmd && tab.status === 'connecting') q.set('cmd', tab.cmd);
   const ws = new WebSocket(`${proto}://${location.host}/pty?${q}`);
   ws.onopen = () => { retries.delete(id); const wasReconnect = state.tabs.find((t) => t.id === id)?.status === 'reconnecting'; patch(id, { status: 'open' }); if (!wasReconnect) term.focus(); };
-  ws.onmessage = (e) => { term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data)); patch(id, { lastOutputAt: Date.now() }); };
+  ws.onmessage = (e) => { term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data)); lastOutputAt.set(id, Date.now()); };
   ws.onclose = (e) => {
     const current = state.tabs.find((t) => t.id === id);
     if (!current || current.ws !== ws) return; // tab closed or superseded
@@ -124,7 +128,7 @@ export function reconnectTerminals() {
 
 /** True when some shell printed output within `withinMs` (a build, a test run, a TUI agent still working). */
 export function terminalsBusy(withinMs = 60000, now = Date.now()) {
-  return state.tabs.some((t) => t.status === 'open' && now - t.lastOutputAt < withinMs);
+  return state.tabs.some((t) => t.status === 'open' && now - (lastOutputAt.get(t.id) ?? 0) < withinMs);
 }
 
 /** Refit to the current host size and tell the shell. Safe to call while hidden (zero size is skipped). */

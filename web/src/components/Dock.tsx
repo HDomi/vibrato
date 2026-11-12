@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
 
 /** How long a removed favorite stays on screen for its shrink animation (.dock-out). */
 const LEAVE_MS = 330;
@@ -6,6 +6,7 @@ import { api, type Favorite, type FavoriteGroup, type Favorites, type HistoryHit
 import { useContextMenu, type MenuItem } from './ContextMenu';
 import { t, useLang } from '../lib/i18n';
 import { pollWhileActive } from '../lib/poll';
+import { useEvent } from '../lib/useEvent';
 import ProjectIcon from './ProjectIcon';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
@@ -71,7 +72,8 @@ function Prompt({ at, value, onCommit, onCancel }: { at: { x: number; y: number 
  * VIBE's left dock: favorites as round icons (name on hover), groups as dividers, ungrouped favorites at the
  * bottom, the current folder on top when it is not a favorite, and recent sessions behind the bottom button.
  */
-export default function Dock(p: Props) {
+// Memoized: the app re-renders on every streaming update; the dock's props only change with favorites, project or badges.
+export default memo(function Dock(p: Props) {
   useLang();
   const menu = useContextMenu();
   const nav = useRef<HTMLElement>(null);
@@ -214,7 +216,7 @@ export default function Dock(p: Props) {
       {prompt && <Prompt at={{ x: dockRight(), y: prompt.y }} value={prompt.value} onCommit={commitPrompt} onCancel={() => setPrompt(null)} />}
     </nav>
   );
-}
+});
 
 /** Recent sessions popover beside the dock's bottom button. Closes on a pick or a click outside (not on its own menus). */
 function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject<HTMLElement | null>; onResume: (s: RecentSession) => void; onClose: () => void }) {
@@ -243,23 +245,31 @@ function RecentSessions({ anchor, onResume, onClose }: { anchor: React.RefObject
     const stop = pollWhileActive(reload, 60000);
     return () => { stop(); window.removeEventListener('vibe:pins-changed', reload); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stable: the parent passes a new closure each render, which would re-register the listeners below.
+  const close = useEvent(onClose);
   useEffect(() => {
     const away = (e: MouseEvent) => {
       const target = e.target as Element;
       if (box.current?.contains(target) || target.closest?.('[data-context-menu]') || anchor.current?.querySelector('[aria-expanded]')?.contains(target)) return;
-      onClose();
+      close();
     };
     const esc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing || renaming) return;
       if (searchBox.current?.value) { setQuery(''); return; }
-      onClose();
+      close();
     };
     window.addEventListener('mousedown', away);
     window.addEventListener('keydown', esc);
     return () => { window.removeEventListener('mousedown', away); window.removeEventListener('keydown', esc); };
-  }, [anchor, onClose, renaming]);
+  }, [anchor, close, renaming]);
 
-  const r = anchor.current?.getBoundingClientRect();
+  // Measured on open and on window resize, not on every render (a layout read during render can force a reflow).
+  const [r, setR] = useState(() => anchor.current?.getBoundingClientRect());
+  useEffect(() => {
+    const measure = () => setR(anchor.current?.getBoundingClientRect());
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [anchor]);
   const sessionMenu = (s: RecentSession): MenuItem[] => [
     { label: t('common.resume'), onClick: () => onResume(s) },
     { label: s.pinned ? t('common.unpin') : t('common.pin'), onClick: () => api.historyPin(s.agent, s.sessionId, !s.pinned).then(reload).catch(() => {}) },

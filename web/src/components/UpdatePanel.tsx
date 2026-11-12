@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api, type ReleaseSummary, type UpdateStatus } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
+import { useEvent } from '../lib/useEvent';
 
 /** Small badge for the sidebar header; opens the modal with commit list and apply log. */
 /** Installed version (green with the new one when an update is out); a click opens the update dialog. `onWall`: over the wallpaper (title bar). */
@@ -41,11 +42,12 @@ function UpdateModal({ status, checking, onClose, onRefresh }: { status: UpdateS
   const locked = phase === 'running' || phase === 'restarting';
   const release = status?.source === 'release';
   const close = () => { if (!locked) onClose(); };
+  // Registered once; the handler always sees the latest `locked` and `onClose`.
+  const onKey = useEvent((e: KeyboardEvent) => { if (e.key === 'Escape') close(); });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [onKey]);
 
   const [lastVersion, setLastVersion] = useState<string | undefined>();
   const apply = (force = false, version?: string) => {

@@ -10,6 +10,9 @@ interface Props { cwd: string | null; visible: boolean }
 const CODE: Record<string, string> = { M: 'mod', A: 'add', D: 'del', R: 'ren', C: 'copy', U: 'conf', '?': 'new' };
 const PAGE = 30;
 
+const sameCommit = (a: GitCommit | undefined, b: GitCommit) => !!a && a.hash === b.hash && a.subject === b.subject && a.author === b.author && a.date === b.date
+  && a.parents.join(' ') === b.parents.join(' ') && a.refs.join('\n') === b.refs.join('\n');
+
 function DiffView({ text }: { text: string }) {
   useLang();
   if (!text) return <div className="p-3 text-xs text-zinc-500">{t('git.noChanges')}</div>;
@@ -22,10 +25,14 @@ function DiffView({ text }: { text: string }) {
   );
 }
 
-/** Sticky section header: colored marker, title, count pill, optional actions on the right. */
-function SectionHeader({ color, title, count, children }: { color: string; title: string; count?: number; children?: ReactNode }) {
+/**
+ * Sticky section header: colored marker, title, count pill, optional actions on the right.
+ * Opaque by default: inside a scroller, glass-fill's fixed backdrop would repaint on every scroll frame.
+ * `fill={false}` where the header sits on a glass surface that does not scroll under it.
+ */
+function SectionHeader({ color, title, count, fill = true, children }: { color: string; title: string; count?: number; fill?: boolean; children?: ReactNode }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 px-3 h-8 glass-fill border-b border-line text-[11px]">
+    <div className={`sticky top-0 z-10 flex items-center gap-2 px-3 h-8 ${fill ? 'bg-panel-bar' : ''} border-b border-line text-[11px]`}>
       <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
       <span className="font-medium tracking-wide text-zinc-300">{title}</span>
       {count !== undefined && <span className="min-w-[18px] px-1.5 py-px rounded-full bg-white/5 text-[10px] text-zinc-400 text-center font-mono">{count}</span>}
@@ -60,6 +67,9 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
   const project = projectRef.current;
   const generation = useRef(0);
   const refreshId = useRef(0);
+  /** Last status shown, serialized: an 8s poll that finds nothing new must not re-render the panel. */
+  const statusKey = useRef('');
+  const selRef = useRef<{ path: string; staged: boolean } | null>(null);
   const operationRef = useRef(false);
   const [diffTick, setDiffTick] = useState(0);
   const [newBranch, setNewBranch] = useState<string | null>(null);
@@ -70,17 +80,29 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
   // Must stay above the early returns below: a hook after them breaks the hook order when cwd appears.
   const [suggesting, setSuggesting] = useState(false);
   useEffect(() => { logRef.current = log; }, [log]);
+  useEffect(() => { selRef.current = sel; }, [sel]);
 
   const refresh = useCallback(() => {
     if (!cwd) return;
     const request = ++refreshId.current;
     const current = () => projectRef.current === project && refreshId.current === request;
-    api.gitStatus(cwd).then((st) => { if (current()) { setSt(st); setDiffTick((n) => n + 1); } }).catch((e) => { if (current()) setNote(e.message); });
+    api.gitStatus(cwd).then((st) => {
+      if (!current()) return;
+      const key = JSON.stringify(st);
+      if (key !== statusKey.current) { statusKey.current = key; setSt(st); }
+      // The open diff can change while its file's status line does not; refetch it (equal text does not re-render).
+      if (selRef.current) setDiffTick((n) => n + 1);
+    }).catch((e) => { if (current()) setNote(e.message); });
     api.gitBranches(cwd).then((rows) => { if (current()) setBranches(rows); }).catch(() => { if (current()) setBranches([]); });
     // First page only. Pages already scrolled in are kept when the head is unchanged.
     api.gitLog(cwd, 0, PAGE).then((r) => {
       if (!current()) return;
       const cur = logRef.current;
+      // Nothing new on the first page (same commits, refs and paging): keep the log as is, no graph re-layout.
+      if ((cur.length === r.commits.length || (cur.length > PAGE && r.hasMore && r.commits.length === PAGE)) && r.commits.every((commit, i) => sameCommit(cur[i], commit))) {
+        if (cur.length === r.commits.length) setHasMore(r.hasMore);
+        return;
+      }
       if (cur.length > PAGE && r.hasMore && r.commits.length === PAGE && r.commits.every((commit, i) => cur[i]?.hash === commit.hash)) {
         const updated = [...r.commits, ...cur.slice(PAGE)];
         logRef.current = updated; setLog(updated);
@@ -110,7 +132,7 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
 
   // Reset paging when the project changes.
   useEffect(() => {
-    generation.current++; refreshId.current++; logRef.current = []; loadingRef.current = false; operationRef.current = false;
+    generation.current++; refreshId.current++; logRef.current = []; loadingRef.current = false; operationRef.current = false; statusKey.current = '';
     setLog([]); setHasMore(false); setSel(null); setSt(null); setBranches([]); setDiff(''); setMsg(''); setNote(null); setBusy(false); setRemoteBusy(null); setLoadingMore(false); setNewBranch(null);
     setCommitView(null); setCommitFile(null); setCommitDiff('');
   }, [cwd]);
@@ -328,7 +350,7 @@ function CommitDetail({ view, root, file, diff, onFile, onClose }: {
   const preview = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: `${root.replace(/\/$/, '')}/${path}` } }));
   return (
     <div className="glass-fill absolute inset-0 flex flex-col z-20">
-      <SectionHeader color="bg-violet-400" title={commit.subject} count={files?.length}>
+      <SectionHeader color="bg-violet-400" title={commit.subject} count={files?.length} fill={false}>
         <span className="font-mono text-violet-300/75" title={commit.hash}>{commit.hash.slice(0, 7)}</span>
         <button className="hover:text-white" onClick={onClose} title="Esc">✕ {t('git.closeCommit')}</button>
       </SectionHeader>

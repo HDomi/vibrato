@@ -3,6 +3,8 @@ import { api, type ScheduleRun } from './api';
 import { t } from './i18n';
 
 const POLL_MS = 20000;
+/** While the window is hidden (minimized, other Space) runs are still watched, just less often. */
+const HIDDEN_POLL_MS = 60000;
 const NOTIFY: Partial<Record<ScheduleRun['status'], string>> = { done: 'sched.notify.done', failed: 'sched.notify.failed', waiting: 'sched.notify.waiting', missed: 'sched.notify.missed' };
 
 /** Run status changes worth telling the user about, between two polls. The first poll only sets the baseline. */
@@ -35,11 +37,17 @@ export function useScheduleWatch() {
         runs.current = prev;
       } catch { /* server restarting; next poll */ }
     };
+    let timer = 0;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { void poll(); schedule(); }, document.hidden ? HIDDEN_POLL_MS : POLL_MS);
+    };
     void poll();
-    const timer = window.setInterval(() => void poll(), POLL_MS);
-    const resume = () => void poll();
+    schedule();
+    // Coming back (restored windows get focus too) polls at once and restarts the shorter interval.
+    const resume = () => { void poll(); schedule(); };
     window.addEventListener('focus', resume);
-    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener('focus', resume); };
+    return () => { stopped = true; window.clearTimeout(timer); window.removeEventListener('focus', resume); };
   }, []);
   return runs;
 }

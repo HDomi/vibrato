@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+function persistWidth(key: string, width: number) {
+  try { localStorage.setItem(key, String(width)); } catch { /* ignore */ }
+}
+
 /** Persisted pane width with a drag handle. `side` is which pane the handle resizes. */
 export function usePaneWidth(key: string, initial: number, min: number, max: number) {
   const [width, setWidth] = useState(() => {
     try { const v = Number(localStorage.getItem(key)); return v >= min && v <= max ? v : initial; } catch { return initial; }
   });
-  useEffect(() => { try { localStorage.setItem(key, String(width)); } catch { /* ignore */ } }, [key, width]);
+  // Persist once the width settles (a drag changes it every frame), and on unmount so nothing is lost.
+  const saved = useRef({ key, width });
+  useEffect(() => {
+    saved.current = { key, width };
+    const timer = window.setTimeout(() => persistWidth(key, width), 250);
+    return () => window.clearTimeout(timer);
+  }, [key, width]);
+  useEffect(() => () => persistWidth(saved.current.key, saved.current.width), []);
   const clamp = useCallback((w: number) => Math.min(max, Math.max(min, w)), [min, max]);
   return { width, setWidth: (w: number) => setWidth(clamp(w)) };
 }
@@ -27,8 +38,13 @@ export default function Splitter({ onDrag, onStart, onEnd, gap }: Props) {
     startX.current = e.clientX;
     setActive(true);
     onStart?.();
-    const move = (ev: PointerEvent) => onDrag(ev.clientX - startX.current);
-    const up = () => { setActive(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.cursor = ''; document.body.style.userSelect = ''; onEnd?.(); };
+    // At most one width update per frame: pointer events can arrive faster than the screen refreshes.
+    let frame = 0, dx = 0;
+    const move = (ev: PointerEvent) => {
+      dx = ev.clientX - startX.current;
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; onDrag(dx); });
+    };
+    const up = () => { if (frame) { cancelAnimationFrame(frame); frame = 0; onDrag(dx); } setActive(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.cursor = ''; document.body.style.userSelect = ''; onEnd?.(); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     document.body.style.cursor = 'col-resize';

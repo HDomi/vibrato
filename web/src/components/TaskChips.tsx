@@ -3,6 +3,7 @@ import type { TaskInfo, TaskStatus } from '../lib/agent';
 import { liveTasks } from '../lib/chatStore';
 import { layoutTaskTree, NODE_H, NODE_W, ROOT_ID, shortTokens, taskKind, visibleTasks, type GraphLayout } from '../lib/taskGraph';
 import { t, useLang } from '../lib/i18n';
+import { useEvent } from '../lib/useEvent';
 
 interface Props {
   tasks: Record<string, TaskInfo> | undefined;
@@ -85,14 +86,15 @@ function TaskGraphPopover({ tasks, selected, onSelect, onClose, rootLabel, rootS
     setStopping((s) => { const n = new Set(s); for (const x of runningList) n.add(x.id); return n; });
     for (const x of runningList) onStopTask(x.id);
   };
-  // Close on a click outside or Escape.
+  // Close on a click outside or Escape. Registered once: `onClose` is a new closure on every parent render.
+  const close = useEvent(onClose);
   useEffect(() => {
-    const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-task-chips]')) onClose(); };
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const down = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-task-chips]')) close(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     document.addEventListener('mousedown', down);
     document.addEventListener('keydown', key);
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
-  }, [onClose]);
+  }, [close]);
 
   const sel = selected === ROOT_ID ? null : tasks[selected] ?? null;
 

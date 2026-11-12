@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AgentContext, type RecentSession, type Schedule, type ScheduleInput, type ScheduleRun, type ScheduleRunStatus, type ScheduleSnapshot, type SchedulePower } from '../lib/api';
 import { CRON_PRESETS, describeCron as describe, nextRuns, parseCron } from '../lib/toolbox/cron';
 import { relativeTime } from '../lib/toolbox/time';
 import { getLang, t, useLang } from '../lib/i18n';
+import { pollWhileActive } from '../lib/poll';
+import { ViewActiveContext } from '../lib/viewActive';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
 import Splitter, { SideSplitter, usePaneWidth } from './Splitter';
@@ -92,11 +94,13 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   };
 
   const load = () => api.schedules().then((s) => { setSnap(s); setError(null); }).catch((e) => setError((e as Error).message));
+  // Poll only while this view is on screen and the window is in front; refresh once when it comes back.
+  const viewActive = useContext(ViewActiveContext);
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => { void load(); tick((n) => n + 1); }, 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (!viewActive) return;
+    void load(); tick((n) => n + 1);
+    return pollWhileActive(() => { void load(); tick((n) => n + 1); }, 5000);
+  }, [viewActive]); // eslint-disable-line react-hooks/exhaustive-deps
   const current = snap?.schedules.find((s) => s.id === selected) ?? null;
   // Pick the first schedule (or a new one) once the list arrives.
   useEffect(() => {
