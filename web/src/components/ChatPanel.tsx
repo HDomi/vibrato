@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useViewActiveRef } from '../lib/viewActive';
 import { currentTodos, displayTitle, isInjected, isWorking, type ChatItem, type ChatSession } from '../lib/chatStore';
 import type { AgentId, Attachment, PermissionModeId, RewindResult } from '../lib/agent';
@@ -154,6 +154,51 @@ function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: 
     case 'verify': return <VerifyItem key={it.id} item={it} latest={it.id === actions.latestVerify} onRerun={it.id === actions.latestVerify ? actions.verify : undefined} />;
   }
 }
+
+type ItemActions = Parameters<typeof renderItem>[2];
+interface ChatListHandlers {
+  showInPlan: (todoId: string) => void;
+  approve: Props['onApprove'];
+  answer: Props['onAnswer'];
+  rewind: (messageId: string) => void;
+  verify: () => void;
+  review: NonNullable<ItemActions['review']>;
+  togglePick: (id: string) => void;
+}
+
+/**
+ * The conversation itself. Memoized: the panel re-renders for every update of any session (and the
+ * handlers it gets are fresh closures each time), but the list only changes with its own items or with
+ * what the items may offer. Handlers are read from `live` at call time.
+ */
+const ChatList = memo(function ChatList({ top, childrenOf, picked, live, taskTitles, cwd, latestVerify, otherAgent, canShowPlan, canRewind, canVerify, canReview }: {
+  top: ChatItem[]; childrenOf: Map<string, ChatItem[]>; picked: Set<string> | null; live: React.RefObject<ChatListHandlers>;
+  taskTitles: Map<string, string>; cwd: string; latestVerify?: string; otherAgent: string;
+  canShowPlan: boolean; canRewind: boolean; canVerify: boolean; canReview: boolean;
+}) {
+  const actions: ItemActions = {
+    showPlan: canShowPlan ? (id) => live.current.showInPlan(id) : undefined,
+    taskTitles, cwd, latestVerify, otherAgent,
+    approve: (...a) => live.current.approve(...a),
+    answer: (...a) => live.current.answer(...a),
+    rewind: canRewind ? (id) => live.current.rewind(id) : undefined,
+    verify: canVerify ? () => live.current.verify() : undefined,
+    review: canReview ? (c) => live.current.review(c) : undefined,
+  };
+  const togglePick = (id: string) => live.current.togglePick(id);
+  return top.map((it) => {
+    const node = renderItem(it, childrenOf, actions);
+    if (!picked) return <div key={it.id} data-item-id={it.id}>{node}</div>;
+    const on = picked.has(it.id);
+    // In export mode a click anywhere on a block toggles it; the block's own buttons are inert meanwhile.
+    return (
+      <div key={it.id} className="flex items-start gap-2">
+        <input type="checkbox" checked={on} onChange={() => togglePick(it.id)} className="mt-2 shrink-0 accent-sky-400" />
+        <div className={`flex-1 min-w-0 cursor-pointer rounded-lg transition-opacity ${on ? '' : 'opacity-40'}`} onClickCapture={(e) => { e.preventDefault(); e.stopPropagation(); togglePick(it.id); }}>{node}</div>
+      </div>
+    );
+  });
+});
 
 /** Time since the turn started, for the activity line. Ticks on its own so the chat does not re-render every second. */
 function ElapsedLabel({ since }: { since?: number }) {
@@ -419,6 +464,8 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);          // follow new content until the user scrolls up
   const programmatic = useRef(false);  // ignore scroll events we caused ourselves
+  // Latest handlers for the memoized chat list (it re-renders only when the items or what is allowed change).
+  const live = useRef<ChatListHandlers>(null!);
   const [atBottom, setAtBottom] = useState(true);
   const [searching, setSearching] = useState(false);
   // Chat or plan view, remembered per session; new sessions follow Settings > General.
@@ -554,6 +601,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     switchView('plan');
   };
   const togglePick = (id: string) => setPicked((p) => { if (!p) return p; const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  live.current = { showInPlan, approve: onApprove, answer: onAnswer, rewind, verify: () => onVerify?.(), review: (c) => onCrossReview?.(c), togglePick };
   const runExport = async () => {
     if (!picked || !picked.size || exporting) return;
     setExporting(true);
@@ -686,18 +734,8 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
           <div ref={content} className="px-5 py-4 space-y-3">
             {session.resumed && <ResumeBrief session={session} />}
             {top.length === 0 && <div className="text-center text-zinc-600 text-sm py-10">{session.restoring ? t('chat.restoring') : session.status === 'starting' ? t('chat.starting') : t('chat.firstMessage')}</div>}
-            {top.map((it) => {
-              const node = renderItem(it, childrenOf, { showPlan: picked ? undefined : showInPlan, taskTitles: titles, approve: onApprove, answer: onAnswer, cwd: session.cwd, rewind: canRewind ? rewind : undefined, latestVerify, verify: running ? undefined : onVerify, review: onCrossReview, otherAgent: session.agent === 'claude' ? 'Codex' : 'Claude' });
-              if (!picked) return <div key={it.id} data-item-id={it.id}>{node}</div>;
-              const on = picked.has(it.id);
-              // In export mode a click anywhere on a block toggles it; the block's own buttons are inert meanwhile.
-              return (
-                <div key={it.id} className="flex items-start gap-2">
-                  <input type="checkbox" checked={on} onChange={() => togglePick(it.id)} className="mt-2 shrink-0 accent-sky-400" />
-                  <div className={`flex-1 min-w-0 cursor-pointer rounded-lg transition-opacity ${on ? '' : 'opacity-40'}`} onClickCapture={(e) => { e.preventDefault(); e.stopPropagation(); togglePick(it.id); }}>{node}</div>
-                </div>
-              );
-            })}
+            <ChatList top={top} childrenOf={childrenOf} picked={picked} live={live} taskTitles={titles} cwd={session.cwd} latestVerify={latestVerify}
+              otherAgent={session.agent === 'claude' ? 'Codex' : 'Claude'} canShowPlan={!picked} canRewind={canRewind} canVerify={!running && !!onVerify} canReview={!!onCrossReview} />
           </div>
         </div>
         {!atBottom && view === 'chat' && (

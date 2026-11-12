@@ -81,6 +81,7 @@ export function useSessions() {
   };
   const setSessions: typeof setSessionsNow = (update) => { flushDeltas(); setSessionsNow(update); };
   const sessionsRef = useRef(sessions);
+  const savedJson = useRef('');
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const pendingStart = useRef(new Map<string, PendingStart>());
   /** Resumes in flight, by CLI session id, so a second click on the same conversation joins the first instead of opening twice. */
@@ -234,7 +235,11 @@ export function useSessions() {
 
   useEffect(() => {
     const list: Persisted[] = Object.values(sessions).filter((s) => s.status !== 'closed').map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, agentSessionId: s.agentSessionId, permissionMode: s.permissionMode, model: s.model, historyLen: s.historyLen, title: s.title, pinned: s.pinned, pinnedKey: s.pinnedKey, lastActivity: s.lastActivity, worktree: s.worktree, pairKey: s.pairKey, resumed: s.resumed }));
-    try { localStorage.setItem(LS_ACTIVE, JSON.stringify(list)); } catch { /* ignore */ }
+    // Runs on every streaming update: write only when the remembered list itself changed.
+    const json = JSON.stringify(list);
+    if (json === savedJson.current) return;
+    savedJson.current = json;
+    try { localStorage.setItem(LS_ACTIVE, json); } catch { /* ignore */ }
   }, [sessions]);
 
   const markLost = (id: string) => setSessions((prev) => {
