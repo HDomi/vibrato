@@ -497,6 +497,8 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   // Remote sessions host (server/remote/host.ts): local settings only; the remote side never reaches these routes.
   const remoteHost = () => { if (!remote) throw new Error('Remote host unavailable'); return remote; };
   app.get('/api/remote/host', async (c) => c.json(await remoteHost().status()));
+  // Cheap poll for the title bar's "remote connected" dot: no config read.
+  app.get('/api/remote/host/clients', (c) => c.json({ clients: remoteHost().authedCount() }));
   app.put('/api/remote/host', async (c) => {
     const b = await c.req.json<{ enabled?: unknown; port?: unknown; keepAwake?: unknown; wakeOnConnect?: unknown }>();
     const bool = (v: unknown) => (typeof v === 'boolean' ? v : undefined);

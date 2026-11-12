@@ -4,6 +4,7 @@ import { loadUsage, useUsage } from '../lib/usageStore';
 import { t, useLang } from '../lib/i18n';
 import { UpdateBadge } from './UpdatePanel';
 import Icon from './Icon';
+import { useHostClients, useRemoteState } from '../lib/remote';
 
 export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule' | 'remote';
 export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule', 'remote'];
@@ -101,6 +102,10 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
   const refs = useRef<Partial<Record<ViewMode, HTMLButtonElement | null>>>({});
   const [marker, setMarker] = useState<{ left: number; width: number } | null>(null);
   const lang = useLang();
+  // Green breathing dot on the Remote tab while this Mac is connected to a host, or a client is logged in here.
+  const remoteStatus = useRemoteState().status;
+  const hostClients = useHostClients();
+  const remoteLive = remoteStatus === 'connected' || hostClients > 0;
   useLayoutEffect(() => {
     const el = refs.current[mode];
     if (el) setMarker({ left: el.offsetLeft, width: el.offsetWidth });
@@ -112,6 +117,7 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
         <button key={m} ref={(el) => { refs.current[m] = el; }} onClick={() => onMode(m)}
           className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
           {t(`usage.${m}`)}
+          {m === 'remote' && remoteLive && <span className="live-dot right-[5px] top-1/2 -mt-[3px]" title={t('usage.remoteLive')} />}
         </button>
       ))}
     </div>

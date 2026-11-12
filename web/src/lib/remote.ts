@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { reduceEvent, type ChatSession } from './chatStore';
 import type { AgentEvent, AgentId, PermissionModeId } from './agent';
+import { pollWhileActive } from './poll';
 
 /*
  * Remote tab state. The connection itself lives in the Electron main process (electron/remote.cts) and outlives
@@ -41,7 +42,7 @@ export interface RemoteBridge {
   onSessions: (cb: () => void) => () => void;
 }
 
-export const remoteBridge = (): RemoteBridge | null => (window.vibe as { remote?: RemoteBridge } | undefined)?.remote ?? null;
+export const remoteBridge = (): RemoteBridge | null => typeof window === 'undefined' ? null : (window.vibe as { remote?: RemoteBridge } | undefined)?.remote ?? null;
 export const remoteOnly = () => !!(window.vibe as { remoteOnly?: boolean } | undefined)?.remoteOnly;
 
 const IDLE: RemoteState = { status: 'idle', hostId: null, hostName: null, error: null, since: null, attempt: 0 };
@@ -74,7 +75,7 @@ function wire() {
 
 export function useRemoteState(): RemoteState {
   wire();
-  return useSyncExternalStore((cb) => { stateListeners.add(cb); return () => { stateListeners.delete(cb); }; }, () => state);
+  return useSyncExternalStore((cb) => { stateListeners.add(cb); return () => { stateListeners.delete(cb); }; }, () => state, () => state);
 }
 
 // ---- watched session chats ----
@@ -224,6 +225,31 @@ async function hostCall<T>(method: string, path: string, body?: unknown): Promis
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
   return data as T;
+}
+
+/** Clients logged in to this Mac as a host, polled for the title bar dot while the window is in front. */
+let hostClients = 0;
+const hostClientListeners = new Set<() => void>();
+let stopHostPoll: (() => void) | null = null;
+
+function loadHostClients() {
+  fetch('/api/remote/host/clients').then((r) => (r.ok ? r.json() : null)).then((d: { clients?: number } | null) => {
+    const n = d?.clients ?? 0;
+    if (n === hostClients) return;
+    hostClients = n;
+    for (const l of hostClientListeners) l();
+  }).catch(() => {});
+}
+
+export function useHostClients(): number {
+  return useSyncExternalStore((cb) => {
+    hostClientListeners.add(cb);
+    if (!stopHostPoll) { loadHostClients(); stopHostPoll = pollWhileActive(loadHostClients, 5000); }
+    return () => {
+      hostClientListeners.delete(cb);
+      if (!hostClientListeners.size) { stopHostPoll?.(); stopHostPoll = null; }
+    };
+  }, () => hostClients, () => hostClients);
 }
 
 export const hostApi = {
