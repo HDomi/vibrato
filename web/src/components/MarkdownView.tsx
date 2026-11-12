@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -34,23 +34,29 @@ function MarkdownImage({ url, label, alt, title }: { url: string; label: string;
 
 // Existence checks for inline code paths, shared by every message. Kept briefly: agents often mention a
 // file just before creating it.
-const statCache = new Map<string, { at: number; found: Promise<boolean> }>();
+const statCache = new Map<string, { at: number; found: Promise<boolean>; value?: boolean }>();
 function pathExists(p: string): Promise<boolean> {
   const hit = statCache.get(p);
   if (hit && Date.now() - hit.at < 15000) return hit.found;
-  const found = api.stat(p).then(() => true, () => false);
-  statCache.set(p, { at: Date.now(), found });
+  const entry: { at: number; found: Promise<boolean>; value?: boolean } = { at: Date.now(), found: Promise.resolve(false) };
+  entry.found = api.stat(p).then(() => true, () => false).then((v) => { entry.value = v; return v; });
+  statCache.set(p, entry);
   if (statCache.size > 2000) statCache.delete(statCache.keys().next().value!);
-  return found;
+  return entry.found;
+}
+
+/** Last known existence result, so a re-mounted link keeps its underline instead of blinking. */
+function knownExists(p: string | null): boolean {
+  return p ? statCache.get(p)?.value === true : false;
 }
 
 const InPre = createContext(false);
 
 function CodePath({ text, baseDir, children }: { text: string; baseDir?: string | null; children: React.ReactNode }) {
   const local = resolveLocal(text, baseDir);
-  const [ok, setOk] = useState(false);
+  const [ok, setOk] = useState(() => knownExists(local));
   useEffect(() => {
-    setOk(false);
+    setOk(knownExists(local));
     if (!local) return;
     let alive = true;
     void pathExists(local).then((v) => { if (alive) setOk(v); });
@@ -88,45 +94,47 @@ function textOf(node: React.ReactNode): string {
   return '';
 }
 
+// "~" alone is a range in prose (#10~105, 23:59~03:26), not strikethrough; "~~x~~" still is.
+const remarkPlugins: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [[remarkGfm, { singleTilde: false }]];
+const rehypePlugins: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, markdownSchema], [rehypeHighlight, { detect: false, ignoreMissing: true }]];
+const urlTransform = (url: string, key: string) => key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|avif);/i.test(url) || /^file:\/\//i.test(url) ? url : defaultUrlTransform(url);
+
 export default function MarkdownView({ text, baseDir, className }: Props) {
+  // Stable per baseDir: a fresh components object on every render gives React new component types, which
+  // remounts every inline path link (and its existence check) whenever the parent re-renders.
+  const components = useMemo<React.ComponentProps<typeof ReactMarkdown>['components']>(() => ({
+    pre: ({ children }) => (
+      <div className="relative group/code">
+        <CopyButton text={textOf(children)} className="absolute top-1.5 right-1.5 opacity-0 group-hover/code:opacity-100" />
+        <InPre.Provider value><pre>{children}</pre></InPre.Provider>
+      </div>
+    ),
+    code: function Code({ className, children }) {
+      const inPre = useContext(InPre);
+      if (inPre) return <code className={className}>{children}</code>;
+      const candidate = codePathCandidate(textOf(children));
+      return candidate ? <CodePath text={candidate} baseDir={baseDir}>{children}</CodePath> : <code className={className}>{children}</code>;
+    },
+    img: ({ src, alt, title }) => {
+      const local = resolveLocal(String(src ?? ''), baseDir);
+      const url = local ? api.rawUrl(local) : String(src ?? '');
+      return <MarkdownImage key={url} url={url} label={local ?? alt ?? ''} alt={alt ?? ''} title={title ?? local ?? undefined} />;
+    },
+    a: function Link({ href, children, title }) {
+      const open = useContext(LocalLinkContext) ?? openLocalFile;
+      const h = String(href ?? '');
+      const local = resolveLocal(h, baseDir);
+      if (local) {
+        return <a href="#" title={local} onClick={(e) => { e.preventDefault(); open(local); }}>{children}</a>;
+      }
+      if (h.startsWith('#')) return <a href={h} title={title}>{children}</a>;
+      // External: let Electron's window-open handler send it to the default browser.
+      return <a href={h} title={title} target="_blank" rel="noreferrer noopener">{children}</a>;
+    },
+  }), [baseDir]);
   return (
     <div className={className}>
-      <ReactMarkdown
-        // "~" alone is a range in prose (#10~105, 23:59~03:26), not strikethrough; "~~x~~" still is.
-        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], [rehypeHighlight, { detect: false, ignoreMissing: true }]]}
-        urlTransform={(url, key) => key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|avif);/i.test(url) || /^file:\/\//i.test(url) ? url : defaultUrlTransform(url)}
-        components={{
-          pre: ({ children }) => (
-            <div className="relative group/code">
-              <CopyButton text={textOf(children)} className="absolute top-1.5 right-1.5 opacity-0 group-hover/code:opacity-100" />
-              <InPre.Provider value><pre>{children}</pre></InPre.Provider>
-            </div>
-          ),
-          code: function Code({ className, children }) {
-            const inPre = useContext(InPre);
-            if (inPre) return <code className={className}>{children}</code>;
-            const candidate = codePathCandidate(textOf(children));
-            return candidate ? <CodePath text={candidate} baseDir={baseDir}>{children}</CodePath> : <code className={className}>{children}</code>;
-          },
-          img: ({ src, alt, title }) => {
-            const local = resolveLocal(String(src ?? ''), baseDir);
-            const url = local ? api.rawUrl(local) : String(src ?? '');
-            return <MarkdownImage key={url} url={url} label={local ?? alt ?? ''} alt={alt ?? ''} title={title ?? local ?? undefined} />;
-          },
-          a: function Link({ href, children, title }) {
-            const open = useContext(LocalLinkContext) ?? openLocalFile;
-            const h = String(href ?? '');
-            const local = resolveLocal(h, baseDir);
-            if (local) {
-              return <a href="#" title={local} onClick={(e) => { e.preventDefault(); open(local); }}>{children}</a>;
-            }
-            if (h.startsWith('#')) return <a href={h} title={title}>{children}</a>;
-            // External: let Electron's window-open handler send it to the default browser.
-            return <a href={h} title={title} target="_blank" rel="noreferrer noopener">{children}</a>;
-          },
-        }}
-      >
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} urlTransform={urlTransform} components={components}>
         {text}
       </ReactMarkdown>
     </div>
