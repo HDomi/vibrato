@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useMemo } from 'react';
 import { COMMON_ZONES, formatDuration, isoInZone, parseDuration, parseTime, relativeTime } from '../../lib/toolbox/time';
 import { getLang, t } from '../../lib/i18n';
+import { useClock } from '../../lib/clock';
+import { ViewActiveContext } from '../../lib/viewActive';
 import { Rows, Section, btn, errText, input, usePersisted } from './ui';
 
 const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -8,8 +10,8 @@ const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export default function TimeTool() {
   const [text, setText] = usePersisted('time.input', '');
   const [zone, setZone] = usePersisted('time.zone', '');
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  // Ticks only while the Tools view is on screen (it stays mounted behind other views).
+  const now = useClock(useContext(ViewActiveContext));
   const locale = getLang() === 'ko' ? 'ko' : 'en';
   const parsed = useMemo(() => { if (!text.trim()) return null; try { return { ok: true as const, ...parseTime(text) }; } catch (e) { return { ok: false as const, msg: errText(e) }; } }, [text]);
   const ms = parsed?.ok ? parsed.ms : null;

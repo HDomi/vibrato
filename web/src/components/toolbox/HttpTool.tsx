@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type ProxyResult } from '../../lib/api';
 import { parseCurl, toCurl, type HttpRequestSpec } from '../../lib/toolbox/curl';
 import { base64ToBytes } from '../../lib/toolbox/bytes';
-import { t } from '../../lib/i18n';
+import { t, useLang } from '../../lib/i18n';
 import { Check, Code, CopyButton, Seg, btn, btnPrimary, errText, input, mono, select, usePersisted } from './ui';
 import { openTool, takePayload } from './bus';
+import { useEvent } from '../../lib/useEvent';
+import { useViewActiveRef } from '../../lib/viewActive';
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 type Row = { k: string; v: string; on: boolean };
@@ -80,11 +82,13 @@ export default function HttpTool() {
     } catch (e) { setErr(errText(e)); setRes(null); }
     finally { setBusy(false); }
   };
+  // ⌘↩ sends; registered once. Ignored while the Tools view is hidden (it stays mounted behind other views).
+  const viewActive = useViewActiveRef();
+  const onKey = useEvent((e: KeyboardEvent) => { if (viewActive.current && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send(); } });
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send(); } };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  });
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onKey]);
 
   const onUrl = (v: string) => {
     // Pasting a whole curl command into the URL box imports it.
@@ -204,11 +208,14 @@ function KV({ rows, onChange, suggest }: { rows: Row[]; onChange: (rows: Row[]) 
   );
 }
 
-function Response({ res, busy }: { res: ProxyResult | null; busy: boolean }) {
+/** Memoized: editing the request does not re-render (or re-format) the response. */
+const Response = memo(function Response({ res, busy }: { res: ProxyResult | null; busy: boolean }) {
+  useLang();
   const [view, setView] = usePersisted<'pretty' | 'raw' | 'headers'>('http.resView', 'pretty');
   const ct = res?.ok ? res.headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '' : '';
   const json = useMemo(() => { if (!res?.ok || res.encoding !== 'utf8') return null; try { return JSON.parse(res.body) as unknown; } catch { return null; } }, [res]);
-  const pretty = json !== null ? JSON.stringify(json, null, 2) : res?.ok && res.encoding === 'utf8' ? res.body : '';
+  // Only the pretty view shows it (raw and headers do not).
+  const pretty = useMemo(() => (view !== 'pretty' ? '' : json !== null ? JSON.stringify(json, null, 2) : res?.ok && res.encoding === 'utf8' ? res.body : ''), [view, json, res]);
   const isImage = res?.ok && res.encoding === 'base64' && /^image\//i.test(ct);
   if (!res) return <div className="rounded-md border border-white/10 flex items-center justify-center text-[12px] text-zinc-600">{busy ? t('tb.http.sending') : t('tb.http.noResponse')}</div>;
   if (!res.ok) return (
@@ -262,7 +269,7 @@ function Response({ res, busy }: { res: ProxyResult | null; busy: boolean }) {
       )}
     </div>
   );
-}
+});
 
 function bytesPreview(b64: string): string {
   try { return [...base64ToBytes(b64.slice(0, 256))].slice(0, 96).map((x) => x.toString(16).padStart(2, '0')).join(' '); } catch { return ''; }

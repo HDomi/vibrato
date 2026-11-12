@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { reduceEvent, type ChatSession } from './chatStore';
 import type { AgentEvent, AgentId, PermissionModeId } from './agent';
 
@@ -64,7 +64,11 @@ function wire() {
     // Another host, or a fresh connection after "Disconnect": nothing of the old chats applies.
     if (s.hostId !== was.hostId) resetChats();
   });
-  b.onEvents((list) => { let changed = false; for (const m of list) changed = applyMessage(m) || changed; if (changed) bump(); });
+  b.onEvents((list) => {
+    const changed = new Set<string>();
+    for (const m of list) if (applyMessage(m)) changed.add(m.sessionId);
+    for (const id of changed) bump(id);
+  });
   void b.state().then((s) => { if (s) { state = s; for (const l of stateListeners) l(); } });
 }
 
@@ -76,10 +80,14 @@ export function useRemoteState(): RemoteState {
 // ---- watched session chats ----
 
 const chats = new Map<string, ChatSession>();
-const chatListeners = new Set<() => void>();
-let chatVersion = 0;
+/** Listeners per session: a chat re-renders only for its own session's events. */
+const chatListeners = new Map<string, Set<() => void>>();
 
-function bump() { chatVersion++; for (const l of chatListeners) l(); }
+/** Tell the watchers of one session (or of all, without an id) that its chat changed. */
+function bump(id?: string) {
+  if (id) { chatListeners.get(id)?.forEach((l) => l()); return; }
+  for (const set of chatListeners.values()) set.forEach((l) => l());
+}
 
 function resetChats() { chats.clear(); bump(); }
 
@@ -97,17 +105,37 @@ function applyMessage(m: { sessionId: string; seq: number; ts: number; event: Ag
   return true;
 }
 
-export function useRemoteChat(id: string | null): ChatSession | null {
-  useSyncExternalStore((cb) => { chatListeners.add(cb); return () => { chatListeners.delete(cb); }; }, () => chatVersion);
-  return id ? chats.get(id) ?? null : null;
+/**
+ * The chat of session `id`. While `live` is false (the view is hidden) updates are not followed; the latest
+ * chat shows as soon as it is true again.
+ */
+export function useRemoteChat(id: string | null, live = true): ChatSession | null {
+  const subscribe = useCallback((cb: () => void) => {
+    if (!id || !live) return () => {};
+    let set = chatListeners.get(id);
+    if (!set) chatListeners.set(id, set = new Set());
+    set.add(cb);
+    return () => { set.delete(cb); if (!set.size && chatListeners.get(id) === set) chatListeners.delete(id); };
+  }, [id, live]);
+  return useSyncExternalStore(subscribe, () => (id ? chats.get(id) ?? null : null));
 }
 
 /** Start watching a session: an empty chat filled by the host's replay of everything so far. */
 export async function watchSession(s: Pick<RemoteSessionSummary, 'id' | 'agent' | 'cwd'> & { permissionMode?: string }) {
   const b = remoteBridge();
   if (!b) return;
-  if (!chats.has(s.id)) { chats.set(s.id, blankChat(s)); bump(); }
+  if (!chats.has(s.id)) { chats.set(s.id, blankChat(s)); bump(s.id); }
   await b.call('attach', { sessionId: s.id, after: chats.get(s.id)!.lastSeq });
+}
+
+/**
+ * Stop watching a session: the host stops streaming its events and the cached chat is dropped (watching it
+ * again replays it from the start). Errors are ignored: a lost connection or a closed session has nothing to detach.
+ */
+export function unwatchSession(id: string) {
+  chats.delete(id);
+  bump(id);
+  void remoteBridge()?.call('detach', { sessionId: id }).catch(() => {});
 }
 
 export async function startSession(opts: { agent: AgentId; cwd: string; permissionMode: PermissionModeId; resume?: string; model?: string }): Promise<string> {
@@ -121,7 +149,7 @@ export async function startSession(opts: { agent: AgentId; cwd: string; permissi
 export async function closeSession(id: string) {
   await remoteBridge()?.call('close', { sessionId: id });
   chats.delete(id);
-  bump();
+  bump(id);
 }
 
 export interface RemoteModel { id: string; name: string; description?: string; isDefault?: boolean }

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { countNodes, errorPosition, jsAccessor, jsonPath, parseLenient, searchJson, sortKeys, toTypeScript, type JsonValue } from '../../lib/toolbox/json';
-import { t } from '../../lib/i18n';
+import { getLang, t } from '../../lib/i18n';
 import { Area, CopyButton, Seg, btn, errText, input, mono, usePersisted } from './ui';
 import { takePayload } from './bus';
 
-interface Ctx { gen: number; forceOpen: boolean; openKeys: Set<string>; matchKeys: Set<string>; copyPath: (p: (string | number)[], js: boolean) => void; copyValue: (v: JsonValue) => void }
+interface Ctx { lang: string; gen: number; forceOpen: boolean; openKeys: Set<string>; matchKeys: Set<string>; copyPath: (p: (string | number)[], js: boolean) => void; copyValue: (v: JsonValue) => void }
+
+const ROOT: (string | number)[] = [];
 
 const SAMPLE = '{"user":{"id":42,"name":"Ada","tags":["admin","ops"],"active":true,"lastLogin":null},"items":[{"sku":"A-1","qty":2},{"sku":"B-7","qty":0}]}';
 
@@ -17,11 +19,13 @@ export default function JsonTool() {
   const [status, setStatus] = useState('');
   const [reset, setReset] = useState({ gen: 0, open: true });
 
+  // Large documents: typing stays responsive, the parse and the tree follow a moment later.
+  const deferredText = useDeferredValue(text);
   const parsed = useMemo(() => {
-    if (!text.trim()) return null;
-    try { return { ok: true as const, ...parseLenient(text) }; }
-    catch (e) { const msg = errText(e); return { ok: false as const, msg, pos: errorPosition(msg, text) }; }
-  }, [text]);
+    if (!deferredText.trim()) return null;
+    try { return { ok: true as const, ...parseLenient(deferredText) }; }
+    catch (e) { const msg = errText(e); return { ok: false as const, msg, pos: errorPosition(msg, deferredText) }; }
+  }, [deferredText]);
   const value = parsed?.ok ? parsed.value : undefined;
   const matches = useMemo(() => (value !== undefined && query ? searchJson(value, query) : []), [value, query]);
   const matchKeys = useMemo(() => new Set(matches.map((p) => jsonPath(p))), [matches]);
@@ -31,15 +35,18 @@ export default function JsonTool() {
     return s;
   }, [matches]);
   const nodes = useMemo(() => (value === undefined ? 0 : countNodes(value)), [value]);
-  const pretty = useMemo(() => (value === undefined ? '' : JSON.stringify(value, null, 2)), [value]);
+  // Only the text view shows (and copies) it; the tree does not need it.
+  const pretty = useMemo(() => (value === undefined || view !== 'text' ? '' : JSON.stringify(value, null, 2)), [value, view]);
   const ts = useMemo(() => { if (value === undefined || view !== 'ts') return ''; try { return toTypeScript(value); } catch (e) { return errText(e); } }, [value, view]);
   useEffect(() => { if (!status) return; const id = setTimeout(() => setStatus(''), 2000); return () => clearTimeout(id); }, [status]);
 
-  const ctx: Ctx = {
-    gen: reset.gen, forceOpen: reset.open, openKeys, matchKeys,
+  // Stable between keystrokes so the memoized tree re-renders only when the document, search or expand state changes.
+  const lang = getLang();
+  const ctx = useMemo<Ctx>(() => ({
+    lang, gen: reset.gen, forceOpen: reset.open, openKeys, matchKeys,
     copyPath: (p, js) => { const s = js ? jsAccessor(p) : jsonPath(p); navigator.clipboard.writeText(s).catch(() => {}); setStatus(t('tb.copiedX', { x: s })); },
     copyValue: (v) => { const s = typeof v === 'string' ? v : JSON.stringify(v); navigator.clipboard.writeText(s).catch(() => {}); setStatus(t('tb.copiedX', { x: s.length > 60 ? s.slice(0, 60) + '…' : s })); },
-  };
+  }), [lang, reset, openKeys, matchKeys]);
   const error = parsed && !parsed.ok ? (parsed.pos ? `${parsed.msg}\n${t('tb.json.at', { line: parsed.pos.line, col: parsed.pos.col })}` : parsed.msg) : null;
 
   return (
@@ -67,8 +74,8 @@ export default function JsonTool() {
         </div>
         <div className={`flex-1 min-h-0 overflow-auto rounded-md border border-white/10 bg-white/[.03] px-3 py-2 ${mono}`}>
           {value === undefined
-            ? <div className="text-zinc-600">{text.trim() ? t('tb.json.invalid') : t('tb.json.empty')}</div>
-            : view === 'tree' ? <Node v={value} path={[]} depth={0} ctx={ctx} />
+            ? <div className="text-zinc-600">{deferredText.trim() ? t('tb.json.invalid') : t('tb.json.empty')}</div>
+            : view === 'tree' ? <Node v={value} path={ROOT} depth={0} ctx={ctx} />
             : <pre className="whitespace-pre text-zinc-200">{view === 'ts' ? ts : pretty}</pre>}
         </div>
         <div className="h-5 shrink-0 text-[11px] text-zinc-500 truncate pt-1">{status || (view === 'tree' && value !== undefined ? t('tb.json.hint') : '')}</div>
@@ -77,11 +84,13 @@ export default function JsonTool() {
   );
 }
 
-function Node({ k, v, path, depth, ctx }: { k?: string | number; v: JsonValue; path: (string | number)[]; depth: number; ctx: Ctx }) {
+/** Memoized: parsed values and child paths keep their identity, so only the changed parts of the tree re-render. */
+const Node = memo(function Node({ k, v, path, depth, ctx }: { k?: string | number; v: JsonValue; path: (string | number)[]; depth: number; ctx: Ctx }) {
   const isObj = v !== null && typeof v === 'object';
   const arr = Array.isArray(v);
-  const entries: [string | number, JsonValue][] = isObj ? (arr ? (v as JsonValue[]).map((x, i): [number, JsonValue] => [i, x]) : Object.entries(v as Record<string, JsonValue>)) : [];
-  const p = jsonPath(path);
+  const entries = useMemo((): [string | number, JsonValue][] => (v !== null && typeof v === 'object' ? (Array.isArray(v) ? v.map((x, i): [number, JsonValue] => [i, x]) : Object.entries(v)) : []), [v]);
+  const childPaths = useMemo(() => entries.map(([ck]) => [...path, ck]), [entries, path]);
+  const p = useMemo(() => jsonPath(path), [path]);
   const [open, setOpen] = useState(depth < 2);
   const [limit, setLimit] = useState(200);
   useEffect(() => { if (ctx.gen) setOpen(ctx.forceOpen); }, [ctx.gen, ctx.forceOpen]);
@@ -100,14 +109,14 @@ function Node({ k, v, path, depth, ctx }: { k?: string | number; v: JsonValue; p
           ? <span className="text-zinc-500 cursor-pointer" onClick={() => setOpen((o) => !o)}>{open ? bracket[0] : `${bracket[0]} ${t(arr ? 'tb.json.items' : 'tb.json.keys', { n: entries.length })} ${bracket[1]}`}</span>
           : <Leaf v={v} onClick={() => ctx.copyValue(v)} />}
       </div>
-      {isObj && open && entries.slice(0, limit).map(([ck, cv]) => <Node key={ck} k={ck} v={cv} path={[...path, ck]} depth={depth + 1} ctx={ctx} />)}
+      {isObj && open && entries.slice(0, limit).map(([ck, cv], i) => <Node key={ck} k={ck} v={cv} path={childPaths[i]} depth={depth + 1} ctx={ctx} />)}
       {isObj && open && entries.length > limit && (
         <button className="text-zinc-500 hover:text-zinc-300 leading-5" style={{ paddingLeft: (depth + 1) * 14 + 22 }} onClick={() => setLimit((l) => l * 4)}>… {t('tb.json.more', { n: entries.length - limit })}</button>
       )}
       {isObj && open && <div className="text-zinc-500 leading-5" style={{ paddingLeft: depth * 14 + 22 }}>{bracket[1]}</div>}
     </div>
   );
-}
+});
 
 function Leaf({ v, onClick }: { v: JsonValue; onClick: () => void }) {
   const cls = v === null ? 'text-zinc-500' : typeof v === 'string' ? 'text-emerald-300' : typeof v === 'number' ? 'text-amber-300' : 'text-purple-300';

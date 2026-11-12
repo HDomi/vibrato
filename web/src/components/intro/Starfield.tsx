@@ -25,6 +25,12 @@ const RADIUS = 170;
 const PUSH = 5;
 const SPRING = 0.011;
 const DAMP = 0.9;
+/**
+ * After this long without pointer movement (pushed stars and the parallax have settled by then) the field redraws
+ * at a lower rate: the slow drift and twinkle look the same. Never below 20 fps, where a step is 3 frames (the dt cap).
+ */
+const IDLE_MS = 4000;
+const IDLE_FPS = 20;
 
 function makeStars(w: number, h: number): Star[] {
   const n = Math.round(Math.min(6000, Math.max(900, (w * h) / 400)));
@@ -62,12 +68,16 @@ export default function Starfield({ className = '', fps = 60, pauseInactive = fa
     let stars: Star[] = [];
     let planets: PlanetSprite[] = [];
     const pointer = { x: -1e4, y: -1e4 };
+    /** Canvas position in the window, read on resize instead of per pointer event. */
+    const origin = { left: 0, top: 0 };
+    let lastMove = performance.now();
     /** Smoothed pointer offset from the centre, for the planets' parallax. */
     const lean = { x: 0, y: 0 };
 
     const resize = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const rect = canvas.getBoundingClientRect();
+      origin.left = rect.left; origin.top = rect.top;
       const nw = Math.max(1, rect.width), nh = Math.max(1, rect.height);
       // Keep the stars on a resize, scaled into the new size; make them on the first one.
       if (stars.length && w && h) for (const s of stars) { s.hx *= nw / w; s.x *= nw / w; s.hy *= nh / h; s.y *= nh / h; }
@@ -148,11 +158,12 @@ export default function Starfield({ className = '', fps = 60, pauseInactive = fa
     let raf = 0;
     let last = 0;
     const minGap = 1000 / fps - 2;
+    const idleGap = 1000 / Math.min(fps, Math.max(IDLE_FPS, fps / 2)) - 2;
     const paused = () => document.hidden || (pauseInactive && !document.hasFocus());
     const frame = (time: number) => {
       raf = 0;
       if (paused()) return;
-      if (!last || time - last >= minGap) {
+      if (!last || time - last >= (time - lastMove > IDLE_MS ? idleGap : minGap)) {
         const dt = last ? Math.min(3, (time - last) / (1000 / 60)) : 1;
         last = time;
         step(dt);
@@ -162,7 +173,7 @@ export default function Starfield({ className = '', fps = 60, pauseInactive = fa
     };
     const start = () => { if (!raf && !paused()) { last = 0; raf = requestAnimationFrame(frame); } };
 
-    const onMove = (e: PointerEvent) => { pointer.x = e.clientX - canvas.getBoundingClientRect().left; pointer.y = e.clientY - canvas.getBoundingClientRect().top; };
+    const onMove = (e: PointerEvent) => { pointer.x = e.clientX - origin.left; pointer.y = e.clientY - origin.top; lastMove = e.timeStamp; };
     const onLeave = () => { pointer.x = -1e4; pointer.y = -1e4; };
     // Resizing clears the canvas: redraw at once, also while paused.
     const onResize = () => { resize(); draw(still ? 0 : performance.now()); };

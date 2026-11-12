@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useDeferredValue, useMemo } from 'react';
 import { convertData, type DataFormat } from '../../lib/toolbox/formats';
 import { t } from '../../lib/i18n';
 import { Area, Code, Seg, btn, errText, select, usePersisted } from './ui';
@@ -17,10 +17,12 @@ export default function FormatsTool() {
   const [from, setFrom] = usePersisted<DataFormat | 'auto'>('formats.from', 'auto');
   const [to, setTo] = usePersisted<DataFormat>('formats.to', 'json');
   const [indent, setIndent] = usePersisted('formats.indent', 2);
+  // Large inputs: typing stays responsive, the conversion and its highlighting follow a moment later.
+  const deferred = useDeferredValue(text);
   const res = useMemo(() => {
-    if (!text.trim()) return null;
-    try { return { ok: true as const, ...convertData(text, from, to, indent) }; } catch (e) { return { ok: false as const, msg: errText(e) }; }
-  }, [text, from, to, indent]);
+    if (!deferred.trim()) return null;
+    try { return { ok: true as const, ...convertData(deferred, from, to, indent) }; } catch (e) { return { ok: false as const, msg: errText(e) }; }
+  }, [deferred, from, to, indent]);
   return (
     <div className="h-full grid grid-cols-2 gap-4 min-h-0">
       <Area label={<span className="flex items-center gap-2">{t('tb.input')}

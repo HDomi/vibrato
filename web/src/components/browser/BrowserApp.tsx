@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { t, useLang } from '../../lib/i18n';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { getLang, t, useLang } from '../../lib/i18n';
 import Icon, { type IconName } from '../Icon';
 import { BROWSER_CHANNEL, type BrowserChannelMessage } from '../../lib/browserChannel';
+import { useEvent } from '../../lib/useEvent';
+import { useSkipOffscreen } from '../../lib/skipOffscreen';
 import type { BrowserAgentEntry, BrowserBridge, BrowserConsoleEntry, BrowserCookie, BrowserDevice, BrowserDevicePreset, BrowserFlags, BrowserNetBody, BrowserNetEntry, BrowserStorageArea, BrowserStorageResult, BrowserTab } from '../../lib/vibe';
 
 /**
@@ -17,12 +19,22 @@ const LS_DOCK = 'vibe.browser.dock';
 const LS_SIZE = 'vibe.browser.dockSize';
 const LS_PANE = 'vibe.browser.pane';
 const MAX_ROWS = 2000;
+/** Agent steps whose screenshot is shown; older ones keep their text only (the images are large). */
+const AGENT_IMAGES = 20;
 const DOCKS: Dock[] = ['right', 'bottom', 'left', 'top', 'hidden'];
 const DEFAULT_DEVICE = { width: 393, height: 852, preset: 'iphone-15', mobile: true };
 
 const read = <T extends string>(k: string, ok: readonly T[], d: T): T => { try { const v = localStorage.getItem(k) as T; return ok.includes(v) ? v : d; } catch { return d; } };
 const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const host = (u: string) => { try { const x = new URL(u); return x.host + (x.pathname === '/' ? '' : x.pathname); } catch { return u; } };
+/** New log rows after `list`'s last one (a batch can overlap what `info` already returned), capped at MAX_ROWS. */
+function append<T extends { seq: number }>(list: T[], add: T[]): T[] {
+  const last = list.length ? list[list.length - 1].seq : 0;
+  const fresh = add[0].seq > last ? add : add.filter((e) => e.seq > last);
+  if (!fresh.length) return list;
+  const next = list.concat(fresh);
+  return next.length > MAX_ROWS ? next.slice(-MAX_ROWS) : next;
+}
 
 export default function BrowserApp() {
   useLang();
@@ -58,10 +70,27 @@ export default function BrowserApp() {
       setAvailable(info.available); setError(info.error);
       setTabs(info.tabs); setActive(info.active); setLogs(info.console); setNets(info.net); setAgent(info.agent); setFlags(info.flags); setDevices(info.devices);
     });
+    // Console and network rows come in batches (electron/browser.cts); whatever lands within one frame is applied
+    // in a single render. Capped while frames do not run (window hidden).
+    let pendingLogs: BrowserConsoleEntry[] = [], pendingNets: BrowserNetEntry[] = [];
+    let raf = 0;
+    const flush = () => {
+      raf = 0;
+      const c = pendingLogs, n = pendingNets;
+      pendingLogs = []; pendingNets = [];
+      if (c.length) setLogs((l) => append(l, c));
+      if (n.length) setNets((l) => append(l, n));
+    };
+    const queue = <T,>(list: T[], add: T | T[]) => {
+      const next = list.concat(add);
+      if (!raf) raf = requestAnimationFrame(flush);
+      return next.length > MAX_ROWS ? next.slice(-MAX_ROWS) : next;
+    };
     const offs = [
       bridge.on('tabs', (p) => { setTabs(p.tabs); setActive(p.active); }),
-      bridge.on('console', (e) => setLogs((l) => (l.length >= MAX_ROWS ? [...l.slice(-MAX_ROWS + 1), e] : [...l, e]))),
-      bridge.on('net', (e) => setNets((l) => (l.length >= MAX_ROWS ? [...l.slice(-MAX_ROWS + 1), e] : [...l, e]))),
+      // One entry or an array of them (the main process sends batches).
+      bridge.on('console', (e) => { pendingLogs = queue(pendingLogs, e as BrowserConsoleEntry | BrowserConsoleEntry[]); }),
+      bridge.on('net', (e) => { pendingNets = queue(pendingNets, e as BrowserNetEntry | BrowserNetEntry[]); }),
       bridge.on('agent', (e) => setAgent((l) => [...l.slice(-199), e])),
       bridge.on('flags', setFlags),
       bridge.on('picked', (p) => {
@@ -70,23 +99,32 @@ export default function BrowserApp() {
         setToast(t('browser.picked'));
       }),
     ];
-    return () => offs.forEach((f) => f());
+    return () => { offs.forEach((f) => f()); cancelAnimationFrame(raf); };
   }, [bridge]);
 
   const tab = tabs.find((x) => x.id === active) ?? null;
   const device = tab?.device ?? null;
   useEffect(() => { if (!editing) setAddress(tab?.url && tab.url !== 'about:blank' ? tab.url : ''); }, [tab?.url, tab?.id, editing]);
 
-  // Tell the main process where the page goes; null hides it (no tab).
+  // Tell the main process where the page goes; null hides it (no tab). Only the tab id matters here: tab updates
+  // (title, progress) do not move the page. An unchanged frame for the same tab is not sent again.
+  const tabId = tab?.id ?? null;
+  const sentFrame = useRef<string | null>(null);
   const report = useCallback(() => {
     const el = hole.current;
-    if (!bridge || !el || !tab) { bridge?.frame(null); return; }
-    const r = el.getBoundingClientRect();
-    // Round the native page like the box it sits in: the card's bottom corners, or the whole phone screen.
-    const radius = parseFloat(getComputedStyle(el).borderBottomLeftRadius) || 0;
-    const corners = el.dataset.corners === 'all' ? 15 : 12;
-    bridge.frame({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), r: radius, corners });
-  }, [bridge, tab]);
+    let rect: Parameters<BrowserBridge['frame']>[0] = null;
+    if (el && tabId !== null) {
+      const r = el.getBoundingClientRect();
+      // Round the native page like the box it sits in: the card's bottom corners, or the whole phone screen.
+      const radius = parseFloat(getComputedStyle(el).borderBottomLeftRadius) || 0;
+      const corners = el.dataset.corners === 'all' ? 15 : 12;
+      rect = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), r: radius, corners };
+    }
+    const key = `${tabId}:${JSON.stringify(rect)}`;
+    if (!bridge || key === sentFrame.current) return;
+    sentFrame.current = key;
+    bridge.frame(rect);
+  }, [bridge, tabId]);
   useLayoutEffect(() => {
     report();
     const els = [hole.current, area.current].filter(Boolean) as HTMLElement[];
@@ -100,20 +138,20 @@ export default function BrowserApp() {
   const go = () => { const v = address.trim(); if (!v) return; if (tab) bridge?.navigate(v); else open(v); setEditing(false); (document.activeElement as HTMLElement)?.blur(); bridge?.nav('focus'); };
   const setDevice = (d: BrowserDevice | null) => bridge?.device(d);
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
-      const k = e.key.toLowerCase();
-      if (k === 'l') { e.preventDefault(); const el = document.getElementById('vb-address') as HTMLInputElement | null; el?.focus(); el?.select(); }
-      else if (k === 't') { e.preventDefault(); open(); }
-      else if (k === 'w' && tab) { e.preventDefault(); bridge?.close(tab.id); }
-      else if (k === 'r') { e.preventDefault(); bridge?.nav('reload'); }
-      else if (k === '[') { e.preventDefault(); bridge?.nav('back'); }
-      else if (k === ']') { e.preventDefault(); bridge?.nav('forward'); }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
+  const onKey = useEvent((e: KeyboardEvent) => {
+    if (!e.metaKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'l') { e.preventDefault(); const el = document.getElementById('vb-address') as HTMLInputElement | null; el?.focus(); el?.select(); }
+    else if (k === 't') { e.preventDefault(); open(); }
+    else if (k === 'w' && tab) { e.preventDefault(); bridge?.close(tab.id); }
+    else if (k === 'r') { e.preventDefault(); bridge?.nav('reload'); }
+    else if (k === '[') { e.preventDefault(); bridge?.nav('back'); }
+    else if (k === ']') { e.preventDefault(); bridge?.nav('forward'); }
   });
+  useEffect(() => {
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onKey]);
 
   // Resize the debug card by dragging the 16px gap next to it.
   const startDrag = (e: React.PointerEvent) => {
@@ -132,8 +170,8 @@ export default function BrowserApp() {
 
   // Mocks (an agent's write block, say) on the visible tab: shown by the address bar so a failing login has an obvious cause.
   const tabMocks = tab ? flags.mocks.filter((m) => m.all || m.tabs?.includes(tab.id) || (tab.opener !== undefined && m.tabs?.includes(tab.opener))) : [];
-  const errors = logs.filter((l) => l.level === 'error' && (!tab || l.tab === tab.id)).length;
-  const failed = nets.filter((n) => (n.error || (n.status ?? 0) >= 400) && (!tab || n.tab === tab.id)).length;
+  const errors = useMemo(() => logs.filter((l) => l.level === 'error' && (tabId === null || l.tab === tabId)).length, [logs, tabId]);
+  const failed = useMemo(() => nets.filter((n) => (n.error || (n.status ?? 0) >= 400) && (tabId === null || n.tab === tabId)).length, [nets, tabId]);
   const vertical = dock === 'top' || dock === 'bottom';
   const flexDir = dock === 'right' ? 'flex-row' : dock === 'left' ? 'flex-row-reverse' : dock === 'bottom' ? 'flex-col' : 'flex-col-reverse';
   const windowButtons = !!window.vibe?.isElectron && !fullScreen;
@@ -234,7 +272,8 @@ function TabCapsule({ tabs, active, onPick, onClose }: { tabs: BrowserTab[]; act
   const [marker, setMarker] = useState<{ left: number; width: number } | null>(null);
   useLayoutEffect(() => {
     const el = active !== null ? refs.current.get(active) : null;
-    setMarker(el ? { left: el.offsetLeft, width: el.offsetWidth } : null);
+    const next = el ? { left: el.offsetLeft, width: el.offsetWidth } : null;
+    setMarker((m) => (m && next && m.left === next.left && m.width === next.width) || (!m && !next) ? m : next);
   }, [active, tabs]);
   if (!tabs.length) return <div className="titlebar-nodrag glass-ctl rounded-full h-9 px-5 flex items-center text-[12px] text-zinc-400">{t('browser.noTabs')}</div>;
   return (
@@ -369,6 +408,7 @@ function ConsoleView({ rows, tab }: { rows: BrowserConsoleEntry[]; tab: number |
   const [q, setQ] = useState('');
   const shown = useMemo(() => rows.filter((r) => (tab === null || r.tab === tab) && (level === 'all' || (level === 'error' ? r.level === 'error' : r.level === 'error' || r.level === 'warn')) && (!q || r.text.toLowerCase().includes(q.toLowerCase()))), [rows, tab, level, q]);
   const stick = useStick(shown.length);
+  useSkipOffscreen(stick.ref, stick.ref, 'data-row');
   return (
     <div className="h-full flex flex-col">
       <Filters q={q} setQ={setQ}>
@@ -378,15 +418,20 @@ function ConsoleView({ rows, tab }: { rows: BrowserConsoleEntry[]; tab: number |
       </Filters>
       <div ref={stick.ref} onScroll={stick.onScroll} className="flex-1 min-h-0 overflow-auto font-mono text-[11px] leading-[1.45] px-3 py-1 select-text">
         {shown.length === 0 && <div className="text-zinc-500 py-3">{t('browser.noConsole')}</div>}
-        {shown.map((r) => (
-          <div key={r.seq} className={`py-1 border-b border-white/5 whitespace-pre-wrap break-words ${LEVEL_COLOR[r.level] ?? 'text-zinc-200'}`}>
-            <span className="text-zinc-500 mr-2">{time(r.t)}</span>{r.text}{r.source && <span className="text-zinc-500"> — {r.source}</span>}
-          </div>
-        ))}
+        {shown.map((r) => <ConsoleRow key={r.seq} r={r} />)}
       </div>
     </div>
   );
 }
+
+/** Memoized: entries never change, so a row renders (and formats its time) once, not on every new entry. */
+const ConsoleRow = memo(function ConsoleRow({ r }: { r: BrowserConsoleEntry }) {
+  return (
+    <div data-row="" className={`py-1 border-b border-white/5 whitespace-pre-wrap break-words ${LEVEL_COLOR[r.level] ?? 'text-zinc-200'}`}>
+      <span className="text-zinc-500 mr-2">{time(r.t)}</span>{r.text}{r.source && <span className="text-zinc-500"> — {r.source}</span>}
+    </div>
+  );
+});
 
 function NetworkView({ rows, tab, bridge, flags }: { rows: BrowserNetEntry[]; tab: number | null; bridge: BrowserBridge; flags: BrowserFlags }) {
   const [onlyFailed, setOnlyFailed] = useState(false);
@@ -396,12 +441,12 @@ function NetworkView({ rows, tab, bridge, flags }: { rows: BrowserNetEntry[]; ta
   const [detail, setDetail] = useState<BrowserNetBody | null | undefined>(undefined);
   const shown = useMemo(() => rows.filter((r) => (tab === null || r.tab === tab) && (!onlyFailed || r.error || (r.status ?? 0) >= 400) && (!onlyApi || r.via === 'fetch' || r.via === 'xhr') && (!q || r.url.toLowerCase().includes(q.toLowerCase()))), [rows, tab, onlyFailed, onlyApi, q]);
   const stick = useStick(shown.length);
-  const toggle = (r: BrowserNetEntry) => {
+  useSkipOffscreen(stick.ref, stick.ref, 'data-row');
+  const toggle = useEvent((r: BrowserNetEntry) => {
     if (open === r.seq) { setOpen(null); return; }
     setOpen(r.seq); setDetail(undefined);
     if (r.rid) void bridge.netDetail(r.seq).then(setDetail); else setDetail(null);
-  };
-  const pre = (v: unknown) => (typeof v === 'string' ? (() => { try { return JSON.stringify(JSON.parse(v), null, 2); } catch { return v; } })() : JSON.stringify(v, null, 2));
+  });
   return (
     <div className="h-full flex flex-col">
       <Filters q={q} setQ={setQ}>
@@ -421,38 +466,43 @@ function NetworkView({ rows, tab, bridge, flags }: { rows: BrowserNetEntry[]; ta
       )}
       <div ref={stick.ref} onScroll={stick.onScroll} className="flex-1 min-h-0 overflow-auto font-mono text-[11px] px-3 py-1 select-text">
         {shown.length === 0 && <div className="text-zinc-500 py-3">{t('browser.noNetwork')}</div>}
-        {shown.map((r) => {
-          const bad = !!r.error || (r.status ?? 0) >= 400;
-          return (
-            <div key={r.seq} className={`py-1 border-b border-white/5 ${bad ? 'text-red-300' : 'text-zinc-200'}`}>
-              <div onClick={() => toggle(r)} className="flex gap-2 min-w-0 cursor-default">
-                <span className="w-10 shrink-0 text-zinc-400">{r.method}</span>
-                <span className="w-9 shrink-0">{r.error ? 'ERR' : r.status ?? '—'}</span>
-                <span className="w-16 shrink-0 text-zinc-500 truncate">{r.mocked ? 'mock' : r.via}</span>
-                <span className="flex-1 min-w-0 truncate">{host(r.url)}</span>
-                <span className="shrink-0 text-zinc-500">{r.ms !== undefined ? `${r.ms}ms` : ''}</span>
-              </div>
-              {open === r.seq && (
-                <div className="mt-1 pl-1 text-zinc-400 whitespace-pre-wrap break-all space-y-1.5">
-                  <div>{r.url}{r.type ? `\n${r.type}` : ''}{r.size ? `\n${r.size} bytes` : ''}{r.error ? `\n${r.error}` : ''}{`\n${time(r.t)}`}</div>
-                  {detail === undefined && r.rid && <div className="text-zinc-500">…</div>}
-                  {detail && (['reqHeaders', 'reqBody', 'resHeaders', 'resBody'] as const).map((k) => detail[k] && (typeof detail[k] !== 'object' || Object.keys(detail[k] as object).length) ? (
-                    <div key={k}><div className="text-zinc-500">{t(`browser.net.${k}`)}</div><pre className="text-zinc-200 max-h-64 overflow-auto bg-black/20 rounded-lg p-2">{pre(detail[k])}</pre></div>
-                  ) : null)}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {shown.map((r) => <NetRow key={r.seq} r={r} open={open === r.seq} detail={open === r.seq ? detail : undefined} onToggle={toggle} lang={getLang()} />)}
       </div>
     </div>
   );
 }
 
+const pre = (v: unknown) => (typeof v === 'string' ? (() => { try { return JSON.stringify(JSON.parse(v), null, 2); } catch { return v; } })() : JSON.stringify(v, null, 2));
+
+/** Memoized like ConsoleRow: only the opened row re-renders when its details arrive. */
+const NetRow = memo(function NetRow({ r, open, detail, onToggle }: { r: BrowserNetEntry; open: boolean; detail: BrowserNetBody | null | undefined; onToggle: (r: BrowserNetEntry) => void; /** Re-renders the labels on a language change. */ lang: string }) {
+  const bad = !!r.error || (r.status ?? 0) >= 400;
+  return (
+    <div data-row="" className={`py-1 border-b border-white/5 ${bad ? 'text-red-300' : 'text-zinc-200'}`}>
+      <div onClick={() => onToggle(r)} className="flex gap-2 min-w-0 cursor-default">
+        <span className="w-10 shrink-0 text-zinc-400">{r.method}</span>
+        <span className="w-9 shrink-0">{r.error ? 'ERR' : r.status ?? '—'}</span>
+        <span className="w-16 shrink-0 text-zinc-500 truncate">{r.mocked ? 'mock' : r.via}</span>
+        <span className="flex-1 min-w-0 truncate">{host(r.url)}</span>
+        <span className="shrink-0 text-zinc-500">{r.ms !== undefined ? `${r.ms}ms` : ''}</span>
+      </div>
+      {open && (
+        <div className="mt-1 pl-1 text-zinc-400 whitespace-pre-wrap break-all space-y-1.5">
+          <div>{r.url}{r.type ? `\n${r.type}` : ''}{r.size ? `\n${r.size} bytes` : ''}{r.error ? `\n${r.error}` : ''}{`\n${time(r.t)}`}</div>
+          {detail === undefined && r.rid && <div className="text-zinc-500">…</div>}
+          {detail && (['reqHeaders', 'reqBody', 'resHeaders', 'resBody'] as const).map((k) => detail[k] && (typeof detail[k] !== 'object' || Object.keys(detail[k] as object).length) ? (
+            <div key={k}><div className="text-zinc-500">{t(`browser.net.${k}`)}</div><pre className="text-zinc-200 max-h-64 overflow-auto bg-black/20 rounded-lg p-2">{pre(detail[k])}</pre></div>
+          ) : null)}
+        </div>
+      )}
+    </div>
+  );
+});
+
 function AgentView({ rows, bridge, onSaved }: { rows: BrowserAgentEntry[]; bridge: BrowserBridge; onSaved: (path: string) => void }) {
   const [who, setWho] = useState('');
   const sessions = useMemo(() => [...new Map(rows.filter((r) => r.session).map((r) => [r.session!.key, r.session!])).values()], [rows]);
-  const shown = rows.filter((r) => !who || r.session?.key === who);
+  const shown = useMemo(() => rows.filter((r) => !who || r.session?.key === who), [rows, who]);
   const stick = useStick(shown.length);
   const exp = (fmt: 'playwright' | 'html') => void bridge.export(fmt).then((p) => { if (p) onSaved(p); });
   return (
@@ -468,7 +518,7 @@ function AgentView({ rows, bridge, onSaved }: { rows: BrowserAgentEntry[]; bridg
       </div>
       <div ref={stick.ref} onScroll={stick.onScroll} className="flex-1 min-h-0 overflow-auto px-3 py-2 text-[12px] select-text">
         {shown.length === 0 && <div className="text-zinc-500 py-3 leading-relaxed">{t('browser.noAgent')}</div>}
-        {shown.map((r) => (
+        {shown.map((r, i) => (
           <div key={r.seq} className="py-2 border-b border-white/5">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.ok ? r.session?.color ?? '#4299FF' : '#f87171' }} />
@@ -477,7 +527,8 @@ function AgentView({ rows, bridge, onSaved }: { rows: BrowserAgentEntry[]; bridg
             </div>
             {r.summary !== '{}' && <div className="mt-1 font-mono text-[11px] text-zinc-400 break-all">{r.summary}</div>}
             {r.result && <div className={`mt-1 font-mono text-[11px] whitespace-pre-wrap break-words max-h-40 overflow-auto ${r.ok ? 'text-zinc-300' : 'text-red-300'}`}>{r.result}</div>}
-            {r.image && <img src={r.image} alt="" className="mt-2 rounded-lg border border-white/10 max-w-full" />}
+            {/* Only the latest screenshots are decoded and kept in the page. */}
+            {r.image && i >= shown.length - AGENT_IMAGES && <img src={r.image} alt="" className="mt-2 rounded-lg border border-white/10 max-w-full" />}
           </div>
         ))}
       </div>

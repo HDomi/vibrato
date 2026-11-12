@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { t, useLang } from '../../lib/i18n';
 import { hostApi, type HostStatus } from '../../lib/remote';
 import { CopyButton } from '../MarkdownView';
+import { ViewActiveContext } from '../../lib/viewActive';
+import { pollWhileActive } from '../../lib/poll';
 
 /**
  * "Allow remote access to this Mac": turn the remote host (server/remote/host.ts) on or off, pick its port,
@@ -18,11 +20,16 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
   const [pw2, setPw2] = useState('');
 
   const load = () => hostApi.status().then((s) => { setStatus(s); setPort((p) => p || String(s.port)); }).catch((e) => setError((e as Error).message));
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Refresh only while the Remote view is on screen and the window is in front; coming back refreshes at once.
+  const active = useContext(ViewActiveContext);
+  const first = useRef(true);
   useEffect(() => {
-    void load();
-    const id = window.setInterval(() => void hostApi.status().then(setStatus).catch(() => {}), 3000);
-    return () => window.clearInterval(id);
-  }, []);
+    if (!active) return;
+    const refresh = () => void hostApi.status().then(setStatus).catch(() => {});
+    if (first.current) first.current = false; else refresh();
+    return pollWhileActive(refresh, 3000);
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = async (fn: () => Promise<HostStatus & { code?: string | null }>) => {
     setBusy(true); setError('');

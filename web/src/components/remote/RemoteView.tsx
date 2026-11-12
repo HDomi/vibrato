@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { t, useLang } from '../../lib/i18n';
 import type { ChatItem } from '../../lib/chatStore';
 import type { AgentId, PermissionModeId } from '../../lib/agent';
 import {
-  closeSession, remoteBridge, remoteOnly, startSession, useRemoteChat, useRemoteDraft, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
+  closeSession, remoteBridge, remoteOnly, startSession, unwatchSession, useRemoteChat, useRemoteDraft, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
   type RemoteHistoryRow, type RemoteHostView, type RemoteModel, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
@@ -11,6 +11,8 @@ import AgentIcon from '../AgentIcon';
 import PlanView from '../PlanView';
 import Icon from '../Icon';
 import HostSettings from './HostSettings';
+import { ViewActiveContext } from '../../lib/viewActive';
+import { useSkipOffscreen } from '../../lib/skipOffscreen';
 
 /*
  * Remote tab: work on another Vibrato's sessions (server/remote/host.ts) without screen sharing. Left: the
@@ -461,18 +463,28 @@ const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Er
 function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSummary | null; onClosed: () => void }) {
   useLang();
   const b = remoteBridge()!;
-  const chat = useRemoteChat(id);
+  // Hidden behind another tab: stop following the stream (the latest chat shows on return).
+  const active = useContext(ViewActiveContext);
+  const chat = useRemoteChat(id, active);
   const [text, setText] = useRemoteDraft(id);
   const [error, setError] = useState('');
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   useEffect(() => {
-    if (!summary && !chat) return;
-    void watchSession(summary ?? { id, agent: chat!.agent, cwd: chat!.cwd }).catch((e) => setError(cleanErr(e)));
+    if (summary || chat) void watchSession(summary ?? { id, agent: chat!.agent, cwd: chat!.cwd }).catch((e) => setError(cleanErr(e)));
+    // Leaving the session (another one picked, or the panel closed): the host stops streaming it and its chat is dropped.
+    return () => unwatchSession(id);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const el = scroller.current; if (el && stick.current) el.scrollTop = el.scrollHeight; }, [chat?.items]);
+  // Follow new content: at most one scroll (and the layout it reads) per frame, however many updates land in it.
+  const follow = useRef(0);
+  useEffect(() => {
+    if (!scroller.current || !stick.current || follow.current) return;
+    follow.current = requestAnimationFrame(() => { follow.current = 0; const el = scroller.current; if (el && stick.current) el.scrollTop = el.scrollHeight; });
+  }, [chat?.items]);
+  useEffect(() => () => cancelAnimationFrame(follow.current), []);
 
-  const items = (chat?.items ?? []).filter((it) => !((it.kind === 'assistant' || it.kind === 'tool') && it.parent));
+  const items = (chat?.items ?? []).filter((it) => !((it.kind === 'assistant' || it.kind === 'tool') && it.parent) && shown(it));
   const running = chat ? chat.status === 'running' || chat.status === 'compacting' : !!summary?.running;
   const gone = !summary && chat?.status === 'closed';
   const mode = chat?.permissionMode ?? (summary?.permissionMode as PermissionModeId | undefined) ?? 'default';
@@ -486,6 +498,8 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   const [view, setViewState] = useState<'plan' | 'chat'>(() => { try { return localStorage.getItem(VIEW_KEY) === 'chat' ? 'chat' : 'plan'; } catch { return 'plan'; } });
   const setView = (v: 'plan' | 'chat') => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ } };
   useEffect(() => { if (view === 'chat') { stick.current = true; const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; } }, [view]);
+  // Far-off items skip style and layout; re-armed when the list (re)appears.
+  useSkipOffscreen(scroller, content, 'data-remote-item', `${view}:${items.length > 0}`);
   const activity = running && chat ? activityOf(chat.items, chat.status) : null;
 
   const act = (p: Promise<unknown>) => void p.catch((e) => setError(cleanErr(e)));
@@ -532,12 +546,17 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
           ) : <div className="text-center text-[12px] text-zinc-500 pt-8">{t('common.loading')}</div>}
         </div>
       )}
-      <div ref={scroller} className={`flex-1 min-h-0 overflow-auto px-5 py-4 space-y-3 ${view === 'plan' ? 'hidden' : ''}`}
-        onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
-        {items.length === 0 && <div className="text-center text-[12px] text-zinc-500 pt-8">{chat ? t('remote.emptyChat') : t('common.loading')}</div>}
-        {items.map((it) => <Item key={it.id} it={it} cwd={chat?.cwd} sessionId={id} onError={setError} />)}
-        {running && <div className="text-[12px] text-zinc-500 animate-pulse">{t('remote.working')}</div>}
-      </div>
+      {view === 'chat' && (
+        <div ref={scroller} className="flex-1 min-h-0 overflow-auto px-5 py-4 space-y-3"
+          onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
+          {items.length === 0 ? <div className="text-center text-[12px] text-zinc-500 pt-8">{chat ? t('remote.emptyChat') : t('common.loading')}</div> : (
+            <div ref={content} className="space-y-3">
+              {items.map((it) => <div key={it.id} data-remote-item=""><Item it={it} cwd={chat?.cwd} sessionId={id} onError={setError} /></div>)}
+            </div>
+          )}
+          {running && <div className="text-[12px] text-zinc-500 animate-pulse">{t('remote.working')}</div>}
+        </div>
+      )}
       {error && <div className="px-4 py-1.5 text-[12px] text-red-300 border-t border-red-500/20 bg-red-500/5">{error}</div>}
       <div className="shrink-0 border-t border-line p-3 flex gap-2 items-end">
         <textarea className="flex-1 min-h-[40px] max-h-48 rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-[13px] text-zinc-100 outline-none focus:border-white/30 resize-none"
@@ -550,7 +569,16 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   );
 }
 
-function Item({ it, cwd, sessionId, onError }: { it: ChatItem; cwd?: string; sessionId: string; onError: (m: string) => void }) {
+/** Items that render nothing are left out of the list (each one gets a wrapper, which would add a gap). */
+function shown(it: ChatItem): boolean {
+  if (it.kind === 'user') return !(it.compact || it.injected);
+  if (it.kind === 'assistant') return !!it.text;
+  return true;
+}
+
+/** Memoized: items are replaced, not mutated, so only the ones that changed re-render while a session streams. */
+const Item = memo(function Item({ it, cwd, sessionId, onError }: { it: ChatItem; cwd?: string; sessionId: string; onError: (m: string) => void }) {
+  useLang();
   const b = remoteBridge()!;
   const act = (p: Promise<unknown>) => void p.catch((e) => onError(cleanErr(e)));
   switch (it.kind) {
@@ -582,7 +610,7 @@ function Item({ it, cwd, sessionId, onError }: { it: ChatItem; cwd?: string; ses
     case 'verify':
       return <div className={`text-[12px] ${it.status === 'failed' ? 'text-red-300' : it.status === 'passed' ? 'text-emerald-300' : 'text-zinc-400'}`}>{t(`remote.verify.${it.status}`, { cmd: it.command })}</div>;
   }
-}
+});
 
 /** Model picker: "" is the CLI's default; a model the session reports but the list lacks still shows as itself. */
 function ModelSelect({ models, value: raw, onChange, className, disabled, title }: { models: RemoteModel[]; value: string; onChange: (v: string) => void; className: string; disabled?: boolean; title?: string }) {

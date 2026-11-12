@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { decodeJwt, jwtTimeStatus, signHsJwt, TIME_CLAIMS, verifyJwt, type JwtParts } from '../../lib/toolbox/jwt';
 import { relativeTime } from '../../lib/toolbox/time';
 import { getLang, t } from '../../lib/i18n';
+import { useClock } from '../../lib/clock';
+import { ViewActiveContext } from '../../lib/viewActive';
 import { Area, CopyButton, Section, btn, btnPrimary, errText, mono, usePersisted } from './ui';
 
 export default function JwtTool() {
@@ -94,8 +96,8 @@ function ColorToken({ parts }: { parts: JwtParts }) {
 }
 
 function Claims({ payload }: { payload: Record<string, unknown> }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  // Ticks only while the Tools view is on screen (it stays mounted behind other views).
+  const now = useClock(useContext(ViewActiveContext));
   const times = Object.entries(payload).filter(([k, v]) => TIME_CLAIMS.has(k) && typeof v === 'number') as [string, number][];
   const status = jwtTimeStatus(payload, now);
   const locale = getLang() === 'ko' ? 'ko' : 'en';

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useDeferredValue, useMemo } from 'react';
 import type { KeywordCase, SqlLanguage } from 'sql-formatter';
 import { formatSql, minifySql, SQL_DIALECTS } from '../../lib/toolbox/sql';
 import { t } from '../../lib/i18n';
@@ -12,11 +12,13 @@ export default function SqlTool() {
   const [kc, setKc] = usePersisted<KeywordCase>('sql.case', 'upper');
   const [indent, setIndent] = usePersisted('sql.indent', 2);
   const [mode, setMode] = usePersisted<'format' | 'minify'>('sql.mode', 'format');
+  // Large inputs: typing stays responsive, formatting and highlighting follow a moment later.
+  const deferred = useDeferredValue(text);
   const res = useMemo(() => {
-    if (!text.trim()) return { out: '', err: null as string | null };
-    try { return { out: mode === 'minify' ? minifySql(text) : formatSql(text, { dialect, keywordCase: kc, indent, linesBetween: 1 }), err: null }; }
+    if (!deferred.trim()) return { out: '', err: null as string | null };
+    try { return { out: mode === 'minify' ? minifySql(deferred) : formatSql(deferred, { dialect, keywordCase: kc, indent, linesBetween: 1 }), err: null }; }
     catch (e) { return { out: '', err: errText(e) }; }
-  }, [text, dialect, kc, indent, mode]);
+  }, [deferred, dialect, kc, indent, mode]);
   return (
     <div className="h-full flex flex-col gap-3 min-h-0">
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">

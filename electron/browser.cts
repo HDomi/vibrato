@@ -92,6 +92,10 @@ function fromPage(err: unknown): ToolError {
 // Fixed id: the persistent WebKit store (cookies, logins) survives restarts and updates.
 const STORE_ID = '3B7F6A52-0E4D-4C1A-9C2B-56A1D0E7F9B3';
 const LOG_MAX = 3000;
+/** Agent log entries that keep their screenshot thumbnail; older ones drop it (each is a base64 PNG). */
+const AGENT_IMAGES_MAX = 50;
+/** Page console / network entries are sent to the window at most once per this many ms, as one batch. */
+const LOG_BATCH_MS = 50;
 const BODIES_MAX = 400;
 const DEFAULT_SESSION: SessionInfo = { key: 'agent', label: 'Agent', color: '#4299FF' };
 const DATA_DIR = path.join(os.homedir(), '.vibrato', 'browser');
@@ -147,6 +151,20 @@ let picking = false;
 let refTimer: NodeJS.Timeout | null = null;
 
 function send(channel: string, payload: unknown) { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); }
+/** Busy pages log hundreds of lines a second: queue them per channel and send each queue as one array. */
+const outbox = new Map<string, unknown[]>();
+let outboxTimer: NodeJS.Timeout | null = null;
+function sendBatched(channel: string, payload: unknown) {
+  if (!win || win.isDestroyed()) return;
+  const list = outbox.get(channel);
+  if (list) { list.push(payload); if (list.length > LOG_MAX) list.splice(0, list.length - LOG_MAX); } else outbox.set(channel, [payload]);
+  outboxTimer ??= setTimeout(flushOutbox, LOG_BATCH_MS);
+}
+function flushOutbox() {
+  outboxTimer = null;
+  for (const [channel, list] of outbox) send(channel, list);
+  outbox.clear();
+}
 const pushRing = <T,>(arr: T[], v: T) => { arr.push(v); if (arr.length > LOG_MAX) arr.splice(0, arr.length - LOG_MAX); };
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const flags = () => ({ paused, picking, refs: showRefs, mocks });
@@ -166,11 +184,11 @@ const cropRect = (r: Rect, z: number, scale: number, pad: number, size: { width:
 
 function addConsole(tab: number, level: string, text: string, source?: string) {
   const e: ConsoleEntry = { seq: ++seq, t: Date.now(), tab, level, text, ...(source ? { source } : {}) };
-  pushRing(consoleLog, e); send('browser:console', e);
+  pushRing(consoleLog, e); sendBatched('browser:console', e);
 }
 function addNet(tab: number, n: Omit<NetEntry, 'seq' | 't' | 'tab'>) {
   const e: NetEntry = { seq: ++seq, t: Date.now(), tab, ...n };
-  pushRing(netLog, e); send('browser:net', e);
+  pushRing(netLog, e); sendBatched('browser:net', e);
 }
 
 function onNativeEvent(json: string) {
@@ -312,6 +330,7 @@ function ensureWindow(focus = true): Promise<void> {
     if (paused) { paused = false; for (const r of pauseWaiters) r(); pauseWaiters.clear(); }
     picking = false; showRefs = false; mocks = []; // mocks belong to the tabs they were set on
     if (refTimer) { clearInterval(refTimer); refTimer = null; }
+    outbox.clear(); if (outboxTimer) { clearTimeout(outboxTimer); outboxTimer = null; } // the next window reads the logs from browser:info
     if (win === w) { win = null; windowReady = null; }
   });
   windowReady = new Promise((resolve) => w.webContents.once('did-finish-load', () => {
@@ -546,7 +565,7 @@ export function initBrowser(d: Deps) {
   });
   ipcMain.on('browser:clear', (e, kind: unknown) => {
     if (!fromBrowserWindow(e)) return;
-    if (kind === 'console') consoleLog.length = 0; else if (kind === 'net') { netLog.length = 0; bodies.clear(); } else if (kind === 'agent') agentLog.length = 0;
+    if (kind === 'console') { consoleLog.length = 0; outbox.delete('browser:console'); } else if (kind === 'net') { netLog.length = 0; bodies.clear(); outbox.delete('browser:net'); } else if (kind === 'agent') agentLog.length = 0;
   });
   connectHost();
 }
@@ -1233,6 +1252,9 @@ async function runStep(name: string, args: Record<string, unknown>, ctx: Ctx) {
 function log(e: Omit<AgentEntry, 'seq' | 't'>) {
   const entry: AgentEntry = { seq: ++seq, t: Date.now(), ...e };
   pushRing(agentLog, entry); send('browser:agent', entry);
+  // Keep thumbnails for the latest steps only: the log holds thousands of entries, and the window gets them on open.
+  const old = agentLog[agentLog.length - 1 - AGENT_IMAGES_MAX];
+  if (old?.image) delete old.image;
 }
 
 export async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx = {}): Promise<McpContent[]> {
