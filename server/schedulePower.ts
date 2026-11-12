@@ -16,6 +16,8 @@ import path from 'node:path';
 export const HELPER_PATH = '/Library/PrivilegedHelperTools/com.hdomi.vibrato.wake';
 export const SUDOERS_PATH = '/etc/sudoers.d/vibrato';
 const OWNER_BASE = 'Vibrato';
+/** An unchanged wake target is checked against `pmset -g sched` at most this often (someone may have cleared it). */
+const RESYNC_MS = 5 * 60 * 1000;
 
 /** The helper installed as root. Arguments: set|cancel <epoch seconds> <tag>. */
 export const HELPER_SCRIPT = `#!/bin/sh
@@ -63,6 +65,8 @@ export class SchedulePower {
   private syncing: Promise<void> = Promise.resolve();
   /** pmset was read at least once; with no wake wanted and none of ours pending, later syncs skip it. */
   private checked = false;
+  /** The wake time (epoch ms, whole seconds) the last successful sync left in place, and when. */
+  private synced: { want: number; at: number } | null = null;
 
   /** `tag` keeps a test copy of the app (another port) from cancelling the real app's wake events. */
   constructor(private tag: string, private enabled = process.platform === 'darwin') {}
@@ -104,13 +108,16 @@ export class SchedulePower {
   private async doSync(target: number | null) {
     if (!this.enabled) return;
     if (target === null && this.checked && this.wakes.length === 0) { this.error = null; return; }
+    const want = target === null ? null : Math.floor(target / 1000) * 1000;
+    // Same wake as last time, recently confirmed: the scheduler asks every tick, pmset need not be read every tick.
+    if (want !== null && this.synced?.want === want && Date.now() - this.synced.at < RESYNC_MS && this.error === null) return;
+    this.synced = null;
     const sched = await exec('/usr/bin/pmset', ['-g', 'sched'], 5000);
     if (!sched.ok) return;
     this.checked = true;
     const own = parseOwnWakes(sched.stdout, this.tag);
     this.wakes = own;
-    const want = target === null ? null : Math.floor(target / 1000) * 1000;
-    if (want === null ? own.length === 0 : own.length === 1 && own[0] === want) { this.error = null; return; }
+    if (want === null ? own.length === 0 : own.length === 1 && own[0] === want) { this.error = null; if (want !== null) this.synced = { want, at: Date.now() }; return; }
     if (!(await this.helperInstalled())) {
       this.error = want === null ? null : 'helper-missing';
       return;
@@ -128,6 +135,7 @@ export class SchedulePower {
     }
     this.error = null;
     this.wakes = want === null ? [] : [want];
+    if (want !== null) this.synced = { want, at: Date.now() };
   }
 
   /** Install (or remove) the helper and sudoers rule behind one admin password prompt. */

@@ -91,3 +91,19 @@ test('turn undo goes through git: symlinks are replaced, not written through; mo
     assert.equal(repoRelative('/tmp/r', '/etc/passwd'), null);
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
+
+test('snapshots of one repository run one at a time, and an aborted one is skipped', async () => {
+  const { dir } = repo();
+  try {
+    const abort = new AbortController();
+    const first = snapshot(dir);
+    const second = snapshot(dir, undefined, abort.signal);
+    const third = snapshot(dir);
+    abort.abort();
+    const [a, b, c] = await Promise.all([first, second, third]);
+    assert.ok(a && c && a.tree === c.tree, 'the others still run');
+    assert.equal(b, null, 'aborted while waiting its turn');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

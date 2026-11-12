@@ -44,6 +44,9 @@ const COMPACT_PREFIX = 'This session is being continued from a previous conversa
 
 const cache = new Map<string, Transcript>();
 let refreshing: Promise<void> | null = null;
+/** When the last refresh finished; searches typed in quick succession reuse it instead of listing every file again. */
+let refreshedAt = 0;
+const FRESH_MS = 5000;
 
 /** Plain text of a message's content (string or blocks); tool calls and results are nobody's words. */
 function textOf(content: unknown): string {
@@ -127,6 +130,7 @@ function refresh(): Promise<void> {
       t.mtime = st.mtimeMs;
     });
     for (let i = 0; i < work.length; i += 16) await Promise.all(work.slice(i, i + 16).map((w) => w()));
+    refreshedAt = Date.now();
   })().finally(() => { refreshing = null; });
   return refreshing;
 }
@@ -145,10 +149,11 @@ function snippetAround(text: string, query: string): string {
   return `${from > 0 ? '…' : ''}${flat.slice(from, to)}${to < flat.length ? '…' : ''}`;
 }
 
-export async function searchHistory(query: string, limit = 30): Promise<SearchHit[]> {
+/** `freshMs`: a refresh finished this recently is good enough (0 always looks at the files again). */
+export async function searchHistory(query: string, limit = 30, freshMs = FRESH_MS): Promise<SearchHit[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  await refresh();
+  if (refreshing || Date.now() - refreshedAt >= freshMs) await refresh();
   const lower = q.toLowerCase();
   const hits: SearchHit[] = [];
   for (const t of cache.values()) {

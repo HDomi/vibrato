@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,6 +32,18 @@ let retryTimer: NodeJS.Timeout | null = null;
 /** Sessions the page attached to; a reconnect attaches them again after the last event seq forwarded. */
 const watched = new Set<string>();
 const lastSeq = new Map<string, number>();
+/**
+ * Pages using the remote tab: they read the state when they wire up (web/src/lib/remote.ts) and make the calls.
+ * Session events go only to them, not to every window (lock covers, IDE, browser).
+ */
+const eventPages = new Set<WebContents>();
+
+function usesRemote(e: IpcMainInvokeEvent | IpcMainEvent) {
+  const wc = e.sender;
+  if (eventPages.has(wc)) return;
+  eventPages.add(wc);
+  wc.once('destroyed', () => eventPages.delete(wc));
+}
 
 function readHosts(): SavedHost[] {
   try {
@@ -92,7 +104,7 @@ async function open(host: SavedHost, code: string, password: string | null, reco
     // One IPC message per batch the host sent: the page applies it and renders once.
     c.on('events', (list: { sessionId?: string; seq?: number }[]) => {
       for (const msg of list) if (msg?.sessionId && typeof msg.seq === 'number' && msg.seq > (lastSeq.get(msg.sessionId) ?? 0)) lastSeq.set(msg.sessionId, msg.seq);
-      broadcast('remote:events', list);
+      for (const wc of eventPages) if (!wc.isDestroyed()) wc.send('remote:events', list);
     });
     c.on('sessions', () => broadcast('remote:sessions'));
     c.on('close', (err: RemoteClientError | null) => {
@@ -156,7 +168,7 @@ export function initRemote(opts: { fromApp: (e: IpcMainInvokeEvent | IpcMainEven
   hostsFile = path.join(app.getPath('userData'), 'remote-hosts.json');
 
   ipcMain.handle('remote:hosts', (e) => (fromApp(e) ? readHosts().map(view) : []));
-  ipcMain.handle('remote:state', (e) => (fromApp(e) ? state : null));
+  ipcMain.handle('remote:state', (e) => { if (!fromApp(e)) return null; usesRemote(e); return state; });
   ipcMain.handle('remote:save-host', (e, raw: { id?: unknown; name?: unknown; address?: unknown; port?: unknown }) => {
     if (!fromApp(e) || !raw || typeof raw !== 'object') return null;
     const address = cleanAddress(raw.address);
@@ -192,6 +204,7 @@ export function initRemote(opts: { fromApp: (e: IpcMainInvokeEvent | IpcMainEven
   });
   ipcMain.handle('remote:connect', async (e, raw: { hostId?: unknown; code?: unknown; password?: unknown; remember?: unknown }) => {
     if (!fromApp(e) || !raw || typeof raw.hostId !== 'string') return state;
+    usesRemote(e);
     const host = readHosts().find((h) => h.id === raw.hostId);
     if (!host) throw new Error('Unknown host.');
     const typed = typeof raw.code === 'string' && raw.code.trim() ? raw.code.trim().slice(0, 200) : null;
@@ -208,6 +221,7 @@ export function initRemote(opts: { fromApp: (e: IpcMainInvokeEvent | IpcMainEven
   ipcMain.handle('remote:disconnect', (e) => { if (fromApp(e)) disconnect(); });
   ipcMain.handle('remote:call', async (e, method: unknown, params: unknown) => {
     if (!fromApp(e) || typeof method !== 'string' || !(REMOTE_METHODS as readonly string[]).includes(method)) throw new Error('Bad call.');
+    usesRemote(e);
     if (!conn?.open) throw new Error('Not connected.');
     const p = params && typeof params === 'object' ? params as Record<string, unknown> : {};
     if (method === 'attach' && typeof p.sessionId === 'string') watched.add(p.sessionId);

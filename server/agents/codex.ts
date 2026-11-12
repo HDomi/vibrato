@@ -122,7 +122,8 @@ export class CodexSession implements AgentSession {
   private mode: PermissionModeId;
   private model: string | null;
   private pending = new Map<string, PendingReq>();
-  private items = new Map<string, ThreadItem>();
+  /** Changes of file edits in flight, for their approval cards; dropped when the item completes or the turn ends. */
+  private fileChanges = new Map<string, unknown>();
   private lastAgentText = '';
   private closed = false;
   private ready: Promise<void> = Promise.resolve();
@@ -226,14 +227,14 @@ export class CodexSession implements AgentSession {
   }
 
   private itemStarted(item: ThreadItem, replay = false) {
-    this.items.set(item.id, item);
+    if (item.type === 'fileChange' && !replay) this.fileChanges.set(item.id, item.changes);
     const tool = this.toolOf(item);
     if (tool) { this.emit({ kind: 'tool.start', toolUseId: item.id, name: tool.name, input: tool.input, parent: null }); return; }
     if (item.type === 'contextCompaction' && !replay) this.emit({ kind: 'status', status: 'compacting' });
   }
 
   private itemCompleted(item: ThreadItem) {
-    this.items.set(item.id, item);
+    this.fileChanges.delete(item.id);
     switch (item.type) {
       case 'agentMessage': {
         const text = String(item.text ?? '');
@@ -317,6 +318,7 @@ export class CodexSession implements AgentSession {
         const status = String(turn.status);
         const err = turn.error as Json | null;
         this.turnId = null;
+        this.fileChanges.clear();
         this.emit({ kind: 'result', ok: status === 'completed', text: status === 'completed' ? this.lastAgentText : (err?.message as string) ?? status, costUsd: 0, numTurns: 1, durationMs: Number(turn.durationMs ?? 0), agentSessionId: this.threadId ?? undefined });
         this.emit({ kind: 'status', status: 'idle' });
         return;
@@ -344,9 +346,9 @@ export class CodexSession implements AgentSession {
         this.emit({ kind: 'approval.request', requestId, toolUseId: String(p.itemId), toolName: 'Bash', input: { command: p.command, cwd: p.cwd, reason: p.reason, kind: p.kind }, canAlwaysAllow: true });
         return;
       case 'item/fileChange/requestApproval': {
-        const item = this.items.get(String(p.itemId));
+        const changes = this.fileChanges.get(String(p.itemId));
         this.pending.set(requestId, { rpcId: id, kind: 'fileChange' });
-        this.emit({ kind: 'approval.request', requestId, toolUseId: String(p.itemId), toolName: 'FileChange', input: { changes: item?.changes ?? [], reason: p.reason, grantRoot: p.grantRoot }, canAlwaysAllow: true });
+        this.emit({ kind: 'approval.request', requestId, toolUseId: String(p.itemId), toolName: 'FileChange', input: { changes: changes ?? [], reason: p.reason, grantRoot: p.grantRoot }, canAlwaysAllow: true });
         return;
       }
       case 'item/permissions/requestApproval':

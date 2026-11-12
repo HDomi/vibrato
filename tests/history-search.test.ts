@@ -40,7 +40,7 @@ test('history search matches what the user or the agent said, across both CLIs, 
     assert.deepEqual(await searchHistory('a'), [], 'one character is too short to search');
 
     await appendFile(claudeFile, line({ type: 'assistant', cwd: '/p/app', message: { role: 'assistant', content: [{ type: 'text', text: 'Added a wombat fallback.' }] } }));
-    assert.deepEqual((await searchHistory('wombat')).map((h) => h.sessionId), ['abc']);
+    assert.deepEqual((await searchHistory('wombat', 30, 0)).map((h) => h.sessionId), ['abc']);
   } finally {
     process.env.CLAUDE_CONFIG_DIR = prev.claude; process.env.CODEX_HOME = prev.codex;
     if (prev.claude === undefined) delete process.env.CLAUDE_CONFIG_DIR;

@@ -9,10 +9,10 @@ import tls from 'node:tls';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibrato-remote-'));
 process.env.VIBRATO_CONFIG_DIR = dir;
 
-const { AuthLimiter, addressKey, generateCode, normalizeCode, encodeFrame, FrameReader, agreeCaps, slimForRemote, queueMessage, REMOTE_TEXT_MAX } = await import('../server/remote/protocol.cjs');
+const { AuthLimiter, addressKey, generateCode, normalizeCode, encodeFrame, encodeFrameAsync, FrameReader, agreeCaps, slimForRemote, queueMessage, REMOTE_TEXT_MAX } = await import('../server/remote/protocol.cjs');
 const { RemoteConnection, RemoteClientError } = await import('../server/remote/client.cjs');
 const { RemoteHost } = await import('../server/remote/host.js');
-const { SessionRegistry } = await import('../server/sessions.js');
+const { ReplayBuffer, SessionRegistry } = await import('../server/sessions.js');
 
 const port = 30000 + Math.floor(Math.random() * 20000);
 let registry: InstanceType<typeof SessionRegistry>;
@@ -149,6 +149,22 @@ test('frames: compressed, split into tiny reads, read back the same', () => {
   assert.match(err, /bad frame/);
 });
 
+test('frames: a big compressed frame is inflated off the main thread and later frames keep their order', async () => {
+  const crypto = await import('node:crypto');
+  const big = { t: 'events', blob: crypto.randomBytes(300_000).toString('base64') };
+  const packed = await encodeFrameAsync(big, true);
+  assert.deepEqual(packed, encodeFrame(big, true), 'async encoding writes the same bytes');
+  assert.ok(packed.length > 64 * 1024 && (packed.readUInt32BE(0) & 0x80000000) !== 0, 'big enough to go async, and compressed');
+  const got: unknown[] = [];
+  let done!: () => void;
+  const all = new Promise<void>((r) => { done = r; });
+  const r = new FrameReader((m: unknown) => { got.push(m); if (got.length === 4) done(); }, (e: Error) => { throw e; }, () => 16 * 1024 * 1024, () => true);
+  r.push(Buffer.concat([encodeFrame({ n: 1 }), packed, encodeFrame({ n: 2 }), encodeFrame({ n: 3, pad: 'x'.repeat(5000) }, true)]));
+  assert.deepEqual(got, [{ n: 1 }], 'frames after the big one wait for it');
+  await all;
+  assert.deepEqual(got, [{ n: 1 }, big, { n: 2 }, { n: 3, pad: 'x'.repeat(5000) }]);
+});
+
 test('caps: only features both sides list', () => {
   assert.deepEqual([...agreeCaps(['deflate', 'teleport'])], ['deflate']);
   assert.deepEqual([...agreeCaps(undefined)], [], 'an older peer sends none');
@@ -261,7 +277,7 @@ test('an hour without remote activity logs the client out; automatic refreshes d
 
 test('remote list titles survive a long answer and skip turns the CLI injects', async () => {
   const reg = new SessionRegistry() as unknown as { entries: Map<string, unknown>; broadcast: (e: unknown, ev: unknown) => void; summaries: () => { title: string }[]; closeAll: () => Promise<void> };
-  const entry = { session: { id: 'T1', agent: 'claude', cwd: os.tmpdir(), onEvent: () => () => {}, close: async () => {} }, buffer: [], seq: 0, subscribers: new Set(), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, bufferBytes: 0, touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
+  const entry = { session: { id: 'T1', agent: 'claude', cwd: os.tmpdir(), onEvent: () => () => {}, close: async () => {} }, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set(), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
   reg.entries.set('T1', entry);
   reg.broadcast(entry, { kind: 'user', text: 'This session is being continued from a previous conversation that ran out of context.', attachments: [] });
   reg.broadcast(entry, { kind: 'user', text: '<task-notification>done</task-notification>', attachments: [] });

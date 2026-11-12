@@ -11,6 +11,8 @@ import { resolvePath } from './fs.js';
  */
 
 const KEEP_LINES = 3000;
+/** Old lines are dropped this many at a time, not one per new line (a chatty process would shift the whole array each line). */
+const TRIM_LINES = 500;
 const URL_RE = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|(?:\d{1,3}\.){3}\d{1,3}|[\w-]+\.local)(?::\d{2,5})?(?:\/[^\s'"`)\]]*)?/i;
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g;
 
@@ -73,6 +75,8 @@ export async function startRun(cwd: string, name: string, command: string): Prom
   child.on('error', (e) => push(proc, e.message, true));
   child.on('close', (code, signal) => {
     proc.info = { ...proc.info, status: 'exited', exitCode: code ?? (signal ? 130 : 1), endedAt: Date.now() };
+    // Nothing more arrives: a finished run keeps exactly its last KEEP_LINES.
+    if (proc.lines.length > KEEP_LINES) proc.lines.splice(0, proc.lines.length - KEEP_LINES);
     proc.events.emit('info', proc.info);
   });
   return proc.info;
@@ -82,7 +86,7 @@ function push(p: Proc, raw: string, err: boolean) {
   const text = raw.replace(ANSI, '');
   const line = { n: p.next++, text, err };
   p.lines.push(line);
-  if (p.lines.length > KEEP_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
+  if (p.lines.length > KEEP_LINES + TRIM_LINES) p.lines.splice(0, p.lines.length - KEEP_LINES);
   if (!p.info.url) {
     const m = text.match(URL_RE);
     if (m) { p.info = { ...p.info, url: m[0].replace('0.0.0.0', 'localhost').replace(/[.,;:]+$/, '') }; p.events.emit('info', p.info); }
@@ -131,7 +135,8 @@ export function subscribeRun(id: string, after: number, on: { line: (l: RunLine)
   const p = procs.get(id);
   if (!p) return null;
   on.info(p.info);
-  for (const l of p.lines) if (l.n > after) on.line(l);
+  // The array may hold up to TRIM_LINES extra old lines; subscribers see the same last KEEP_LINES as before.
+  for (let i = Math.max(0, p.lines.length - KEEP_LINES); i < p.lines.length; i++) if (p.lines[i].n > after) on.line(p.lines[i]);
   p.events.on('line', on.line);
   p.events.on('info', on.info);
   p.events.on('removed', on.removed);

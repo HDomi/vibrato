@@ -120,8 +120,10 @@ export class Scheduler {
     try {
       const now = Date.now();
       const fire: { s: Schedule; at: number }[] = [];
+      let schedules: Schedule[] = [];
       await withConfigLock(async () => {
         const cfg = await loadConfig();
+        schedules = cfg.schedules;
         let changed = false;
         for (const s of cfg.schedules) {
           if (!s.enabled) continue;
@@ -137,7 +139,8 @@ export class Scheduler {
         if (changed) await saveConfig(cfg);
       });
       for (const f of fire) void this.execute(f.s, f.at, 'schedule');
-      await this.updatePower(now);
+      // The schedules just read (and saved, if a cursor moved) are what power needs too.
+      await this.updatePower(now, schedules);
     } catch (err) {
       console.warn(`[vibrato] schedule tick failed: ${(err as Error).message}`);
     } finally {
@@ -145,8 +148,8 @@ export class Scheduler {
     }
   }
 
-  private async updatePower(now: number) {
-    const schedules = (await loadConfig()).schedules;
+  private async updatePower(now: number, loaded?: Schedule[]) {
+    const schedules = loaded ?? (await loadConfig()).schedules;
     const soon = earliestNext(schedules, now - 1, ['awake', 'wake']);
     this.power.holdAwake(this.active.size > 0 || (soon !== null && soon - now <= AWAKE_LEAD_MS));
     // The next run far enough ahead that waking for it still makes sense.

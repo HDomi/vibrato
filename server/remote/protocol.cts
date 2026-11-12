@@ -38,6 +38,8 @@ export const CAPS = ['batch', 'deflate'] as const;
 export type Cap = typeof CAPS[number];
 /** Frames shorter than this are not worth compressing. */
 export const COMPRESS_MIN = 1024;
+/** Bodies at least this big are (de)compressed on zlib's thread pool instead of blocking the event loop (a replay can be MBs). */
+export const ASYNC_ZLIB_MIN = 64 * 1024;
 const COMPRESSED_BIT = 0x80000000;
 
 /** The features both sides support, from the list the peer sent. */
@@ -86,28 +88,56 @@ export function proofMatches(expected: Buffer, got: unknown): boolean {
   return buf.length === expected.length && crypto.timingSafeEqual(buf, expected);
 }
 
-export function encodeFrame(msg: unknown, compress = false): Buffer {
-  let body = Buffer.from(JSON.stringify(msg), 'utf8');
-  let flag = 0;
-  if (compress && body.length >= COMPRESS_MIN) {
-    // Level 1 for big replays (fast, still ~5x on JSON); the default level for the usual small batches.
-    const packed = zlib.deflateRawSync(body, { level: body.length > 256 * 1024 ? 1 : 6 });
-    if (packed.length < body.length) { body = packed; flag = COMPRESSED_BIT; }
-  }
+function frame(body: Buffer, compressed: boolean): Buffer {
   const head = Buffer.alloc(4);
-  head.writeUInt32BE((body.length | flag) >>> 0, 0);
+  head.writeUInt32BE((body.length | (compressed ? COMPRESSED_BIT : 0)) >>> 0, 0);
   return Buffer.concat([head, body]);
+}
+
+/** Level 1 for big replays (fast, still ~5x on JSON); the default level for the usual small batches. */
+const deflateLevel = (size: number) => (size > 256 * 1024 ? 1 : 6);
+
+export function encodeFrame(msg: unknown, compress = false): Buffer {
+  const body = Buffer.from(JSON.stringify(msg), 'utf8');
+  if (compress && body.length >= COMPRESS_MIN) {
+    const packed = zlib.deflateRawSync(body, { level: deflateLevel(body.length) });
+    if (packed.length < body.length) return frame(packed, true);
+  }
+  return frame(body, false);
+}
+
+/**
+ * encodeFrame with a big body compressed off the main thread: the same bytes, as a promise. Small frames come back
+ * at once (a Buffer), so a caller that is not waiting on an earlier frame can write them straight away.
+ */
+export function encodeFrameAsync(msg: unknown, compress = false): Buffer | Promise<Buffer> {
+  const body = Buffer.from(JSON.stringify(msg), 'utf8');
+  if (!compress || body.length < ASYNC_ZLIB_MIN) {
+    if (compress && body.length >= COMPRESS_MIN) {
+      const packed = zlib.deflateRawSync(body, { level: deflateLevel(body.length) });
+      if (packed.length < body.length) return frame(packed, true);
+    }
+    return frame(body, false);
+  }
+  return new Promise((resolve) => zlib.deflateRaw(body, { level: deflateLevel(body.length) }, (err, packed) => {
+    resolve(!err && packed.length < body.length ? frame(packed, true) : frame(body, false));
+  }));
 }
 
 /**
  * Splits a byte stream into JSON frames. `limit()` is read per frame so it can grow after login;
  * `compressed()` says whether compressed frames are allowed yet (never before login).
  * Chunks are kept in a list and joined once a whole frame is there: a big frame arriving in many small reads
- * is copied once, not once per read.
+ * is copied once, not once per read. A big compressed frame is inflated off the main thread; frames after it wait
+ * so `onFrame` still sees them in order.
  */
 export class FrameReader {
   private chunks: Buffer[] = [];
   private size = 0;
+  /** Frames that arrived while a big one is being inflated; null when none is. */
+  private waiting: { body: Buffer; compressed: boolean }[] | null = null;
+  /** Bumped by reset(), so an inflate that finishes after a bad frame is dropped. */
+  private generation = 0;
   constructor(private onFrame: (msg: unknown) => void, private onError: (err: Error) => void, private limit: () => number, private compressed: () => boolean = () => false) {}
 
   push(chunk: Buffer) {
@@ -120,18 +150,50 @@ export class FrameReader {
       const len = raw & ~COMPRESSED_BIT;
       if (len > this.limit() || (isCompressed && !this.compressed())) { this.reset(); this.onError(new Error('bad frame header')); return; }
       if (this.size < 4 + len) return;
-      const frame = this.take(4 + len);
-      let body = frame.subarray(4);
-      let msg: unknown;
-      try {
-        if (isCompressed) body = zlib.inflateRawSync(body, { maxOutputLength: MAX_INFLATED });
-        msg = JSON.parse(body.toString('utf8'));
-      } catch { this.reset(); this.onError(new Error('bad frame')); return; }
-      this.onFrame(msg);
+      if (!this.deliver(this.take(4 + len).subarray(4), isCompressed)) return;
     }
   }
 
-  private reset() { this.chunks = []; this.size = 0; }
+  /** Decode and hand on one frame body, in arrival order. False after a bad frame (reset, onError called). */
+  private deliver(body: Buffer, compressed: boolean): boolean {
+    if (this.waiting) { this.waiting.push({ body, compressed }); return true; }
+    if (compressed && body.length >= ASYNC_ZLIB_MIN) {
+      this.waiting = [];
+      const generation = this.generation;
+      zlib.inflateRaw(body, { maxOutputLength: MAX_INFLATED }, (err, raw) => {
+        if (generation !== this.generation) return;
+        const rest = this.waiting ?? [];
+        this.waiting = null;
+        if (err || !this.emit(raw)) { if (err) this.fail(); return; }
+        for (let i = 0; i < rest.length; i++) {
+          // Another big frame among them: the rest waits for that one in turn.
+          if (this.waiting) { (this.waiting as { body: Buffer; compressed: boolean }[]).push(...rest.slice(i)); return; }
+          if (!this.deliver(rest[i].body, rest[i].compressed)) return;
+        }
+      });
+      return true;
+    }
+    let raw = body;
+    if (compressed) {
+      try { raw = zlib.inflateRawSync(body, { maxOutputLength: MAX_INFLATED }); } catch { return this.fail(); }
+    }
+    return this.emit(raw);
+  }
+
+  private emit(raw: Buffer): boolean {
+    let msg: unknown;
+    try { msg = JSON.parse(raw.toString('utf8')); } catch { return this.fail(); }
+    this.onFrame(msg);
+    return true;
+  }
+
+  private fail(): false {
+    this.reset();
+    this.onError(new Error('bad frame'));
+    return false;
+  }
+
+  private reset() { this.chunks = []; this.size = 0; this.waiting = null; this.generation++; }
 
   /** The first `n` bytes, joining only as many chunks as needed. */
   private peek(n: number): Buffer {

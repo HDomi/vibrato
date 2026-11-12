@@ -10,7 +10,7 @@ import { rejectReason } from '../server/guard';
 import { createApp } from '../server/app';
 import { gitCheckout, gitDiff, gitStage, gitStatus } from '../server/git';
 import { mkdir, rawFile, readText, transfer } from '../server/fs';
-import { attachWebSocket, SessionRegistry } from '../server/sessions';
+import { attachWebSocket, ReplayBuffer, SessionRegistry } from '../server/sessions';
 import { findProjectIcon } from '../server/icons';
 import { reduceEvent, type ChatSession } from '../web/src/lib/chatStore';
 
@@ -111,7 +111,9 @@ test('attach acknowledges a known session before replay and reports unknown ones
   const sent: any[] = [];
   const ws = Object.assign(new EventEmitter(), { readyState: 1, OPEN: 1, send: (data: string) => sent.push(JSON.parse(data)) });
   const registry = new SessionRegistry();
-  const entry = { session: { id: 'live', agent: 'claude', cwd: '/tmp' }, buffer: [{ sessionId: 'live', seq: 1, ts: 0, event: { kind: 'status', status: 'idle' } }], seq: 1, subscribers: new Set(), closed: false, bufferBytes: 0 };
+  const buffer = new ReplayBuffer();
+  buffer.push({ sessionId: 'live', seq: 1, ts: 0, event: { kind: 'status', status: 'idle' } });
+  const entry = { session: { id: 'live', agent: 'claude', cwd: '/tmp' }, buffer, seq: 1, subscribers: new Set(), closed: false };
   (registry as any).entries.set('live', entry);
   attachWebSocket(wss as any, registry as any);
   wss.emit('connection', ws);
@@ -130,7 +132,7 @@ test('a remembered session stops restoring on its first live event', () => {
 
 test('dead registry sessions no longer block updates', async () => {
   const registry = new SessionRegistry();
-  const entry = { session: { id: 'closed', agent: 'claude', cwd: '/tmp' }, buffer: [], seq: 0, subscribers: new Set(), closed: false, bufferBytes: 0 };
+  const entry = { session: { id: 'closed', agent: 'claude', cwd: '/tmp' }, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set(), closed: false };
   (registry as any).entries.set('closed', entry);
   (registry as any).broadcast(entry, { kind: 'status', status: 'closed' });
   assert.deepEqual(registry.list(), []);
@@ -142,7 +144,7 @@ test('shutdown does not tell clients their sessions are closed', async () => {
   const registry = new SessionRegistry();
   const sent: any[] = [];
   const ws = { readyState: 1, OPEN: 1, send: (data: string) => sent.push(JSON.parse(data)) };
-  const entry = { session: { id: 'live', agent: 'claude', cwd: '/tmp' }, buffer: [], seq: 0, subscribers: new Set([ws]), closed: false, bufferBytes: 0 };
+  const entry = { session: { id: 'live', agent: 'claude', cwd: '/tmp' }, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set([ws]), closed: false };
   (registry as any).entries.set('live', entry);
   (registry as any).closing = true;
   (registry as any).broadcast(entry, { kind: 'status', status: 'closed' });
@@ -244,7 +246,7 @@ test('turn changes list only what the session edited, unless it ran shell comman
   const turn = async (shell: boolean) => {
     const registry = new SessionRegistry();
     const sent: any[] = [];
-    const entry: any = { session: { id: 's', agent: 'claude', cwd: dir }, buffer: [], seq: 0, subscribers: new Set([{ readyState: 1, OPEN: 1, send: (m: string) => sent.push(JSON.parse(m)) }]), closed: false, bufferBytes: 0, touched: false, turnPaths: new Set(), turnShell: false };
+    const entry: any = { session: { id: 's', agent: 'claude', cwd: dir }, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set([{ readyState: 1, OPEN: 1, send: (m: string) => sent.push(JSON.parse(m)) }]), closed: false, touched: false, turnPaths: new Set(), turnShell: false };
     (registry as any).entries.set('s', entry);
     entry.turnBase = await snapshot(dir);
     (registry as any).broadcast(entry, { kind: 'tool.start', toolUseId: 't1', name: shell ? 'Bash' : 'Edit', input: shell ? { command: 'x' } : { file_path: join(dir, 'mine.txt') }, parent: null });

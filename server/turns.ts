@@ -16,10 +16,10 @@ const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 export interface TurnFile { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; binary: boolean }
 export interface Snapshot { root: string; tree: string }
 
-function git(cwd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; timeout?: number; input?: string } = {}): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+function git(cwd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; timeout?: number; input?: string; signal?: AbortSignal } = {}): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = execFile('git', ['-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false', '-C', cwd, ...args],
-      { env: { ...process.env, ...opts.env }, timeout: opts.timeout ?? 30000, maxBuffer: 64 * 1024 * 1024 },
+      { env: { ...process.env, ...opts.env }, timeout: opts.timeout ?? 30000, maxBuffer: 64 * 1024 * 1024, signal: opts.signal },
       (err, stdout, stderr) => resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr || (err?.message ?? '')) }));
     if (opts.input !== undefined) { child.stdin?.end(opts.input); }
   });
@@ -30,20 +30,34 @@ export async function repoRoot(cwd: string): Promise<string | null> {
   return r.ok ? r.stdout.trim() : null;
 }
 
-/** Tree object of the working tree right now; null outside a git repository or when git fails. */
-export async function snapshot(cwd: string, timeout = 20000): Promise<Snapshot | null> {
+/** Snapshots of one repository run one at a time: overlapping `git add -A` passes over a big tree only slow each other down. */
+const snapshotQueue = new Map<string, Promise<unknown>>();
+
+/**
+ * Tree object of the working tree right now; null outside a git repository or when git fails.
+ * Aborting `signal` kills the git process (or skips the snapshot while it still waits its turn) and gives null.
+ */
+export async function snapshot(cwd: string, timeout = 20000, signal?: AbortSignal): Promise<Snapshot | null> {
   const root = await repoRoot(cwd);
-  if (!root) return null;
+  if (!root || signal?.aborted) return null;
+  const job = (snapshotQueue.get(root) ?? Promise.resolve()).then(() => (signal?.aborted ? null : takeSnapshot(root, timeout, signal)));
+  const tail = job.catch(() => null);
+  snapshotQueue.set(root, tail);
+  void tail.then(() => { if (snapshotQueue.get(root) === tail) snapshotQueue.delete(root); });
+  return job;
+}
+
+async function takeSnapshot(root: string, timeout: number, signal?: AbortSignal): Promise<Snapshot | null> {
   const dir = await mkdtemp(path.join(tmpdir(), 'vibrato-snap-'));
   const index = path.join(dir, 'index');
   try {
     // Starting from the real index lets `git add` skip files whose stat data did not change.
-    const real = await git(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
+    const real = await git(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index'], { signal });
     if (real.ok) await copyFile(real.stdout.trim(), index).catch(() => {});
     const env = { GIT_INDEX_FILE: index };
-    const add = await git(root, ['add', '-A', '--', '.'], { env, timeout });
+    const add = await git(root, ['add', '-A', '--', '.'], { env, timeout, signal });
     if (!add.ok) return null;
-    const tree = await git(root, ['write-tree'], { env });
+    const tree = await git(root, ['write-tree'], { env, signal });
     return tree.ok && SHA.test(tree.stdout.trim()) ? { root, tree: tree.stdout.trim() } : null;
   } finally {
     await rm(dir, { recursive: true, force: true });

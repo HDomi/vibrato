@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
 import type { WebSocket } from 'ws';
-import type { SessionRegistry } from '../sessions.js';
-import type { PermissionModeId } from '../agents/types.js';
+import type { EventSink, SessionRegistry } from '../sessions.js';
+import type { PermissionModeId, ServerMessage } from '../agents/types.js';
 import { loadConfig, saveConfig, withConfigLock, type RemoteHostConfig } from '../config.js';
 import { listHistory, isCompactSummary } from '../history.js';
 import { readBuildInfo } from '../updater.js';
@@ -17,7 +17,7 @@ import { getUsage } from '../usage.js';
 import { loadIdentity } from './identity.js';
 import { maskWebhook, noticeMessage, sendDiscord, testMessage, validWebhook } from './notify.js';
 import {
-  addressKey, agreeCaps, AuthLimiter, DEFAULT_REMOTE_PORT, deriveKey, derivePassword, loginKey, PASSWORD_MAX, PASSWORD_MIN, encodeFrame, EXPORTER_LABEL, FrameReader, generateCode, MAX_FRAME,
+  addressKey, agreeCaps, AuthLimiter, DEFAULT_REMOTE_PORT, deriveKey, derivePassword, loginKey, PASSWORD_MAX, PASSWORD_MIN, encodeFrameAsync, EXPORTER_LABEL, FrameReader, generateCode, MAX_FRAME,
   PBKDF2_ITERATIONS, PREAUTH_MAX_FRAME, proof, proofMatches, PROTOCOL_VERSION, queueMessage, REMOTE_METHODS, slimForRemote,
   type Cap, type RemoteHistoryRow, type RemoteMethod, type RemoteModel, type WireMessage,
 } from './protocol.cjs';
@@ -375,6 +375,8 @@ class Conn {
   private compressOut = false;
   private queue: WireMessage[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
+  /** Frames still being compressed; anything written meanwhile waits behind them so the order on the wire holds. */
+  private writing: Promise<void> | null = null;
 
   constructor(private host: RemoteHost, private socket: tls.TLSSocket) {
     this.address = (socket.remoteAddress ?? '').replace(/^::ffff:/i, '');
@@ -387,18 +389,21 @@ class Conn {
     socket.on('data', (chunk: Buffer) => this.reader.push(chunk));
     socket.on('error', () => { /* reset by peer and the like; 'close' follows */ });
     const conn = this;
-    this.sink = {
+    const sink: EventSink & { OPEN: number; readyState: number; send(data: string): void } = {
       OPEN: 1,
       get readyState() { return conn.socket.destroyed ? 3 : 1; },
-      send(data: string) { conn.queueEvent(data); },
-    } as unknown as WebSocket;
+      // The registry hands events over as objects (sessions.ts sendEvent); `send` only covers anything sent as JSON.
+      sendMessage(msg: ServerMessage) { conn.queueEvent(msg as unknown as WireMessage); },
+      send(data: string) { try { conn.queueEvent(JSON.parse(data) as WireMessage); } catch { /* not an event */ } },
+    };
+    this.sink = sink as unknown as WebSocket;
   }
 
   /** A session event from the registry: slimmed, merged with the stream piece before it, sent with the next batch. */
-  private queueEvent(data: string) {
+  private queueEvent(msg: WireMessage) {
     if (this.socket.destroyed) return;
-    let m: WireMessage | null;
-    try { m = slimForRemote(JSON.parse(data) as WireMessage); } catch { return; }
+    // slimForRemote and queueMessage copy what they change: the registry's own message object is never touched.
+    const m = slimForRemote(msg);
     if (!m) return;
     queueMessage(this.queue, m);
     if (this.queue.length >= BATCH_MAX) this.flush();
@@ -423,7 +428,17 @@ class Conn {
   private write(msg: unknown) {
     if (this.socket.destroyed) return;
     if (this.socket.writableLength > MAX_QUEUED_BYTES) { this.destroy(); return; }
-    this.socket.write(encodeFrame(msg, this.compressOut && this.caps.has('deflate')));
+    const framed = encodeFrameAsync(msg, this.compressOut && this.caps.has('deflate'));
+    if (!this.writing && Buffer.isBuffer(framed)) { this.socket.write(framed); return; }
+    const next = (this.writing ?? Promise.resolve()).then(() => framed).then((buf) => { if (!this.socket.destroyed) this.socket.write(buf); }).catch(() => {});
+    this.writing = next;
+    void next.then(() => { if (this.writing === next) this.writing = null; });
+  }
+
+  /** End the connection once every frame written so far is on the socket. */
+  private endAfterWrites() {
+    const end = () => { this.socket.end(); };
+    if (this.writing) void this.writing.then(end); else end();
   }
 
   destroy() { this.socket.destroy(); }
@@ -433,7 +448,7 @@ class Conn {
     this.closedCleanly = true;
     // Say so first: a client that only saw the link drop would reconnect right away.
     if (this.authed) this.send({ t: 'kicked', reason });
-    this.socket.end();
+    this.endAfterWrites();
     setTimeout(() => this.destroy(), 500).unref();
   }
 
@@ -498,13 +513,13 @@ class Conn {
 
   private deny(reason: string, retryAfterMs?: number) {
     this.send({ t: 'denied', reason, ...(retryAfterMs ? { retryAfterMs } : {}) });
-    this.socket.end();
+    this.endAfterWrites();
     setTimeout(() => this.destroy(), 1000).unref();
   }
 
   private async onCall(msg: Record<string, unknown>) {
     if (msg.t === 'ping') { this.send({ t: 'pong' }); return; }
-    if (msg.t === 'bye') { this.closedCleanly = true; this.socket.end(); return; }
+    if (msg.t === 'bye') { this.closedCleanly = true; this.endAfterWrites(); return; }
     if (msg.t !== 'call') return;
     const id = msg.id;
     const method = msg.method as RemoteMethod;

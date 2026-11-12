@@ -11,26 +11,104 @@ import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agent
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
 import type { RemoteSessionSummary } from './remote/protocol.cjs';
-import { isCompactSummary, listHistory } from './history.js';
+import { forgetCodexThreads, isCompactSummary, listHistory } from './history.js';
 
 const BUFFER_LIMIT = 5000;
 const BUFFER_BYTES = 16 * 1024 * 1024;
+/** A run of merged stream pieces stops growing here, so the byte limit can still drop the oldest text of a huge output. */
+const MERGE_MAX_BYTES = 1024 * 1024;
 /** Sessions nobody is watching and that have been idle this long are closed to free their CLI process. */
 const ORPHAN_TTL_MS = 6 * 60 * 60 * 1000;
 const REAP_EVERY_MS = 10 * 60 * 1000;
 /** Tools that can change files; a turn that used one is verified afterwards. */
 const MUTATING_TOOLS = /^(Edit|MultiEdit|Write|NotebookEdit|Bash|FileChange)$/;
 
+/** The text a streamed piece adds (text / thinking delta, tool output chunk); null for any other event. */
+function streamPiece(ev: AgentEvent): string | null {
+  return ev.kind === 'text.delta' || ev.kind === 'thinking.delta' ? ev.text : ev.kind === 'tool.output' ? ev.chunk : null;
+}
+
+/** Pieces of the same stream: applying them one after another equals applying their joined text once. */
+function sameStream(a: AgentEvent, b: AgentEvent): boolean {
+  if (a.kind === 'tool.output' && b.kind === 'tool.output') return a.toolUseId === b.toolUseId;
+  if ((a.kind === 'text.delta' || a.kind === 'thinking.delta') && a.kind === b.kind) return a.parent === b.parent;
+  return false;
+}
+
+function withPiece(ev: AgentEvent, text: string): AgentEvent {
+  return ev.kind === 'tool.output' ? { ...ev, chunk: text } : { ...(ev as Extract<AgentEvent, { kind: 'text.delta' }>), text };
+}
+
+interface Buffered {
+  msg: ServerMessage;
+  /** Size counted once on the way in (JSON for whole messages, the added text for merged pieces). */
+  bytes: number;
+  /** Merged stream pieces: each piece's seq and where its text ends, so a replay can start inside the run. */
+  seqs?: number[];
+  ends?: number[];
+}
+
+/**
+ * What a re-attaching client is replayed. Consecutive pieces of one stream (a long answer is thousands of
+ * deltas) are kept as one message carrying the joined text and the newest seq; a client that already has part
+ * of the run gets only the rest. Nothing else changes: other events keep their own message and seq.
+ */
+export class ReplayBuffer {
+  private items: Buffered[] = [];
+  private total = 0;
+
+  constructor(private opts = { limit: BUFFER_LIMIT, maxBytes: BUFFER_BYTES, mergeMaxBytes: MERGE_MAX_BYTES }) {}
+
+  get length() { return this.items.length; }
+  get bytes() { return this.total; }
+
+  push(msg: ServerMessage) {
+    const piece = streamPiece(msg.event);
+    const last = this.items[this.items.length - 1];
+    if (piece !== null && last?.seqs && last.ends && last.bytes < this.opts.mergeMaxBytes && sameStream(last.msg.event, msg.event)) {
+      const text = streamPiece(last.msg.event)! + piece;
+      last.msg = { ...msg, event: withPiece(msg.event, text) };
+      last.seqs.push(msg.seq);
+      last.ends.push(text.length);
+      const add = Buffer.byteLength(piece);
+      last.bytes += add;
+      this.total += add;
+    } else {
+      const bytes = Buffer.byteLength(JSON.stringify(msg));
+      this.items.push(piece !== null ? { msg, bytes, seqs: [msg.seq], ends: [piece.length] } : { msg, bytes });
+      this.total += bytes;
+    }
+    while (this.items.length > 1 && (this.items.length > this.opts.limit || this.total > this.opts.maxBytes)) this.total -= this.items.shift()!.bytes;
+  }
+
+  /** Messages after seq `after`, in order; a merged run the client is partway through comes without the part it has. */
+  *since(after: number): Generator<ServerMessage> {
+    for (const b of this.items) {
+      if (b.msg.seq <= after) continue;
+      if (!b.seqs || !b.ends || b.seqs[0] > after) { yield b.msg; continue; }
+      // Last piece the client already has (seqs ascend).
+      let lo = 0; let hi = b.seqs.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (b.seqs[mid] <= after) lo = mid; else hi = mid - 1; }
+      yield { ...b.msg, event: withPiece(b.msg.event, streamPiece(b.msg.event)!.slice(b.ends[lo])) };
+    }
+  }
+
+  *[Symbol.iterator](): Generator<ServerMessage> { for (const b of this.items) yield b.msg; }
+}
+
 interface Entry {
   session: AgentSession;
-  buffer: ServerMessage[];
+  buffer: ReplayBuffer;
   seq: number;
   subscribers: Set<WebSocket>;
   createdAt: number;
   lastActivity: number;
   running: boolean;
   closed: boolean;
-  bufferBytes: number;
+  /** Latest permission mode a session.init / status event reported (remote list). */
+  permissionMode?: string;
+  /** Approvals and questions asked and not yet settled (remote list). */
+  waiting?: Set<string>;
   /** The current turn ran a tool that can change files. */
   touched: boolean;
   /** Verification in flight; a new turn cancels it because its result would be stale. */
@@ -83,18 +161,10 @@ export class SessionRegistry {
    * running, how many approvals / questions wait, the current permission mode.
    */
   summaries(): RemoteSessionSummary[] {
-    return [...this.entries.values()].filter((e) => !e.closed).map((e) => {
-      let mode: string | undefined;
-      const open = new Set<string>();
-      for (const m of e.buffer) {
-        const ev = m.event;
-        if (ev.kind === 'session.init' && ev.permissionMode) mode = ev.permissionMode;
-        else if (ev.kind === 'status' && ev.permissionMode) mode = ev.permissionMode;
-        else if (ev.kind === 'approval.request' || ev.kind === 'question.request') open.add(ev.requestId);
-        else if (ev.kind === 'approval.resolved' || ev.kind === 'question.resolved') open.delete(ev.requestId);
-      }
-      return { id: e.session.id, agent: e.session.agent, cwd: e.session.cwd, title: e.title ?? '', createdAt: e.createdAt, lastActivity: e.lastActivity, running: e.running, waiting: open.size, permissionMode: mode };
-    });
+    // Mode and open requests are kept up to date in broadcast(), so this stays cheap however long the sessions are.
+    return [...this.entries.values()].filter((e) => !e.closed).map((e) => (
+      { id: e.session.id, agent: e.session.agent, cwd: e.session.cwd, title: e.title ?? '', createdAt: e.createdAt, lastActivity: e.lastActivity, running: e.running, waiting: e.waiting?.size ?? 0, permissionMode: e.permissionMode }
+    ));
   }
 
   /** `cb` runs when a session starts, closes, starts or ends a turn, or gets / settles a request. */
@@ -153,7 +223,7 @@ export class SessionRegistry {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }
     if (this.closing || (ws && ws.readyState !== ws.OPEN)) throw new Error('Connection closed before session started');
-    const entry: Entry = { session, buffer: [], seq: 0, subscribers: new Set(ws ? [ws] : []), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, bufferBytes: 0, touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
+    const entry: Entry = { session, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set(ws ? [ws] : []), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, waiting: new Set(), touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
     this.entries.set(session.id, entry);
     session.onEvent((event) => this.broadcast(entry, event));
     this.changed();
@@ -166,7 +236,7 @@ export class SessionRegistry {
     const e = this.entries.get(id);
     if (!e) return false;
     e.subscribers.add(ws);
-    for (const m of e.buffer) if (m.seq > after) safeSend(ws, m);
+    for (const m of e.buffer.since(after)) sendEvent(ws, m);
     return true;
   }
 
@@ -204,8 +274,13 @@ export class SessionRegistry {
     const job = e.sendChain.then(async () => {
       if (e.closed || !this.entries.has(id)) throw new Error('Session closed');
       if (!e.running) {
-        const timeout = new Promise<null>((r) => setTimeout(() => r(null), 3000).unref());
-        e.turnBase = await Promise.race([snapshot(e.session.cwd).catch(() => null), timeout]);
+        // Past the budget the send goes ahead without a base, and the snapshot's git process is killed
+        // (or never started, if it was still queued behind another snapshot of the same repository).
+        const abort = new AbortController();
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<null>((r) => { timer = setTimeout(() => { abort.abort(); r(null); }, 3000); timer.unref(); });
+        try { e.turnBase = await Promise.race([snapshot(e.session.cwd, undefined, abort.signal).catch(() => null), timeout]); }
+        finally { clearTimeout(timer); }
       }
       // Sends run one at a time, so the next `user` event is this message's echo.
       e.pendingRemote = remote;
@@ -294,15 +369,19 @@ export class SessionRegistry {
     if (this.closing && event.kind === 'status' && event.status === 'closed') return;
     if (event.kind !== 'log') {
       e.buffer.push(msg);
-      e.bufferBytes += Buffer.byteLength(JSON.stringify(msg));
-      while (e.buffer.length > 1 && (e.buffer.length > BUFFER_LIMIT || e.bufferBytes > BUFFER_BYTES)) e.bufferBytes -= Buffer.byteLength(JSON.stringify(e.buffer.shift()!));
+      if ((event.kind === 'session.init' || event.kind === 'status') && event.permissionMode) e.permissionMode = event.permissionMode;
+      else if (event.kind === 'approval.request' || event.kind === 'question.request') (e.waiting ??= new Set()).add(event.requestId);
+      else if (event.kind === 'approval.resolved' || event.kind === 'question.resolved') e.waiting?.delete(event.requestId);
     }
-    for (const ws of e.subscribers) safeSend(ws, msg);
+    let data: string | undefined;
+    for (const ws of e.subscribers) data = sendEvent(ws, msg, data);
     let named = false;
     // Not the CLI's own user-role turns (compaction summary, <task-notification>, <command-name>): they are not what the person asked.
     if (event.kind === 'user' && !e.title && firstLine(event.text) && !isCompactSummary(event.text) && !event.text.trimStart().startsWith('<')) { e.title = firstLine(event.text); named = true; }
     if (named || event.kind === 'status' || event.kind === 'approval.request' || event.kind === 'approval.resolved' || event.kind === 'question.request' || event.kind === 'question.resolved') this.changed();
     // Once the turn has settled (the adapters send `status: idle` right after `result`): changes, then verify.
+    // A Codex turn changed its thread's place in the saved-conversation list.
+    if (event.kind === 'result' && e.session.agent === 'codex') forgetCodexThreads();
     if (event.kind === 'result' && (e.touched || e.turnBase)) {
       setTimeout(() => void this.finishTurn(e).catch((err) => console.warn(`[vibrato] turn wrap-up failed: ${(err as Error).message}`)), 50);
     }
@@ -316,6 +395,21 @@ function firstLine(text: string | undefined | null): string {
 
 function safeSend(ws: WebSocket, msg: unknown) {
   try { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); } catch { /* socket closed between check and send */ }
+}
+
+/** A subscriber that takes session events as objects (the remote host's sink), skipping a JSON round trip. */
+export interface EventSink { sendMessage(msg: ServerMessage): void }
+
+/** Send a session event; `data` is its JSON when already made for another subscriber. Returns the JSON if it made it. */
+function sendEvent(ws: WebSocket, msg: ServerMessage, data?: string): string | undefined {
+  try {
+    if (ws.readyState !== ws.OPEN) return data;
+    const sink = (ws as unknown as Partial<EventSink>).sendMessage;
+    if (sink) { sink.call(ws, msg); return data; }
+    data ??= JSON.stringify(msg);
+    ws.send(data);
+  } catch { /* socket closed between check and send */ }
+  return data;
 }
 
 export function attachWebSocket(wss: WebSocketServer, registry: SessionRegistry) {

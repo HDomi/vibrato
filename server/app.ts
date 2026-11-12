@@ -13,7 +13,7 @@ import { saveAttachment } from './attachments.js';
 import { listSessions, getSessionMessages, renameSession, deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionRegistry } from './sessions.js';
 import { previewKind } from './mime.js';
-import { codexThreadOp, listCodexModels, listCodexThreads } from './agents/codex.js';
+import { codexThreadOp, listCodexModels } from './agents/codex.js';
 import { listClaudeModels } from './agents/claude.js';
 import { which, run } from './shell.js';
 import { applyUpdate, checkUpdate, isUpdating, readBuildInfo, REPO_ROOT, RESTART_EXIT_CODE, UPDATE_SOURCE } from './updater.js';
@@ -33,7 +33,7 @@ import { listExtensions, sanitizeExtensions } from './agentExtensions.js';
 import { suggestCommitMessage } from './commitMessage.js';
 import { exportZip } from './exportZip.js';
 import { searchHistory } from './historySearch.js';
-import { isCompactSummary, listHistory } from './history.js';
+import { codexThreads, forgetCodexThreads, isCompactSummary, listHistory } from './history.js';
 import { loadWallpaper, saveWallpaperImages, updateWallpaper, WALL_MAX_BYTES, wallpaperPath, WallpaperError, type Wallpaper } from './wallpaper.js';
 import { checkWorktree, createWorktree, listWorktrees, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.js';
 import { listRuns, projectScripts, removeRun, startRun, stopRun, subscribeRun, type RunInfo, type RunLine } from './runner.js';
@@ -398,7 +398,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   });
   app.post('/api/history/rename', async (c) => {
     const b = await c.req.json<{ agent: 'claude' | 'codex'; id: string; title: string; cwd?: string }>();
-    if (b.agent === 'codex') { const p = await which('codex'); if (p) await codexThreadOp(p, 'rename', b.id, b.title); }
+    if (b.agent === 'codex') { const p = await which('codex'); if (p) { await codexThreadOp(p, 'rename', b.id, b.title); forgetCodexThreads(); } }
     else await renameSession(b.id, b.title, b.cwd ? { dir: resolvePath(b.cwd) } : undefined);
     return c.json({ ok: true });
   });
@@ -419,7 +419,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     const cwd = c.req.query('cwd');
     const cfg = await loadConfig();
     if (cfg.pinnedSessions.includes(`${agent}:${c.req.param('id')}`)) return c.json({ error: 'Session is pinned. Unpin it first.', code: 'PINNED' }, 409);
-    if (agent === 'codex') { const p = await which('codex'); if (p) await codexThreadOp(p, 'delete', c.req.param('id')); }
+    if (agent === 'codex') { const p = await which('codex'); if (p) { await codexThreadOp(p, 'delete', c.req.param('id')); forgetCodexThreads(); } }
     else await deleteSession(c.req.param('id'), cwd ? { dir: resolvePath(cwd) } : undefined);
     return c.json({ ok: true });
   });
@@ -441,7 +441,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.get('/api/history-all', async (c) => {
     const limit = Math.max(1, Math.min(300, Number(c.req.query('limit')) || 20));
     const [claude, codexPath] = await Promise.all([listSessions({ limit }).catch(() => []), which('codex')]);
-    const codex = codexPath ? await listCodexThreads(codexPath, null, limit).catch(() => []) : [];
+    const codex = codexPath ? await codexThreads(codexPath, null, limit).catch(() => []) : [];
     const pinned = new Set((await loadConfig()).pinnedSessions);
     const rows = [
       ...claude.map((s) => ({ agent: 'claude' as const, sessionId: s.sessionId, title: s.customTitle || s.summary || (isCompactSummary(s.firstPrompt) ? '' : s.firstPrompt) || s.sessionId, cwd: (s as { cwd?: string }).cwd ?? null, lastModified: s.lastModified })),
