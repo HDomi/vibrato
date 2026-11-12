@@ -153,6 +153,8 @@ select:disabled { opacity: .5; }
 /* Toasts and the text search sticky headers: dark panel fills that follow the panel color too. */
 .bg-panel-toast { background-color: rgb(var(--panel-rgb, 24 26 33) / .8); }
 .bg-panel-bar { background-color: rgb(var(--panel-rgb, 21 23 29) / .95); }
+/* Chat and plan items far outside the viewport (lib/skipOffscreen.ts): skipped by style, layout and paint. */
+.cv-skip { content-visibility: hidden; }
 /* First-launch intro card over the space backdrop (SPACE_BACKGROUND + components/intro/Starfield.tsx): it blurs
    the moving stars behind it (real backdrop blur: the stars are live, a fixed wallpaper copy would not match). */
 .intro-card {

@@ -3,6 +3,7 @@ import { useViewActiveRef } from '../lib/viewActive';
 import { t, useLang } from '../lib/i18n';
 import { matchOffsets } from '../lib/textSearch';
 import Icon from './Icon';
+import { revealSkipped } from '../lib/skipOffscreen';
 
 interface Props {
   /** Rendered conversation; text nodes inside it are searched. */
@@ -79,6 +80,7 @@ export default function ChatSearch({ content, scroller, version, onClose, onJump
     if (!ranges.length) return;
     const next = (i + ranges.length) % ranges.length;
     setIndex(next);
+    revealSkipped(ranges[next].startContainer);
     const box = scroller.current, rect = ranges[next].getBoundingClientRect();
     if (!box || (!rect.width && !rect.height)) return;
     onJump();

@@ -27,6 +27,7 @@ import { toast } from './Toast';
 import { useAgentDefaults } from '../lib/agentDefaults';
 import { claudeShellLine, EFFORT_LEVELS, routeSlash, withAppCommands, type SlashRoute } from '../lib/slashCommands';
 import { ChoiceDialog, McpManagerDialog } from './SlashDialogs';
+import { revealSkipped, useSkipOffscreen } from '../lib/skipOffscreen';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -162,7 +163,8 @@ function ResumeBrief({ session }: { session: ChatSession }) {
   if (hidden || !b.asks) return null;
   const parts = [t('brief.asks', { n: b.asks }), b.files.length ? t('brief.files', { n: b.files.length }) : null, b.commits.length ? t('brief.commits', { n: b.commits.length }) : null, b.todos.length ? t('brief.todos', { n: b.todos.length }) : null].filter(Boolean);
   return (
-    <div className="sticky top-0 z-10 -mx-5 -mt-4 mb-1 px-5 pt-2 pb-2 glass-fill border-b border-line">
+    // Opaque fill, not glass-fill: a fixed-attachment background inside the scroller makes every scroll frame repaint on the main thread.
+    <div className="sticky top-0 z-10 -mx-5 -mt-4 mb-1 px-5 pt-2 pb-2 bg-panel-bar border-b border-line">
       <div className="rounded-lg border border-sky-400/20 bg-sky-400/[0.05] text-[12px]">
         <div className="flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none" onClick={() => setOpen((v) => !v)}>
           <Icon name="undo" size={12} className="text-sky-300 shrink-0" />
@@ -472,6 +474,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     return () => ro.disconnect();
   }, [session?.id]);
   useEffect(() => { if (stick.current) scrollToBottom(); }, [session?.items]);
+  useSkipOffscreen(scroller, content, 'data-item-id', session?.id);
   useEffect(() => { stick.current = true; setAtBottom(true); scrollToBottom(); }, [session?.id]);
   // A new request (typed here, queued, or sent from elsewhere) jumps to the bottom even if the user had scrolled up.
   const asked = useMemo(() => (session?.items ?? []).filter((it) => it.kind === 'user' && !isInjected(it)).length, [session?.items]);
@@ -584,6 +587,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const showToolCard = (toolUseId: string) => {
     const el = content.current?.querySelector<HTMLElement>(`[data-tool-use="${CSS.escape(toolUseId)}"]`);
     if (!el) return;
+    revealSkipped(el);
     stick.current = false; setAtBottom(false);
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     el.classList.add('ring-2', 'ring-violet-400/60');

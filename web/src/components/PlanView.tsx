@@ -10,6 +10,7 @@ import { ApprovalItem, QuestionItem } from './ChatItems';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
 import MarkdownView from './MarkdownView';
+import { useSkipOffscreen } from '../lib/skipOffscreen';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
@@ -441,6 +442,7 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
   // While showing a turn picked from the chat, don't snap back to the bottom.
   const holdFocus = useRef(!!focusTurn);
   const [atBottom, setAtBottom] = useState(true);
+  useSkipOffscreen(scroller, content, 'data-plan-turn');
   const scrollToBottom = () => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; };
   const jump = () => { stick.current = true; holdFocus.current = false; setAtBottom(true); scrollToBottom(); };
   // Follow new work while scrolled to the bottom, like the chat.
