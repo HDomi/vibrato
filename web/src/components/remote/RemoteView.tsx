@@ -486,8 +486,6 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
   const [view, setViewState] = useState<'plan' | 'chat'>(() => { try { return localStorage.getItem(VIEW_KEY) === 'chat' ? 'chat' : 'plan'; } catch { return 'plan'; } });
   const setView = (v: 'plan' | 'chat') => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ } };
   useEffect(() => { if (view === 'chat') { stick.current = true; const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; } }, [view]);
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { if (!running) return; const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, [running]);
   const activity = running && chat ? activityOf(chat.items, chat.status) : null;
 
   const act = (p: Promise<unknown>) => void p.catch((e) => setError(cleanErr(e)));
@@ -527,7 +525,7 @@ function Chat({ id, summary, onClosed }: { id: string; summary: RemoteSessionSum
       {view === 'plan' && (
         <div className="flex-1 min-h-0 relative">
           {chat ? (
-            <PlanView remote items={chat.items} cwd={chat.cwd} running={running} tasks={chat.tasks} activity={activity} now={now}
+            <PlanView remote items={chat.items} cwd={chat.cwd} running={running} tasks={chat.tasks} activity={activity}
               onJump={() => setView('chat')}
               onApprove={(requestId, decision, message) => act(b.call('approve', { sessionId: id, requestId, decision, message }))}
               onAnswer={(requestId, answers) => act(b.call('answer', { sessionId: id, requestId, answers }))} />

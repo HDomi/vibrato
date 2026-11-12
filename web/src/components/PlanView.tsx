@@ -11,6 +11,7 @@ import FileIcon from './FileIcon';
 import Icon from './Icon';
 import MarkdownView from './MarkdownView';
 import { useSkipOffscreen } from '../lib/skipOffscreen';
+import { useClock } from '../lib/clock';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
@@ -23,8 +24,6 @@ interface Props {
   tasks?: Record<string, TaskInfo>;
   /** What the agent is doing right now (the chat's status line), shown under the step in progress. */
   activity: string | null;
-  /** Clock for the time on the step in progress (ticks while running). */
-  now: number;
   /** Show this item in the chat view. */
   onJump: (itemId: string) => void;
   onApprove: (requestId: string, decision: 'allow' | 'allow_always' | 'deny', message?: string) => void;
@@ -299,7 +298,7 @@ function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
   return checked ?? uniqueFiles(turn.created);
 }
 
-const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
+const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'onJump' | 'onApprove' | 'onAnswer'> & { now: number }) {
   useLang();
   const created = useCreatedFiles(turn, cwd);
   // In the Remote tab every request came from afar: the chip only means something on the host.
@@ -424,10 +423,12 @@ function SessionSummary({ turns }: { turns: PlanTurn[] }) {
 }
 
 /** The session as a checklist per turn: each plan step with what was done for it. */
-function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove, onAnswer, focusTurn, remote = false }: Props) {
+function PlanView({ items, cwd, running, tasks, activity, onJump, onApprove, onAnswer, focusTurn, remote = false }: Props) {
   useLang();
   const turns = useMemo(() => buildPlan(items), [items]);
   const turnTasks = useMemo(() => liveTasksByTurn(turns, tasks), [turns, tasks]);
+  // Clock for the time on the step in progress; only the live turn gets it, so finished turns skip the tick.
+  const now = useClock(running);
   // Stable handlers so finished turns (memoized) skip the 1s clock tick; the parent passes fresh closures.
   const handlers = useRef({ onJump, onApprove, onAnswer });
   handlers.current = { onJump, onApprove, onAnswer };

@@ -49,11 +49,37 @@ export function requestNotificationPermission() {
 
 interface Persisted { id: string; cwd: string; agent: AgentId; agentSessionId?: string; permissionMode?: PermissionModeId; model?: string; historyLen?: number; title?: string; pinned?: boolean; pinnedKey?: string; lastActivity?: number; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean }
 interface PendingStart { cwd: string; resolve: (id: string) => void; reject: (err: Error) => void; preload: ChatItem[]; historyLen?: number; replaces?: string; title?: string; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean; /** CLI session being resumed; known before the adapter's init event, so a second resume can be matched right away. */ resume?: string }
+/** Streaming deltas are applied together at most this often (ms). */
+const DELTA_BATCH_MS = 32;
+
+type EventMessage = Extract<ServerMessage, { event: unknown }>;
+
+function applyEvent(prev: Record<string, ChatSession>, m: EventMessage): Record<string, ChatSession> {
+  const s = prev[m.sessionId];
+  if (!s) return prev;
+  if (m.seq > 0 && m.seq <= s.lastSeq) return prev;
+  const next = reduceEvent(s, m.event, m.seq, m.ts);
+  if (ACTIVITY_EVENTS.has(m.event.kind) && m.ts > (next.lastActivity ?? 0)) next.lastActivity = m.ts;
+  return { ...prev, [m.sessionId]: next };
+}
+
 /** A revived session that goes missing again this soon is reported lost instead of looping. */
 const REVIVE_COOLDOWN_MS = 30000;
 
 export function useSessions() {
-  const [sessions, setSessions] = useState<Record<string, ChatSession>>({});
+  const [sessions, setSessionsNow] = useState<Record<string, ChatSession>>({});
+  // Streaming text arrives as many tiny deltas. Apply them in one update every DELTA_BATCH_MS instead of
+  // re-rendering the whole app per chunk; any other update flushes them first so the order never changes.
+  const pendingDeltas = useRef<EventMessage[]>([]);
+  const deltaTimer = useRef<number | null>(null);
+  const flushDeltas = () => {
+    if (deltaTimer.current !== null) { window.clearTimeout(deltaTimer.current); deltaTimer.current = null; }
+    const batch = pendingDeltas.current;
+    if (!batch.length) return;
+    pendingDeltas.current = [];
+    setSessionsNow((prev) => batch.reduce(applyEvent, prev));
+  };
+  const setSessions: typeof setSessionsNow = (update) => { flushDeltas(); setSessionsNow(update); };
   const sessionsRef = useRef(sessions);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const pendingStart = useRef(new Map<string, PendingStart>());
@@ -142,16 +168,14 @@ export function useSessions() {
       if (live) notifyIfAway(live, m.event);
       // The CLI writes its generated title a moment after a turn ends; pick it up so tabs match the history list.
       if (m.event.kind === 'result') { setTimeout(() => refreshTitle(m.sessionId), 3000); window.dispatchEvent(new Event('vibe:usage-refresh')); }
-      setSessions((prev) => {
-        const s = prev[m.sessionId];
-        if (!s) return prev;
-        if (m.seq > 0 && m.seq <= s.lastSeq) return prev;
-        const next = reduceEvent(s, m.event, m.seq, m.ts);
-        if (ACTIVITY_EVENTS.has(m.event.kind) && m.ts > (next.lastActivity ?? 0)) next.lastActivity = m.ts;
-        return { ...prev, [m.sessionId]: next };
-      });
+      if (m.event.kind === 'text.delta' || m.event.kind === 'thinking.delta') {
+        pendingDeltas.current.push(m);
+        deltaTimer.current ??= window.setTimeout(flushDeltas, DELTA_BATCH_MS);
+        return;
+      }
+      setSessions((prev) => applyEvent(prev, m));
     });
-    return off;
+    return () => { off(); if (deltaTimer.current !== null) window.clearTimeout(deltaTimer.current); };
   }, []);
 
   const refreshTitle = (id: string) => {

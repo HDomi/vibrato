@@ -28,6 +28,7 @@ import { useAgentDefaults } from '../lib/agentDefaults';
 import { claudeShellLine, EFFORT_LEVELS, routeSlash, withAppCommands, type SlashRoute } from '../lib/slashCommands';
 import { ChoiceDialog, McpManagerDialog } from './SlashDialogs';
 import { revealSkipped, useSkipOffscreen } from '../lib/skipOffscreen';
+import { useClock } from '../lib/clock';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -152,6 +153,21 @@ function renderItem(it: ChatItem, childrenOf: Map<string, ChatItem[]>, actions: 
     case 'changes': return <TurnChangesItem key={it.id} item={it} onReview={actions.review ? () => actions.review!(it) : undefined} reviewer={actions.otherAgent} />;
     case 'verify': return <VerifyItem key={it.id} item={it} latest={it.id === actions.latestVerify} onRerun={it.id === actions.latestVerify ? actions.verify : undefined} />;
   }
+}
+
+/** Time since the turn started, for the activity line. Ticks on its own so the chat does not re-render every second. */
+function ElapsedLabel({ since }: { since?: number }) {
+  const now = useClock(!!since);
+  const elapsed = since ? Math.max(0, Math.round((now - since) / 1000)) : 0;
+  return (
+    <span className="shrink-0 whitespace-nowrap text-zinc-600 tabular-nums">
+      {t(elapsed >= 3600 ? 'activity.elapsedHours' : elapsed >= 60 ? 'activity.elapsedMinutes' : 'activity.elapsedSeconds', {
+        hours: Math.floor(elapsed / 3600),
+        minutes: Math.floor(elapsed / 60) % 60,
+        seconds: elapsed % 60,
+      })}
+    </span>
+  );
 }
 
 /** Pinned to the top of a resumed conversation: what it already did, without scrolling back through it. */
@@ -404,7 +420,6 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const stick = useRef(true);          // follow new content until the user scrolls up
   const programmatic = useRef(false);  // ignore scroll events we caused ourselves
   const [atBottom, setAtBottom] = useState(true);
-  const [now, setNow] = useState(Date.now());
   const [searching, setSearching] = useState(false);
   // Chat or plan view, remembered per session; new sessions follow Settings > General.
   const [view, setView] = useState<SessionView>('chat');
@@ -485,12 +500,6 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     if (prev.id !== session?.id || asked <= prev.n) return;
     stick.current = true; setAtBottom(true); requestAnimationFrame(scrollToBottom);
   }, [asked, session?.id]);
-  // 1s tick for the elapsed counter in the activity line.
-  useEffect(() => {
-    if (!session?.turnStartedAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [session?.turnStartedAt]);
 
   if (!session) return <StartScreen cwd={cwd} scope={scope} onStart={onStart} onStartPair={onStartPair} backlog={backlog} onBacklogChange={onBacklogChange} onOpenBacklogSession={onOpenBacklogSession} openWorktrees={openWorktrees} onOpenWorktree={onOpenWorktree} />;
 
@@ -622,12 +631,6 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     if (last?.kind === 'assistant' && last.streaming && !last.text) return t('activity.thinking');
     return t('activity.working');
   })();
-  const elapsed = session.turnStartedAt ? Math.max(0, Math.round((now - session.turnStartedAt) / 1000)) : 0;
-  const elapsedLabel = t(elapsed >= 3600 ? 'activity.elapsedHours' : elapsed >= 60 ? 'activity.elapsedMinutes' : 'activity.elapsedSeconds', {
-    hours: Math.floor(elapsed / 3600),
-    minutes: Math.floor(elapsed / 60) % 60,
-    seconds: elapsed % 60,
-  });
 
   return (
     <div className="h-full flex flex-col min-w-0">
@@ -675,7 +678,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         </div>
       )}
       <div className="flex-1 min-h-0 relative">
-        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} activity={activity} now={now} running={running} tasks={session.tasks} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
+        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} activity={activity} running={running} tasks={session.tasks} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
         {searching && view === 'chat' && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
           onJump={() => { stick.current = false; setAtBottom(false); }} />}
         {/* Kept mounted under the plan view so switching back keeps its place. */}
@@ -704,7 +707,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
       {activity && (
         <div className="h-7 shrink-0 flex items-center gap-2 px-4 text-[11px] text-zinc-400 border-t border-line bg-black/15">
           <span className="inline-block w-3 h-3 rounded-full border-2 border-amber-400/70 border-t-transparent animate-spin" />
-          <span className="shrink-0 whitespace-nowrap text-zinc-600 tabular-nums">{elapsedLabel}</span>
+          <ElapsedLabel since={session.turnStartedAt} />
           <span className="truncate">{activity}</span>
         </div>
       )}
