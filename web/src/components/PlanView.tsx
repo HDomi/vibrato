@@ -298,7 +298,7 @@ function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
   return checked ?? uniqueFiles(turn.created);
 }
 
-function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
+const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'now' | 'onJump' | 'onApprove' | 'onAnswer'>) {
   useLang();
   const created = useCreatedFiles(turn, cwd);
   // In the Remote tab every request came from afar: the chip only means something on the host.
@@ -403,7 +403,7 @@ function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, on
       )}
     </section>
   );
-}
+});
 
 /** The session at a glance: requests, how they ended, cost and files made. */
 function SessionSummary({ turns }: { turns: PlanTurn[] }) {
@@ -427,6 +427,14 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
   useLang();
   const turns = useMemo(() => buildPlan(items), [items]);
   const turnTasks = useMemo(() => liveTasksByTurn(turns, tasks), [turns, tasks]);
+  // Stable handlers so finished turns (memoized) skip the 1s clock tick; the parent passes fresh closures.
+  const handlers = useRef({ onJump, onApprove, onAnswer });
+  handlers.current = { onJump, onApprove, onAnswer };
+  const stable = useMemo(() => ({
+    onJump: (id: string) => handlers.current.onJump(id),
+    onApprove: ((...a) => handlers.current.onApprove(...a)) as Props['onApprove'],
+    onAnswer: ((...a) => handlers.current.onAnswer(...a)) as Props['onAnswer'],
+  }), []);
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -467,7 +475,12 @@ function PlanView({ items, cwd, running, tasks, activity, now, onJump, onApprove
         <div ref={content} className="px-5 py-4 space-y-4 max-w-4xl mx-auto">
           {turns.length === 0 && <div className="text-center text-zinc-500 text-sm py-10">{t('plan.empty')}</div>}
           <SessionSummary turns={turns} />
-          {turns.map((turn, i) => turn.user && <TurnCard key={turn.id} turn={turn} cwd={cwd} live={running && i === turns.length - 1} tasks={turnTasks.get(turn.id)} activity={activity} now={now} onJump={onJump} onApprove={onApprove} onAnswer={onAnswer} />)}
+          {turns.map((turn, i) => {
+            if (!turn.user) return null;
+            const live = running && i === turns.length - 1;
+            // Only the live turn shows the clock and the status line; the rest keep equal props and skip re-rendering.
+            return <TurnCard key={turn.id} turn={turn} cwd={cwd} live={live} tasks={turnTasks.get(turn.id)} activity={live ? activity : null} now={live ? now : 0} {...stable} />;
+          })}
         </div>
       </div>
       {!atBottom && (

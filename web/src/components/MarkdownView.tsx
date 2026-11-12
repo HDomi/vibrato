@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, memo, useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -99,7 +99,8 @@ const remarkPlugins: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins']
 const rehypePlugins: React.ComponentProps<typeof ReactMarkdown>['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, markdownSchema], [rehypeHighlight, { detect: false, ignoreMissing: true }]];
 const urlTransform = (url: string, key: string) => key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|avif);/i.test(url) || /^file:\/\//i.test(url) ? url : defaultUrlTransform(url);
 
-export default function MarkdownView({ text, baseDir, className }: Props) {
+// Memoized: parsing and highlighting are the costly part, and parents re-render on every clock tick and stream delta.
+export default memo(function MarkdownView({ text, baseDir, className }: Props) {
   // Stable per baseDir: a fresh components object on every render gives React new component types, which
   // remounts every inline path link (and its existence check) whenever the parent re-renders.
   const components = useMemo<React.ComponentProps<typeof ReactMarkdown>['components']>(() => ({
@@ -139,4 +140,4 @@ export default function MarkdownView({ text, baseDir, className }: Props) {
       </ReactMarkdown>
     </div>
   );
-}
+});
