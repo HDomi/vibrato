@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Entry, type Listing } from '../lib/api';
 import { useContextMenu, type MenuItem } from './ContextMenu';
 import { openTool } from './toolbox/bus';
@@ -33,7 +33,8 @@ function formatDate(mtime: number): string {
   return `${String(date.getFullYear()).padStart(4, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export default function FileList({ listing, error, isFavorite, onNavigate, onPreview, onToggleFavorite, onRefresh, onAttach, onOpenInIde }: Props) {
+// Memoized: the app re-renders on every streaming update, and this panel stays mounted behind its tab.
+export default memo(function FileList({ listing, error, isFavorite, onNavigate, onPreview, onToggleFavorite, onRefresh, onAttach, onOpenInIde }: Props) {
   useLang();
   const menu = useContextMenu();
   const [showHidden, setShowHidden] = useState(false);
@@ -327,4 +328,4 @@ export default function FileList({ listing, error, isFavorite, onNavigate, onPre
       </div>
     </div>
   );
-}
+});

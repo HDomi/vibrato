@@ -37,6 +37,7 @@ import { IDE_CHANNEL, openIde, type IdeMessage } from './lib/ide';
 import { BROWSER_CHANNEL, type BrowserChannelMessage } from './lib/browserChannel';
 import { ViewActiveContext } from './lib/viewActive';
 import { shortcutKey } from './lib/keys';
+import { useEvent } from './lib/useEvent';
 
 // The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
@@ -391,6 +392,12 @@ function AppInner() {
     setPendingAttachments((prev) => [...prev, ...entries.filter((e) => !e.isDir).map((e) => ({ path: e.path, name: e.name, kind: IMAGE_RE.test(e.name) ? 'image' as const : 'file' as const }))]);
     if (!session && project) setActiveSession(null);
   };
+  // Stable handlers for the memoized file list.
+  const filePreview = useEvent((e: Entry) => { setSelected(e); setRightTab('preview'); });
+  const fileToggleFavorite = useEvent(() => toggleFavorite());
+  const fileRefresh = useEvent(() => setRefreshTick((n) => n + 1));
+  const fileAttach = useEvent((entries: Entry[]) => attach(entries));
+  const fileOpenInIde = useEvent((e: Entry) => openIde(panelRoot ?? project ?? e.path, e.isDir ? undefined : e.path));
   // "Attach to chat" from an IDE window: show VIBE on that project and queue the files in its composer.
   const attachRef = useRef(attach);
   attachRef.current = attach;
@@ -616,9 +623,8 @@ function AppInner() {
                 <div className="flex-1 min-h-0 relative">
                   <div className={`absolute inset-0 ${rightTab === 'files' ? '' : 'invisible'}`}>
                     <FileList listing={listing} error={error} isFavorite={isFavorite}
-                      onNavigate={navigate} onPreview={(e) => { setSelected(e); setRightTab('preview'); }} onToggleFavorite={toggleFavorite}
-                      onRefresh={() => setRefreshTick((t) => t + 1)} onAttach={project ? attach : undefined}
-                      onOpenInIde={(e) => openIde(panelRoot ?? project ?? e.path, e.isDir ? undefined : e.path)} />
+                      onNavigate={navigate} onPreview={filePreview} onToggleFavorite={fileToggleFavorite}
+                      onRefresh={fileRefresh} onAttach={project ? fileAttach : undefined} onOpenInIde={fileOpenInIde} />
                   </div>
                   <div className={`absolute inset-0 ${rightTab === 'preview' ? '' : 'invisible'}`}><Preview entry={selected} /></div>
                   <div className={`absolute inset-0 ${rightTab === 'terminal' ? '' : 'invisible'}`}><TerminalPanel cwd={panelRoot} visible={rightTab === 'terminal' && !rightCollapsed} /></div>

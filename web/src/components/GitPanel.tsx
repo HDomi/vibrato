@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type GitBranch, type GitCommit, type GitCommitFile, type GitFile, type GitStatus } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import { pollWhileActive } from '../lib/poll';
@@ -35,7 +35,8 @@ function SectionHeader({ color, title, count, children }: { color: string; title
   );
 }
 
-export default function GitPanel({ cwd, visible }: Props) {
+// Memoized: the app re-renders on every streaming update, and this panel stays mounted behind its tab.
+export default memo(function GitPanel({ cwd, visible }: Props) {
   useLang();
   const [st, setSt] = useState<GitStatus | null>(null);
   const [sel, setSel] = useState<{ path: string; staged: boolean } | null>(null);
@@ -307,7 +308,7 @@ export default function GitPanel({ cwd, visible }: Props) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Overlay over the commit log (which stays mounted, keeping its scroll position): the files a commit

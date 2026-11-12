@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ImageConvertDialog from './ImageConvertDialog';
 import { openTool } from './toolbox/bus';
 import type { PdfToolPayload } from './toolbox/PdfTool';
@@ -145,7 +145,8 @@ function CopySourceButton({ path }: { path: string }) {
   );
 }
 
-export default function Preview({ entry, onClose, layer }: Props) {
+// Memoized: the app re-renders on every streaming update, and this panel stays mounted behind its tab.
+const Preview = memo(function Preview({ entry, onClose, layer }: Props) {
   useLang();
   const [converting, setConverting] = useState(false);
   // Files linked from the Markdown on screen open as closable layers over it, so the linking file stays put.
@@ -255,7 +256,8 @@ export default function Preview({ entry, onClose, layer }: Props) {
     </div>
   );
   return layer ? body : <LocalLinkContext.Provider value={openLink}>{body}</LocalLinkContext.Provider>;
-}
+});
+export default Preview;
 
 /** The preview as a dialog, for views without the right-hand panel (Agents, Tools, Schedules). */
 export function PreviewDialog({ entry, onClose }: { entry: Entry; onClose: () => void }) {

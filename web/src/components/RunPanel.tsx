@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type RunInfo, type RunScript } from '../lib/api';
 import { findErrors, type LogLine } from '../lib/runLog';
 import { fencedTerminalText } from '../lib/textSearch';
@@ -53,7 +53,8 @@ function useRunLog(id: string | null) {
   return { lines, info };
 }
 
-export default function RunPanel({ cwd, visible, onStatus }: Props) {
+// Memoized: the app re-renders on every streaming update, and this panel stays mounted behind its tab.
+export default memo(function RunPanel({ cwd, visible, onStatus }: Props) {
   useLang();
   const [scripts, setScripts] = useState<RunScript[]>([]);
   const [runs, setRuns] = useState<RunInfo[]>([]);
@@ -191,4 +192,4 @@ export default function RunPanel({ cwd, visible, onStatus }: Props) {
       {note && <div className="shrink-0 px-3 py-1.5 border-t border-white/10 text-[11px] text-zinc-300">{note}</div>}
     </div>
   );
-}
+});

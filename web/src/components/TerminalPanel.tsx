@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import '@xterm/xterm/css/xterm.css';
 import { t, useLang } from '../lib/i18n';
 import { activateTerminal, closeTerminal, ensureStarted, fitTerminal, openTerminal, terminalSelection, terminalTail, useTerminals, type TerminalTab } from '../lib/terminals';
@@ -44,7 +44,8 @@ function TermView({ tab, visible }: { tab: TerminalTab; visible: boolean }) {
   );
 }
 
-export default function TerminalPanel({ cwd, visible }: Props) {
+// Memoized: the app re-renders on every streaming update, and this panel stays mounted behind its tab.
+export default memo(function TerminalPanel({ cwd, visible }: Props) {
   useLang();
   const { tabs, active } = useTerminals();
   const menu = useContextMenu();
@@ -96,4 +97,4 @@ export default function TerminalPanel({ cwd, visible }: Props) {
       </div>
     </div>
   );
-}
+});
