@@ -51,6 +51,8 @@ interface Persisted { id: string; cwd: string; agent: AgentId; agentSessionId?: 
 interface PendingStart { cwd: string; resolve: (id: string) => void; reject: (err: Error) => void; preload: ChatItem[]; historyLen?: number; replaces?: string; title?: string; worktree?: WorktreeInfo; pairKey?: string; resumed?: boolean; /** CLI session being resumed; known before the adapter's init event, so a second resume can be matched right away. */ resume?: string }
 /** Streaming deltas are applied together at most this often (ms). */
 const DELTA_BATCH_MS = 32;
+/** High-frequency events that only grow or tick one item: text/thinking deltas, shell output chunks, tool timers. */
+const BATCHED_EVENTS = new Set(['text.delta', 'thinking.delta', 'tool.output', 'tool.progress']);
 
 type EventMessage = Extract<ServerMessage, { event: unknown }>;
 
@@ -59,6 +61,8 @@ function applyEvent(prev: Record<string, ChatSession>, m: EventMessage): Record<
   if (!s) return prev;
   if (m.seq > 0 && m.seq <= s.lastSeq) return prev;
   const next = reduceEvent(s, m.event, m.seq, m.ts);
+  // Nothing changed (a `log` line): keep every reference so nothing re-renders.
+  if (next === s) return prev;
   if (ACTIVITY_EVENTS.has(m.event.kind) && m.ts > (next.lastActivity ?? 0)) next.lastActivity = m.ts;
   return { ...prev, [m.sessionId]: next };
 }
@@ -169,7 +173,7 @@ export function useSessions() {
       if (live) notifyIfAway(live, m.event);
       // The CLI writes its generated title a moment after a turn ends; pick it up so tabs match the history list.
       if (m.event.kind === 'result') { setTimeout(() => refreshTitle(m.sessionId), 3000); window.dispatchEvent(new Event('vibe:usage-refresh')); }
-      if (m.event.kind === 'text.delta' || m.event.kind === 'thinking.delta') {
+      if (BATCHED_EVENTS.has(m.event.kind)) {
         pendingDeltas.current.push(m);
         deltaTimer.current ??= window.setTimeout(flushDeltas, DELTA_BATCH_MS);
         return;

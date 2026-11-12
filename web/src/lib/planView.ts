@@ -5,6 +5,42 @@ import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, 
 
 export { doneMarks, textPlan } from './textPlan';
 
+// buildPlan runs again on every session update, but only the latest message changes: cache the text scans.
+// Items are immutable (an update replaces the object), so per-item results live in WeakMaps.
+const itemPaths = new WeakMap<ChatItem, string[]>();
+const itemScan = new WeakMap<ChatItem, { plan: boolean; done: number[] }>();
+/** A turn's text-derived plan data, by the turn's texts. Least recently used entries go first. */
+const turnText = new Map<string, TurnText>();
+const TURN_TEXT_LIMIT = 300;
+interface TurnText { marks: Map<number, string>; plan: string[] | null; entries: ReturnType<typeof stepEntries>; result: ReturnType<typeof resultOf> }
+
+function textsOf(texts: string[]): TurnText {
+  const key = texts.join('\u241E');
+  const hit = turnText.get(key);
+  if (hit) { turnText.delete(key); turnText.set(key, hit); return hit; }
+  const value: TurnText = { marks: doneMarks(texts), plan: mergedPlan(texts), entries: stepEntries(texts), result: resultOf(texts) };
+  turnText.set(key, value);
+  if (turnText.size > TURN_TEXT_LIMIT) turnText.delete(turnText.keys().next().value!);
+  return value;
+}
+
+function pathsOf(it: Item<'assistant'>): string[] {
+  let paths = itemPaths.get(it);
+  if (!paths) { paths = pathsInText(it.text); itemPaths.set(it, paths); }
+  return paths;
+}
+
+/** Whether an item's text holds a plan, and the steps its "✓ n." lines close. */
+function scanOf(it: ChatItem): { plan: boolean; done: number[] } {
+  let scan = itemScan.get(it);
+  if (!scan) {
+    const said = it.kind === 'assistant' ? it.text : it.kind === 'tool' && isPlanStepTool(it.name) ? planStepMark(it.input) : null;
+    scan = { plan: it.kind === 'assistant' && planIn(it.text) !== null, done: said ? [...doneMarks([said]).keys()] : [] };
+    itemScan.set(it, scan);
+  }
+  return scan;
+}
+
 /*
  * The plan view: a session regrouped as turns -> plan steps -> what was done for each step. The steps come from
  * the checklist the agent keeps itself, and every item is filed under the step that was in progress when it
@@ -211,6 +247,29 @@ function file(step: PlanStep, it: ChatItem) {
   for (const f of editedFiles(it)) if (!s.files.includes(f)) s.files.push(f);
 }
 
+/** Index in the items where each built turn starts, for sharePlan. */
+const turnFrom = new WeakMap<PlanTurn, number>();
+
+/**
+ * Reuse the previous build's turn objects while nothing they were built from changed, so memoized turn cards
+ * skip re-rendering. A turn depends on its own items and on the turns before it (tasks carry over), so only the
+ * unchanged prefix is reused.
+ */
+export function sharePlan(prevItems: ChatItem[], prev: PlanTurn[], items: ChatItem[], next: PlanTurn[]): PlanTurn[] {
+  const out = next.slice();
+  for (let i = 0; i < next.length && i < prev.length; i++) {
+    const a = prev[i], b = next[i];
+    const from = turnFrom.get(b), end = i + 1 < next.length ? turnFrom.get(next[i + 1]) : items.length;
+    const prevEnd = i + 1 < prev.length ? turnFrom.get(prev[i + 1]) : prevItems.length;
+    if (a.id !== b.id || from === undefined || end === undefined || from !== turnFrom.get(a) || end !== prevEnd) break;
+    let same = true;
+    for (let k = from; k < end && same; k++) same = items[k] === prevItems[k];
+    if (!same) break;
+    out[i] = a;
+  }
+  return out;
+}
+
 /** Groups a session's items for the plan view. Nested (subagent) items are left to their parent tool. */
 export function buildPlan(items: ChatItem[]): PlanTurn[] {
   const turns: PlanTurn[] = [];
@@ -228,14 +287,17 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     step.content = task.content; step.activeForm = task.activeForm; step.status = task.status;
     return step;
   };
+  let at = 0;
   const start = (user: Item<'user'> | null, id: string) => {
     turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, hasResult: false, commits: [], pushed: false, created: [], mentioned: [] };
     turns.push(turn);
+    turnFrom.set(turn, at);
     active = null;
     justDone = null;
     return turn;
   };
-  for (const it of items) {
+  for (; at < items.length; at++) {
+    const it = items[at];
     if ((it.kind === 'assistant' || it.kind === 'tool') && it.parent) continue;
     if (it.kind === 'user' && !isInjected(it)) {
       // Assigned inside start(), which the compiler does not follow.
@@ -311,7 +373,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (mark) { t.texts.push(mark); t.textIds.push(it.id); }
     if (it.kind === 'verify') { t.verify.push(it); continue; }
     if ((it.kind === 'approval' && !it.decision) || (it.kind === 'question' && !it.resolved)) t.pending.push(it);
-    if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); t.textIds.push(it.id); addMentioned(t, pathsInText(it.text)); }
+    if (it.kind === 'assistant' && it.text.trim()) { t.texts.push(it.text); t.textIds.push(it.id); addMentioned(t, pathsOf(it)); }
     if (!active && justDone && !justDone.note && it.kind === 'assistant' && it.text.trim()) justDone.note = it.text.trim();
     // Without a step in progress: before any step has started it is preparation, afterwards it is wrap-up.
     const started = t.steps.some((x) => x.status !== 'pending');
@@ -330,15 +392,15 @@ function fileTextSteps(t: PlanTurn) {
   const pool = [...t.before.items, ...t.after.items];
   t.before = group('before', '');
   t.after = group('after', '');
-  const planAt = pool.findIndex((it) => it.kind === 'assistant' && planIn(it.text) !== null);
+  const planAt = pool.findIndex((it) => scanOf(it).plan);
   let k = 0;
   pool.forEach((it, i) => {
     if (i <= planAt) { file(t.before, it); return; }
     // A new round's plan starts over from its first step.
-    if (it.kind === 'assistant' && planIn(it.text)) k = 0;
+    const scan = scanOf(it);
+    if (scan.plan) k = 0;
     // A message with "✓ n." lines belongs to the first step it closes (later ones may have been skipped over).
-    const said = it.kind === 'assistant' ? it.text : it.kind === 'tool' && isPlanStepTool(it.name) ? planStepMark(it.input) : null;
-    const done = said ? [...doneMarks([said]).keys()].filter((n) => n <= t.steps.length) : [];
+    const done = scan.done.filter((n) => n <= t.steps.length);
     if (done.length) k = Math.max(k, Math.min(...done) - 1);
     file(k < t.steps.length ? t.steps[k] : t.after, it);
     if (done.length) k = Math.max(...done);
@@ -349,9 +411,10 @@ function fileTextSteps(t: PlanTurn) {
 const NOT_DONE = /^(?:not\s+done|skipped|안\s*함|못\s*함|건너뜀)\s*[:：-]?\s*/i;
 
 function applyTextPlan(t: PlanTurn) {
-  const marks = doneMarks(t.texts);
+  const text = textsOf(t.texts);
+  const marks = text.marks;
   if (!t.hasPlan) {
-    const steps = mergedPlan(t.texts);
+    const steps = text.plan;
     if (steps) {
       t.hasPlan = true;
       t.steps = steps.map((content, i) => ({ ...group(`text:${i}`, content), status: marks.has(i + 1) ? 'completed' as const : 'pending' as const }));
@@ -359,7 +422,7 @@ function applyTextPlan(t: PlanTurn) {
     }
   }
   // "✓ n." lines are the step's account, whichever way the plan came; a step done again in later rounds has several.
-  const entries = stepEntries(t.texts);
+  const entries = text.entries;
   t.steps.forEach((step, i) => {
     step.entries = entries.filter((e) => e.step === i + 1).map((e) => {
       const skipped = e.note.match(NOT_DONE);
@@ -376,7 +439,7 @@ function applyTextPlan(t: PlanTurn) {
   const lastDone = t.steps.reduce((at, s, i) => (s.key.startsWith('text:') && s.status === 'completed' ? i : at), -1);
   t.steps.forEach((step, i) => { if (i < lastDone && step.key.startsWith('text:')) step.status = 'completed'; });
   const last = t.texts[t.texts.length - 1];
-  const result = resultOf(t.texts);
+  const result = text.result;
   t.hasResult = !!result;
   // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.
   t.answerFull = result ? result.full : !t.hasPlan && !!last?.trim();

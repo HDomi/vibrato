@@ -166,6 +166,23 @@ interface ChatListHandlers {
   togglePick: (id: string) => void;
 }
 
+/** Same item, same nested items (all the way down) and same actions: nothing to re-render. */
+function sameTree(id: string, a: Map<string, ChatItem[]>, b: Map<string, ChatItem[]>): boolean {
+  const x = a.get(id), y = b.get(id);
+  if (x === y) return true;
+  if (!x || !y || x.length !== y.length) return false;
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i] || !sameTree(x[i].id, a, b)) return false;
+  return true;
+}
+
+/**
+ * One top-level chat item. Memoized per item: while a turn streams only the latest items change, and the
+ * rest (tool cards with their JSON and output formatting, diffs) would otherwise re-render on every update.
+ */
+const ChatItemView = memo(function ChatItemView({ item, childrenOf, actions }: { item: ChatItem; childrenOf: Map<string, ChatItem[]>; actions: ItemActions }) {
+  return <>{renderItem(item, childrenOf, actions)}</>;
+}, (a, b) => a.item === b.item && a.actions === b.actions && sameTree(a.item.id, a.childrenOf, b.childrenOf));
+
 /**
  * The conversation itself. Memoized: the panel re-renders for every update of any session (and the
  * handlers it gets are fresh closures each time), but the list only changes with its own items or with
@@ -176,7 +193,7 @@ const ChatList = memo(function ChatList({ top, childrenOf, picked, live, taskTit
   taskTitles: Map<string, string>; cwd: string; latestVerify?: string; otherAgent: string;
   canShowPlan: boolean; canRewind: boolean; canVerify: boolean; canReview: boolean;
 }) {
-  const actions: ItemActions = {
+  const actions = useMemo<ItemActions>(() => ({
     showPlan: canShowPlan ? (id) => live.current.showInPlan(id) : undefined,
     taskTitles, cwd, latestVerify, otherAgent,
     approve: (...a) => live.current.approve(...a),
@@ -184,10 +201,10 @@ const ChatList = memo(function ChatList({ top, childrenOf, picked, live, taskTit
     rewind: canRewind ? (id) => live.current.rewind(id) : undefined,
     verify: canVerify ? () => live.current.verify() : undefined,
     review: canReview ? (c) => live.current.review(c) : undefined,
-  };
+  }), [live, canShowPlan, taskTitles, cwd, latestVerify, otherAgent, canRewind, canVerify, canReview]);
   const togglePick = (id: string) => live.current.togglePick(id);
   return top.map((it) => {
-    const node = renderItem(it, childrenOf, actions);
+    const node = <ChatItemView key={it.id} item={it} childrenOf={childrenOf} actions={actions} />;
     if (!picked) return <div key={it.id} data-item-id={it.id}>{node}</div>;
     const on = picked.has(it.id);
     // In export mode a click anywhere on a block toggles it; the block's own buttons are inert meanwhile.
@@ -328,7 +345,7 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
     const h = () => loadHistory();
     window.addEventListener('vibe:pins-changed', h); window.addEventListener('vibe:history-changed', h);
     return () => { window.removeEventListener('vibe:pins-changed', h); window.removeEventListener('vibe:history-changed', h); };
-  }); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cwd, scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!cwd) return <div className="h-full flex items-center justify-center text-zinc-600 text-sm">{t('chat.openFolderFirst')}</div>;
   const shown = filter.trim() ? history.filter((h) => `${h.customTitle ?? ''} ${h.summary} ${h.firstPrompt ?? ''} ${h.cwd ?? ''}`.toLowerCase().includes(filter.toLowerCase())) : history;
@@ -519,7 +536,15 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     }
     return { top, childrenOf };
   }, [session?.items]);
-  const titles = useMemo(() => taskTitles(session?.items ?? []), [session?.items]);
+  // Same Map while the titles stay the same: the chat list's item memo depends on it.
+  const lastTitles = useRef<Map<string, string>>(new Map());
+  const titles = useMemo(() => {
+    const next = taskTitles(session?.items ?? []);
+    const prev = lastTitles.current;
+    if (next.size === prev.size && [...next].every(([k, v]) => prev.get(k) === v)) return prev;
+    lastTitles.current = next;
+    return next;
+  }, [session?.items]);
   const latestVerify = useMemo(() => { const items = session?.items ?? []; for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'verify') return items[i].id; return undefined; }, [session?.items]);
 
   const scrollToBottom = () => {
@@ -574,8 +599,10 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   };
   const jump = () => { stick.current = true; setAtBottom(true); scrollToBottom(); };
   // Blocks worth picking by default: the conversation itself, not tool calls or status lines.
-  const exportable = top.filter((it) => !(it.kind === 'assistant' && it.streaming && !it.text) && !(it.kind === 'user' && isInjected(it)));
-  const chatOnly = () => new Set(exportable.filter((it) => it.kind === 'user' || it.kind === 'assistant').map((it) => it.id));
+  // Only needed while picking blocks to export: not worth a pass over every item on each render.
+  const exportableItems = () => top.filter((it) => !(it.kind === 'assistant' && it.streaming && !it.text) && !(it.kind === 'user' && isInjected(it)));
+  const exportable = picked ? exportableItems() : [];
+  const chatOnly = () => new Set(exportableItems().filter((it) => it.kind === 'user' || it.kind === 'assistant').map((it) => it.id));
   const startExport = () => { setSearching(false); switchView('chat'); setPicked(chatOnly()); };
   // Plan view -> the item in the chat, briefly outlined.
   const showInChat = (id: string) => {
@@ -669,7 +696,8 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
       if (it.kind === 'approval' && !it.decision) return t('activity.waitingApproval');
       if (it.kind === 'question' && !it.resolved) return t('activity.waitingAnswer');
     }
-    const openTool = [...items].reverse().find((it) => it.kind === 'tool' && !it.done) as Extract<ChatItem, { kind: 'tool' }> | undefined;
+    let openTool: Extract<ChatItem, { kind: 'tool' }> | undefined;
+    for (let i = items.length - 1; i >= 0 && !openTool; i--) { const it = items[i]; if (it.kind === 'tool' && !it.done) openTool = it; }
     if (openTool) {
       const isSub = ['Agent', 'Task', 'SubAgent'].includes(openTool.name);
       const detail = (() => { const i = (openTool.input ?? {}) as Record<string, unknown>; const v = i.command ?? i.file_path ?? i.pattern ?? i.query ?? i.description ?? ''; return String(v).split('\n')[0].slice(0, 60); })();

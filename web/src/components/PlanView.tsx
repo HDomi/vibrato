@@ -3,10 +3,11 @@ import { api } from '../lib/api';
 import type { TaskInfo } from '../lib/agent';
 import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
-import { buildPlan, liveTasksByTurn, noteLine, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
+import { buildPlan, liveTasksByTurn, sharePlan, noteLine, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
 import { taskKind } from '../lib/taskGraph';
 import { resolveLocal } from '../lib/localPath';
-import { ApprovalItem, QuestionItem } from './ChatItems';
+import { ApprovalItem, QuestionItem, STREAM_RENDER_MS } from './ChatItems';
+import { useThrottled } from '../lib/throttle';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
 import MarkdownView from './MarkdownView';
@@ -321,6 +322,8 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
   // The result only once the turn has ended: until then the latest message is progress, not the outcome.
   // ...except the "Result:" section itself, which streams in as it is written.
   const showAnswer = turn.answer && (!live || writing);
+  // The result streams in while it is written: re-render its markdown a few times a second, not per delta.
+  const answer = useThrottled(turn.answer ?? '', STREAM_RENDER_MS, writing);
   const latest = live && !total ? noteLine(turn.texts[turn.texts.length - 1] ?? null, 200) : null;
   return (
     <section data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
@@ -383,8 +386,8 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
             : <div className="text-[11.5px] font-medium text-zinc-400 mb-1">{t('plan.result')}</div>}
           {/* Same markdown and link handling as the chat: local paths open in the app, web links in the browser. */}
           {turn.answerFull
-            ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={turn.answer!} baseDir={cwd} /></div>
-            : <MarkdownView text={turn.answer!} baseDir={cwd} className="prose-md text-[13px] leading-relaxed text-zinc-100 max-w-none [&_p]:my-0" />}
+            ? <div className="prose-md text-[13.5px] max-w-none"><MarkdownView text={answer} baseDir={cwd} /></div>
+            : <MarkdownView text={answer} baseDir={cwd} className="prose-md text-[13px] leading-relaxed text-zinc-100 max-w-none [&_p]:my-0" />}
           <ProgressLog turn={turn} onJump={onJump} />
         </div>
       )}
@@ -425,7 +428,15 @@ function SessionSummary({ turns }: { turns: PlanTurn[] }) {
 /** The session as a checklist per turn: each plan step with what was done for it. */
 function PlanView({ items, cwd, running, tasks, activity, onJump, onApprove, onAnswer, focusTurn, remote = false }: Props) {
   useLang();
-  const turns = useMemo(() => buildPlan(items), [items]);
+  // Unchanged turns keep their objects from the last build, so their (memoized) cards skip re-rendering.
+  const lastPlan = useRef<{ items: ChatItem[]; turns: PlanTurn[] } | null>(null);
+  const turns = useMemo(() => {
+    const built = buildPlan(items);
+    const prev = lastPlan.current;
+    const shared = prev ? sharePlan(prev.items, prev.turns, items, built) : built;
+    lastPlan.current = { items, turns: shared };
+    return shared;
+  }, [items]);
   const turnTasks = useMemo(() => liveTasksByTurn(turns, tasks), [turns, tasks]);
   // Clock for the time on the step in progress; only the live turn gets it, so finished turns skip the tick.
   const now = useClock(running);

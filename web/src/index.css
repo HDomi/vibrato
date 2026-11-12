@@ -283,12 +283,16 @@ select {
 }
 @keyframes pin-flow { to { --pin-angle: 360deg; } }
 @keyframes pin-flow-in { to { opacity: 1; } }
-.lock-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.lock-dot { position: relative; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+/* The glow is a fixed shadow on a pseudo element that fades: only opacity animates (on the compositor), so the
+   blurred lock card around it is not repainted every frame while sessions run. */
 .lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }
 .lock-dot-waiting { background: #fbbf24; color: #fbbf24; animation: lock-breathe 2.6s ease-in-out infinite; }
+.lock-dot-running::after, .lock-dot-waiting::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 10px 1px currentColor; animation: lock-glow 2.6s ease-in-out infinite; }
 .lock-dot-idle { background: #52525b; }
 .lock-shake { animation: lock-shake .42s cubic-bezier(.36,.07,.19,.97); }
-@keyframes lock-breathe { 0%, 100% { opacity: 1; box-shadow: 0 0 10px 1px currentColor; } 50% { opacity: .22; box-shadow: 0 0 0 0 currentColor; } }
+@keyframes lock-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .22; } }
+@keyframes lock-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 /* Dock project status (Dock.tsx StatusRing): an inset ring over the icon's circle that grows and shrinks.
    A shadow, not a border, so the icon never moves. Yellow while a session works, green when one finished.
    It runs for as long as a session works, so only opacity animates (on the compositor): a thin ring stays,

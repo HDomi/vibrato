@@ -1,5 +1,9 @@
 import { memo, useRef, useState } from 'react';
 import MarkdownView, { CopyButton } from './MarkdownView';
+import { useThrottled } from '../lib/throttle';
+
+/** How often streaming markdown is re-rendered (ms). */
+export const STREAM_RENDER_MS = 150;
 import { todosFromInput, injectedSummary, type ChatItem } from '../lib/chatStore';
 import { imageSrc } from '../lib/api';
 import { openLightbox } from './Lightbox';
@@ -103,6 +107,8 @@ export const AssistantItem = memo(function AssistantItem({ item, baseDir }: { it
   const menu = useContextMenu();
   const root = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(false);
+  // While streaming, re-parse the growing markdown a few times a second instead of on every delta.
+  const text = useThrottled(item.text, STREAM_RENDER_MS, !!item.streaming);
   return (
     <div ref={root} className={`group/msg relative ${item.parent ? 'ml-6 border-l border-white/10 pl-3' : ''}`}
       onContextMenu={item.text && !item.streaming ? (e) => { const sel = selectionIn(root.current); menu.open(e, transferMenu({ text: sel || item.text, attachments: [] }, sel || item.text)); } : undefined}>
@@ -122,7 +128,7 @@ export const AssistantItem = memo(function AssistantItem({ item, baseDir }: { it
       )}
       {item.text && (
         <div className="prose-md text-[14px] max-w-none">
-          <MarkdownView text={item.text} baseDir={baseDir} />
+          <MarkdownView text={text} baseDir={baseDir} />
           {item.streaming && <span className="inline-block w-1.5 h-4 bg-zinc-400 animate-pulse align-middle ml-0.5" />}
         </div>
       )}

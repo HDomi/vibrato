@@ -193,8 +193,30 @@ export function splitAttachments(text: string): { text: string; attachments: Att
   return { text: text.slice(0, m.index).trimEnd(), attachments };
 }
 
-/** Apply one event to a session, returning a new session object (immutable update). */
+/**
+ * Apply one event to a session, returning a new session object (immutable update). When an event leaves the
+ * items as they were (task, status, init, ...), the result keeps the same items array: the views memoize on it
+ * (plan building, task titles) and would otherwise redo O(items) work for every event. `log` returns `s` itself.
+ */
 export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Date.now()): ChatSession {
+  const next = applyToSession(s, e, seq, ts);
+  if (next !== s && next.items !== s.items && sameItems(next.items, s.items)) next.items = s.items;
+  return next;
+}
+
+function sameItems(a: ChatItem[], b: ChatItem[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = a.length - 1; i >= 0; i--) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Index of the last item matching `match`: updates almost always target recent items. */
+function lastIndex(items: ChatItem[], match: (it: ChatItem) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i--) if (match(items[i])) return i;
+  return -1;
+}
+
+function applyToSession(s: ChatSession, e: AgentEvent, seq: number, ts: number): ChatSession {
   const items = s.items.slice();
   // Any live event proves the server knows this session, so it is no longer "restoring".
   const next: ChatSession = { ...s, items, lastSeq: Math.max(s.lastSeq, seq), restoring: undefined };
@@ -272,17 +294,17 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       items.push({ kind: 'tool', id: e.toolUseId, name: e.name, input: e.input, output: null, isError: false, parent: e.parent, elapsed: 0, done: false, at: ts });
       return next;
     case 'tool.result': {
-      const i = items.findIndex((it) => it.kind === 'tool' && it.id === e.toolUseId);
+      const i = lastIndex(items, (it) => it.kind === 'tool' && it.id === e.toolUseId);
       if (i >= 0) items[i] = { ...(items[i] as Extract<ChatItem, { kind: 'tool' }>), output: e.content, isError: e.isError, done: true, ...(e.images?.length ? { images: e.images } : {}) };
       return next;
     }
     case 'tool.output': {
-      const i = items.findIndex((it) => it.kind === 'tool' && it.id === e.toolUseId);
+      const i = lastIndex(items, (it) => it.kind === 'tool' && it.id === e.toolUseId);
       if (i >= 0) { const t = items[i] as Extract<ChatItem, { kind: 'tool' }>; items[i] = { ...t, output: (t.output ?? '') + e.chunk }; }
       return next;
     }
     case 'tool.progress': {
-      const i = items.findIndex((it) => it.kind === 'tool' && it.id === e.toolUseId);
+      const i = lastIndex(items, (it) => it.kind === 'tool' && it.id === e.toolUseId);
       if (i >= 0) items[i] = { ...(items[i] as Extract<ChatItem, { kind: 'tool' }>), elapsed: e.elapsed };
       return next;
     }
@@ -290,7 +312,7 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       items.push({ kind: 'approval', id: e.requestId, toolName: e.toolName, input: e.input, canAlwaysAllow: e.canAlwaysAllow, decision: null });
       return next;
     case 'approval.resolved': {
-      const i = items.findIndex((it) => it.kind === 'approval' && it.id === e.requestId);
+      const i = lastIndex(items, (it) => it.kind === 'approval' && it.id === e.requestId);
       if (i >= 0) items[i] = { ...(items[i] as Extract<ChatItem, { kind: 'approval' }>), decision: e.decision };
       return next;
     }
@@ -298,7 +320,7 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       items.push({ kind: 'question', id: e.requestId, questions: e.questions, resolved: false });
       return next;
     case 'question.resolved': {
-      const i = items.findIndex((it) => it.kind === 'question' && it.id === e.requestId);
+      const i = lastIndex(items, (it) => it.kind === 'question' && it.id === e.requestId);
       if (i >= 0) items[i] = { ...(items[i] as Extract<ChatItem, { kind: 'question' }>), resolved: true };
       return next;
     }
@@ -345,7 +367,7 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
       return next;
     case 'verify': {
       const item = { kind: 'verify' as const, id: e.id, status: e.status, command: e.command, output: e.output, exitCode: e.exitCode, durationMs: e.durationMs };
-      const i = items.findIndex((it) => it.kind === 'verify' && it.id === e.id);
+      const i = lastIndex(items, (it) => it.kind === 'verify' && it.id === e.id);
       if (i >= 0) items[i] = item; else items.push(item);
       return next;
     }
@@ -357,6 +379,8 @@ export function reduceEvent(s: ChatSession, e: AgentEvent, seq: number, ts = Dat
 /** Convert a stored Claude Code transcript into chat items for display when resuming. */
 export function itemsFromHistory(messages: Array<{ type: string; uuid: string; message: unknown; parent_tool_use_id: string | null }>): ChatItem[] {
   const out: ChatItem[] = [];
+  // tool_use id -> index in `out`, so each tool_result finds its call without scanning (long transcripts).
+  const toolAt = new Map<string, number>();
   for (const m of messages) {
     const msg = m.message as { role?: string; content?: unknown } | undefined;
     const content = msg?.content;
@@ -374,7 +398,7 @@ export function itemsFromHistory(messages: Array<{ type: string; uuid: string; m
       for (const b of content as Array<Record<string, unknown>>) {
         if (b.type === 'text') texts.push(String(b.text));
         else if (b.type === 'tool_result') {
-          const i = out.findIndex((it) => it.kind === 'tool' && it.id === b.tool_use_id);
+          const i = toolAt.get(String(b.tool_use_id)) ?? -1;
           const c = b.content;
           const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x as { type?: string; text?: string }).type === 'image' ? '[image]' : (x as { text?: string }).text ?? '').join('\n') : '';
           const images = Array.isArray(c) ? (c as Array<{ type?: string; source?: { type?: string; data?: string; media_type?: string } }>)
@@ -388,7 +412,7 @@ export function itemsFromHistory(messages: Array<{ type: string; uuid: string; m
       for (const b of content as Array<Record<string, unknown>>) {
         if (b.type === 'text') text += String(b.text);
         else if (b.type === 'thinking') thinking += String(b.thinking ?? '');
-        else if (b.type === 'tool_use') out.push({ kind: 'tool', id: String(b.id), name: String(b.name), input: b.input, output: null, isError: false, parent: m.parent_tool_use_id, elapsed: 0, done: true });
+        else if (b.type === 'tool_use') { if (!toolAt.has(String(b.id))) toolAt.set(String(b.id), out.length); out.push({ kind: 'tool', id: String(b.id), name: String(b.name), input: b.input, output: null, isError: false, parent: m.parent_tool_use_id, elapsed: 0, done: true }); }
       }
       if (text || thinking) out.push({ kind: 'assistant', id: m.uuid, text, thinking, parent: m.parent_tool_use_id, streaming: false });
     }
