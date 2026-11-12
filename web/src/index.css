@@ -290,10 +290,18 @@ select {
 .lock-shake { animation: lock-shake .42s cubic-bezier(.36,.07,.19,.97); }
 @keyframes lock-breathe { 0%, 100% { opacity: 1; box-shadow: 0 0 10px 1px currentColor; } 50% { opacity: .22; box-shadow: 0 0 0 0 currentColor; } }
 /* Dock project status (Dock.tsx StatusRing): an inset ring over the icon's circle that grows and shrinks.
-   A shadow, not a border, so the icon never moves. Yellow while a session works, green when one finished. */
-.status-ring { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; animation: status-ring 1.6s ease-in-out infinite; }
-.status-ring-running { --ring: rgb(251 191 36 / .95); }
-.status-ring-done { --ring: rgb(52 211 153 / .95); }
-@keyframes status-ring { 0%, 100% { box-shadow: inset 0 0 0 1.5px var(--ring); } 50% { box-shadow: inset 0 0 0 4px var(--ring); } }
-@media (prefers-reduced-motion: reduce) { .status-ring { animation: none; box-shadow: inset 0 0 0 2.5px var(--ring); } }
+   A shadow, not a border, so the icon never moves. Yellow while a session works, green when one finished.
+   It runs for as long as a session works, so only opacity animates (on the compositor): a thin ring stays,
+   and two wider ones fade in and out one after the other. Animating box-shadow itself repainted the
+   glass dock on every frame. */
+.status-ring, .status-ring::before, .status-ring::after { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; }
+.status-ring { box-shadow: inset 0 0 0 1.5px var(--ring); }
+.status-ring::before, .status-ring::after { content: ""; opacity: 0; animation: 1.6s ease-in-out infinite; }
+.status-ring::before { box-shadow: inset 0 0 0 2.75px var(--ring); animation-name: status-ring-mid; }
+.status-ring::after { box-shadow: inset 0 0 0 4px var(--ring); animation-name: status-ring-wide; }
+.status-ring-running { --ring: #fbbf24; }
+.status-ring-done { --ring: #34d399; }
+@keyframes status-ring-mid { 25%, 75% { opacity: 1; } }
+@keyframes status-ring-wide { 0%, 25%, 75%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .status-ring::before, .status-ring::after { animation: none; } .status-ring::before { opacity: 1; } }
 @keyframes lock-shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-8px); } 40%, 60% { transform: translateX(8px); } }
