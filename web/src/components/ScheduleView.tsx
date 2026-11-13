@@ -50,7 +50,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
   useLang();
   const [snap, setSnap] = useState<ScheduleSnapshot | null>(null);
   // The title bar badge counts the schedules (lib/scheduleCount.ts).
-  useEffect(() => { if (snap) setScheduleCount(snap.schedules.length); }, [snap]);
+  useEffect(() => { if (snap) setScheduleCount(snap.schedules); }, [snap]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | 'new' | null>(null);
   const [draft, setDraft] = useState<Draft>(() => blank(defaultCwd ?? ''));
