@@ -4,7 +4,8 @@ import { loadUsage, useUsage } from '../lib/usageStore';
 import { t, useLang } from '../lib/i18n';
 import { UpdateBadge } from './UpdatePanel';
 import Icon from './Icon';
-import { useHostClients, useRemoteState } from '../lib/remote';
+import { useHostClients, useRemoteState, useRemoteUnread } from '../lib/remote';
+import { useScheduleCount } from '../lib/scheduleCount';
 
 export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule' | 'remote';
 export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule', 'remote'];
@@ -106,6 +107,10 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
   const remoteStatus = useRemoteState().status;
   const hostClients = useHostClients();
   const remoteLive = remoteStatus === 'connected' || hostClients > 0;
+  // Red count badges: remote replies not seen yet (they replace the green dot), and schedules set up on this Mac.
+  const remoteUnread = useRemoteUnread().size;
+  const schedules = useScheduleCount();
+  const badge = (m: ViewMode) => (m === 'remote' ? remoteUnread : m === 'schedule' ? schedules : 0);
   useLayoutEffect(() => {
     const el = refs.current[mode];
     if (el) setMarker({ left: el.offsetLeft, width: el.offsetWidth });
@@ -117,7 +122,8 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
         <button key={m} ref={(el) => { refs.current[m] = el; }} onClick={() => onMode(m)}
           className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
           {t(`usage.${m}`)}
-          {m === 'remote' && remoteLive && <span className="live-dot right-[5px] top-1/2 -mt-[3px]" title={t('usage.remoteLive')} />}
+          {badge(m) > 0 ? <span className="count-badge" title={t(m === 'remote' ? 'usage.remoteUnread' : 'usage.scheduleCount', { n: badge(m) })}>{badge(m) > 99 ? '99+' : badge(m)}</span>
+            : m === 'remote' && remoteLive && <span className="live-dot -top-px right-px" title={t('usage.remoteLive')} />}
         </button>
       ))}
     </div>

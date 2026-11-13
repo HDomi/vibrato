@@ -63,14 +63,17 @@ function wire() {
     state = s;
     for (const l of stateListeners) l();
     // Another host, or a fresh connection after "Disconnect": nothing of the old chats applies.
-    if (s.hostId !== was.hostId) resetChats();
+    if (s.hostId !== was.hostId) { resetChats(); resetSessions(); }
+    if (s.status === 'connected' && was.status !== 'connected') loadSessions();
+    else if (s.status !== 'connected' && sessionList.length) { sessionList = []; notifySessions(); }
   });
+  b.onSessions(loadSessions);
   b.onEvents((list) => {
     const changed = new Set<string>();
     for (const m of list) if (applyMessage(m)) changed.add(m.sessionId);
     for (const id of changed) bump(id);
   });
-  void b.state().then((s) => { if (s) { state = s; for (const l of stateListeners) l(); } });
+  void b.state().then((s) => { if (s) { state = s; for (const l of stateListeners) l(); if (s.status === 'connected') loadSessions(); } });
 }
 
 export function useRemoteState(): RemoteState {
@@ -196,19 +199,70 @@ export function useRemoteModels(agent: AgentId | null | undefined, hostKey: stri
   return list;
 }
 
-/** Sessions, projects and history of the connected host; refetched when the host says its list changed. */
-export function useRemoteSessions(connected: boolean) {
-  const [sessions, setSessions] = useState<RemoteSessionSummary[]>([]);
-  useEffect(() => {
-    const b = remoteBridge();
-    if (!b || !connected) { setSessions([]); return; }
-    let alive = true;
-    const load = () => void b.call<RemoteSessionSummary[]>('sessions').then((s) => { if (alive) setSessions(s); }).catch(() => {});
-    load();
-    const off = b.onSessions(load);
-    return () => { alive = false; off(); };
-  }, [connected]);
-  return sessions;
+// ---- the connected host's sessions, and replies not seen yet ----
+
+/*
+ * Kept here, not in the Remote view, so the title bar can count replies while another tab is on screen. The host
+ * says "sessions" whenever a session's status changes (server/remote/host.ts), so a turn ending is a session
+ * going from running to not running. It counts as unread unless the Remote view is showing that session.
+ */
+let sessionList: RemoteSessionSummary[] = [];
+const sessionListeners = new Set<() => void>();
+const lastRunning = new Map<string, boolean>();
+const unread = new Set<string>();
+/** Immutable copy of `unread` for React: a new object only when it changed. */
+let unreadIds: ReadonlySet<string> = new Set();
+let viewing: string | null = null;
+/** Bumped on a host change so a list still in flight for the old host is dropped. */
+let sessionsGen = 0;
+
+function notifySessions() {
+  if (unread.size !== unreadIds.size || [...unread].some((id) => !unreadIds.has(id))) unreadIds = new Set(unread);
+  for (const l of sessionListeners) l();
+}
+
+function resetSessions() {
+  sessionsGen++;
+  sessionList = [];
+  lastRunning.clear();
+  unread.clear();
+  notifySessions();
+}
+
+function loadSessions() {
+  const b = remoteBridge();
+  if (!b || state.status !== 'connected') return;
+  const gen = sessionsGen;
+  b.call<RemoteSessionSummary[]>('sessions').then((list) => {
+    if (gen !== sessionsGen || state.status !== 'connected' || !Array.isArray(list)) return;
+    const ids = new Set<string>();
+    for (const r of list) {
+      ids.add(r.id);
+      if (lastRunning.get(r.id) && !r.running && r.id !== viewing) unread.add(r.id);
+      lastRunning.set(r.id, r.running);
+    }
+    for (const id of [...lastRunning.keys()]) if (!ids.has(id)) { lastRunning.delete(id); unread.delete(id); }
+    sessionList = list;
+    notifySessions();
+  }).catch(() => {});
+}
+
+const subscribeSessions = (cb: () => void) => { wire(); sessionListeners.add(cb); return () => { sessionListeners.delete(cb); }; };
+
+/** Sessions of the connected host; refetched when the host says its list changed. */
+export function useRemoteSessions(): RemoteSessionSummary[] {
+  return useSyncExternalStore(subscribeSessions, () => sessionList, () => sessionList);
+}
+
+/** Remote sessions whose reply came back while nobody was looking at them. */
+export function useRemoteUnread(): ReadonlySet<string> {
+  return useSyncExternalStore(subscribeSessions, () => unreadIds, () => unreadIds);
+}
+
+/** The session the Remote view shows on screen (null: none, or the view is hidden). Showing it marks it read. */
+export function setRemoteViewing(id: string | null) {
+  viewing = id;
+  if (id && unread.delete(id)) notifySessions();
 }
 
 // ---- this Mac as a host (local server routes, full app only) ----

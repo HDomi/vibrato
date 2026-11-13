@@ -3,7 +3,7 @@ import { t, useLang } from '../../lib/i18n';
 import type { ChatItem } from '../../lib/chatStore';
 import type { AgentId, PermissionModeId } from '../../lib/agent';
 import {
-  closeSession, remoteBridge, remoteOnly, startSession, unwatchSession, useRemoteChat, useRemoteDraft, useRemoteModels, useRemoteSessions, useRemoteState, watchSession,
+  closeSession, remoteBridge, remoteOnly, setRemoteViewing, startSession, unwatchSession, useRemoteChat, useRemoteDraft, useRemoteModels, useRemoteSessions, useRemoteState, useRemoteUnread, watchSession,
   type RemoteHistoryRow, type RemoteHostView, type RemoteModel, type RemoteProjects, type RemoteSessionSummary, type RemoteState,
 } from '../../lib/remote';
 import { AssistantItem, ApprovalItem, QuestionItem, ResultItem, summarizeInput } from '../ChatItems';
@@ -43,10 +43,14 @@ export default function RemoteView() {
   useLang();
   const state = useRemoteState();
   const connected = state.status === 'connected';
-  const sessions = useRemoteSessions(connected);
+  const sessions = useRemoteSessions();
   const [project, setProject] = useState<string | null>(null);
   const [sel, setSel] = useState<Selection>(null);
   const [hostPanel, setHostPanel] = useState(false);
+  // The session on screen counts as read (the title bar badge counts the others).
+  const viewActive = useContext(ViewActiveContext);
+  const viewingId = viewActive && sel?.kind === 'session' ? sel.id : null;
+  useEffect(() => { setRemoteViewing(viewingId); return () => setRemoteViewing(null); }, [viewingId]);
   // A new connection (or another host) starts from the project list.
   useEffect(() => { if (!state.hostId) { setProject(null); setSel(null); } }, [state.hostId]);
 
@@ -243,6 +247,7 @@ function Browser({ sessions, project, setProject, sel, setSel }: {
   sessions: RemoteSessionSummary[]; project: string | null; setProject: (p: string | null) => void; sel: Selection; setSel: (s: Selection) => void;
 }) {
   const b = remoteBridge()!;
+  const unread = useRemoteUnread();
   const [projects, setProjects] = useState<RemoteProjects | null>(null);
   const [history, setHistory] = useState<RemoteHistoryRow[] | null>(null);
   const [path, setPath] = useState('');
@@ -293,7 +298,7 @@ function Browser({ sessions, project, setProject, sel, setSel }: {
         </div>
         <div className="flex-1 min-h-0 overflow-auto px-2 py-3 space-y-4">
           <Group title={t('remote.liveSessions')} count={mine.length}>
-            {mine.length === 0 ? <Empty text={t('remote.noLive')} /> : mine.map((s) => <SessionRow key={s.id} s={s} active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
+            {mine.length === 0 ? <Empty text={t('remote.noLive')} /> : mine.map((s) => <SessionRow key={s.id} s={s} unread={unread.has(s.id)} active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
           </Group>
           <Group title={t('remote.history')} count={history?.length}>
             {history === null ? <Empty text={t('common.loading')} /> : history.length === 0 ? <Empty text={t('remote.noHistory')} /> : history.map((h) => (
@@ -316,7 +321,7 @@ function Browser({ sessions, project, setProject, sel, setSel }: {
   return (
     <div className="flex-1 min-h-0 overflow-auto px-2 py-3 space-y-4">
       <Group title={t('remote.liveSessions')} count={active.length}>
-        {active.length === 0 ? <Empty text={t('remote.noLive')} /> : active.map((s) => <SessionRow key={s.id} s={s} showProject active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
+        {active.length === 0 ? <Empty text={t('remote.noLive')} /> : active.map((s) => <SessionRow key={s.id} s={s} unread={unread.has(s.id)} showProject active={s.id === selectedId} onClick={() => setSel({ kind: 'session', id: s.id })} />)}
       </Group>
       <Group title={t('remote.projects')} count={projects ? list.length : undefined}>
         {projects === null ? <Empty text={t('common.loading')} /> : list.length === 0 ? <Empty text={t('remote.noProjects')} /> : list.map((p) => {
@@ -375,8 +380,8 @@ function Empty({ text }: { text: string }) {
   return <div className="mx-1 rounded-xl border border-dashed border-white/10 px-3 py-2.5 text-center text-[11.5px] text-zinc-500">{text}</div>;
 }
 
-function SessionRow({ s, active, showProject, onClick }: { s: RemoteSessionSummary; active: boolean; showProject?: boolean; onClick: () => void }) {
-  const dot = s.waiting ? 'bg-amber-400' : s.running ? 'bg-sky-400 animate-pulse' : 'bg-zinc-500';
+function SessionRow({ s, active, unread, showProject, onClick }: { s: RemoteSessionSummary; active: boolean; unread: boolean; showProject?: boolean; onClick: () => void }) {
+  const dot = s.waiting ? 'bg-amber-400' : s.running ? 'bg-sky-400 animate-pulse' : unread ? 'bg-red-500' : 'bg-zinc-500';
   return (
     <button className={`w-full flex items-center gap-2.5 text-left rounded-xl px-2.5 py-2 transition-colors ${active ? 'bg-fill-3' : 'hover:bg-fill-2'}`} onClick={onClick}>
       <span className="relative shrink-0">

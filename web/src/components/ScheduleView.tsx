@@ -4,6 +4,7 @@ import { CRON_PRESETS, describeCron as describe, nextRuns, parseCron } from '../
 import { relativeTime } from '../lib/toolbox/time';
 import { getLang, t, useLang } from '../lib/i18n';
 import { pollWhileActive } from '../lib/poll';
+import { setScheduleCount } from '../lib/scheduleCount';
 import { ViewActiveContext } from '../lib/viewActive';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
@@ -48,6 +49,8 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
 }) {
   useLang();
   const [snap, setSnap] = useState<ScheduleSnapshot | null>(null);
+  // The title bar badge counts the schedules (lib/scheduleCount.ts).
+  useEffect(() => { if (snap) setScheduleCount(snap.schedules.length); }, [snap]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | 'new' | null>(null);
   const [draft, setDraft] = useState<Draft>(() => blank(defaultCwd ?? ''));
