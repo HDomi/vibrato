@@ -486,9 +486,15 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
   const [atBottom, setAtBottom] = useState(true);
   const [searching, setSearching] = useState(false);
   // Chat or plan view, remembered per session; new sessions follow Settings > General.
-  const [view, setView] = useState<SessionView>('chat');
+  // Read during render, not in an effect: an effect runs after the first paint, so a session remembered in Plan
+  // flashed the chat for a frame before switching.
+  const [view, setView] = useState<SessionView>(() => (session ? readSessionView(session.id) : 'chat'));
   const [focusTurn, setFocusTurn] = useState<string | null>(null);
-  useEffect(() => { if (session) { setView(readSessionView(session.id)); setFocusTurn(null); } }, [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [viewFor, setViewFor] = useState(session?.id);
+  if (session?.id !== viewFor) {
+    setViewFor(session?.id);
+    if (session) { setView(readSessionView(session.id)); setFocusTurn(null); }
+  }
   const switchView = (v: SessionView) => {
     setView(v);
     if (session) try { localStorage.setItem(`${LS_VIEW}.${session.id}`, v); } catch { /* ignore */ }
