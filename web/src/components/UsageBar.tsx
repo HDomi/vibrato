@@ -98,6 +98,20 @@ function CircleButton({ title, onClick, children }: { title: string; onClick?: (
   );
 }
 
+/** Whether the window is in front (focused and not hidden); the remote dot breathes only then. */
+function useWindowActive(): boolean {
+  const read = () => typeof document !== 'undefined' && !document.hidden && document.hasFocus();
+  const [active, setActive] = useState(read);
+  useEffect(() => {
+    const update = () => setActive(read());
+    window.addEventListener('focus', update);
+    window.addEventListener('blur', update);
+    document.addEventListener('visibilitychange', update);
+    return () => { window.removeEventListener('focus', update); window.removeEventListener('blur', update); document.removeEventListener('visibilitychange', update); };
+  }, []);
+  return active;
+}
+
 /** View switch: a glass capsule whose opaque white marker slides to the selected tab. */
 function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => void }) {
   const refs = useRef<Partial<Record<ViewMode, HTMLButtonElement | null>>>({});
@@ -107,6 +121,7 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
   const remoteStatus = useRemoteState().status;
   const hostClients = useHostClients();
   const remoteLive = remoteStatus === 'connected' || hostClients > 0;
+  const windowActive = useWindowActive();
   // Red count badges: remote replies not seen yet (they replace the green dot), and schedules set up on this Mac.
   const remoteUnread = useRemoteUnread().size;
   const schedules = useScheduleCount();
@@ -123,7 +138,7 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
           className={`relative h-7 px-4 rounded-full transition-colors duration-200 ${mode === m ? 'text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
           {t(`usage.${m}`)}
           {badge(m) > 0 ? <span className="count-badge" title={t(m === 'remote' ? 'usage.remoteUnread' : 'usage.scheduleCount', { n: badge(m) })}>{badge(m) > 99 ? '99+' : badge(m)}</span>
-            : m === 'remote' && remoteLive && <span className="live-dot -top-px right-px" title={t('usage.remoteLive')} />}
+            : m === 'remote' && remoteLive && <span className={`live-dot -top-px right-px ${windowActive ? 'live-dot-breathe' : ''}`} title={t('usage.remoteLive')} />}
         </button>
       ))}
     </div>

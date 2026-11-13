@@ -215,6 +215,9 @@ let unreadIds: ReadonlySet<string> = new Set();
 let viewing: string | null = null;
 /** Bumped on a host change so a list still in flight for the old host is dropped. */
 let sessionsGen = 0;
+/** One request at a time: notices that arrive meanwhile become one more request after it. */
+let sessionsLoading = false;
+let sessionsAgain = false;
 
 function notifySessions() {
   if (unread.size !== unreadIds.size || [...unread].some((id) => !unreadIds.has(id))) unreadIds = new Set(unread);
@@ -232,6 +235,8 @@ function resetSessions() {
 function loadSessions() {
   const b = remoteBridge();
   if (!b || state.status !== 'connected') return;
+  if (sessionsLoading) { sessionsAgain = true; return; }
+  sessionsLoading = true;
   const gen = sessionsGen;
   b.call<RemoteSessionSummary[]>('sessions').then((list) => {
     if (gen !== sessionsGen || state.status !== 'connected' || !Array.isArray(list)) return;
@@ -244,7 +249,10 @@ function loadSessions() {
     for (const id of [...lastRunning.keys()]) if (!ids.has(id)) { lastRunning.delete(id); unread.delete(id); }
     sessionList = list;
     notifySessions();
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => {
+    sessionsLoading = false;
+    if (sessionsAgain) { sessionsAgain = false; loadSessions(); }
+  });
 }
 
 const subscribeSessions = (cb: () => void) => { wire(); sessionListeners.add(cb); return () => { sessionListeners.delete(cb); }; };

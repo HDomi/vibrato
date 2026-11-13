@@ -294,8 +294,14 @@ select {
 /* Title bar tabs (UsageBar.tsx ModeTabs): a small green dot that breathes while a remote connection is up, and
    red count badges. Both hang on the tab's top right corner, absolute, so the tab width (and the sliding marker)
    does not change. */
-.live-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }
-.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 6px 1px currentColor; animation: lock-glow 2.6s ease-in-out infinite; }
+/* The dot sits inside the blurred capsule and can breathe for hours. A smooth breath made the compositor redraw
+   the capsule every frame (~6-12% of the GPU process in an Electron measurement); 12 steps per breath and a single
+   animated layer (the glow fades with its parent) bring that near zero. It breathes only while the window is in
+   front: `live-dot-breathe` is dropped when the window loses focus. */
+.live-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #34d399; color: #34d399; }
+.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 6px 1px currentColor; }
+.live-dot-breathe { animation: lock-breathe 2.6s steps(12) infinite; }
+@media (prefers-reduced-motion: reduce) { .live-dot-breathe { animation: none; } }
 .count-badge { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgb(0 0 0 / .35); }
 @keyframes lock-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .22; } }
 @keyframes lock-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
