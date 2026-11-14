@@ -54,6 +54,15 @@
   --radius-card: 22px;
   --radius-control: 12px;
   --ease-glass: cubic-bezier(.2, .8, .2, 1);
+  /* Tailwind's pulse in 8 steps per half breath instead of a smooth curve: each frame of it recomposites the glass
+     around the dot, and sessions keep their dots pulsing for as long as they work. */
+  --animate-pulse: pulse 2s steps(8) infinite;
+}
+
+/* While the window is hidden or not in front (lib/motionPause.ts), looping animations hold still. */
+html.motion-paused .animate-pulse, html.motion-paused .animate-spin, html.motion-paused .animate-ping, html.motion-paused .animate-bounce,
+html.motion-paused .status-ring::before, html.motion-paused .status-ring::after, html.motion-paused .live-dot-breathe {
+  animation-play-state: paused;
 }
 
 html, body, #root {
@@ -285,10 +294,11 @@ select {
 @keyframes pin-flow-in { to { opacity: 1; } }
 .lock-dot { position: relative; width: 10px; height: 10px; border-radius: 50%; flex: none; }
 /* The glow is a fixed shadow on a pseudo element that fades: only opacity animates (on the compositor), so the
-   blurred lock card around it is not repainted every frame while sessions run. */
-.lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s ease-in-out infinite; }
-.lock-dot-waiting { background: #fbbf24; color: #fbbf24; animation: lock-breathe 2.6s ease-in-out infinite; }
-.lock-dot-running::after, .lock-dot-waiting::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 10px 1px currentColor; animation: lock-glow 2.6s ease-in-out infinite; }
+   blurred lock card around it is not repainted every frame while sessions run. 12 steps per breath: the cover
+   stays up for hours while the user is away, and a smooth fade still recomposited the card every frame. */
+.lock-dot-running { background: #34d399; color: #34d399; animation: lock-breathe 2.6s steps(12) infinite; }
+.lock-dot-waiting { background: #fbbf24; color: #fbbf24; animation: lock-breathe 2.6s steps(12) infinite; }
+.lock-dot-running::after, .lock-dot-waiting::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 10px 1px currentColor; animation: lock-glow 2.6s steps(12) infinite; }
 .lock-dot-idle { background: #52525b; }
 .lock-shake { animation: lock-shake .42s cubic-bezier(.36,.07,.19,.97); }
 /* Title bar tabs (UsageBar.tsx ModeTabs): a small green dot that breathes while a remote connection is up, and
@@ -296,8 +306,8 @@ select {
    does not change. */
 /* The dot sits inside the blurred capsule and can breathe for hours. A smooth breath made the compositor redraw
    the capsule every frame (~6-12% of the GPU process in an Electron measurement); 12 steps per breath and a single
-   animated layer (the glow fades with its parent) bring that near zero. It breathes only while the window is in
-   front: `live-dot-breathe` is dropped when the window loses focus. */
+   animated layer (the glow fades with its parent) bring that near zero. It holds still while the window is not in
+   front (`motion-paused`, lib/motionPause.ts). */
 .live-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #34d399; color: #34d399; }
 .live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 6px 1px currentColor; }
 .live-dot-breathe { animation: lock-breathe 2.6s steps(12) infinite; }
@@ -307,12 +317,12 @@ select {
 @keyframes lock-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 /* Dock project status (Dock.tsx StatusRing): an inset ring over the icon's circle that grows and shrinks.
    A shadow, not a border, so the icon never moves. Yellow while a session works, green when one finished.
-   It runs for as long as a session works, so only opacity animates (on the compositor): a thin ring stays,
-   and two wider ones fade in and out one after the other. Animating box-shadow itself repainted the
-   glass dock on every frame. */
+   It runs for as long as a session works, so only opacity animates (on the compositor), in 4 steps per quarter:
+   a thin ring stays, and two wider ones fade in and out one after the other. Animating box-shadow itself
+   repainted the glass dock on every frame, and a smooth fade still recomposited it every frame. */
 .status-ring, .status-ring::before, .status-ring::after { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; }
 .status-ring { box-shadow: inset 0 0 0 1.5px var(--ring); }
-.status-ring::before, .status-ring::after { content: ""; opacity: 0; animation: 1.6s ease-in-out infinite; }
+.status-ring::before, .status-ring::after { content: ""; opacity: 0; animation: 1.6s steps(4) infinite; }
 .status-ring::before { box-shadow: inset 0 0 0 2.75px var(--ring); animation-name: status-ring-mid; }
 .status-ring::after { box-shadow: inset 0 0 0 4px var(--ring); animation-name: status-ring-wide; }
 .status-ring-running { --ring: #fbbf24; }

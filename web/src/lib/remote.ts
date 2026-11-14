@@ -277,7 +277,7 @@ export function setRemoteViewing(id: string | null) {
 
 export interface HostStatus {
   configured: boolean; enabled: boolean; port: number; listening: boolean; error: string | null; fingerprint: string | null;
-  codeCreatedAt: number | null; passwordSetAt: number | null; webhook: string | null; keepAwake: boolean; wakeOnConnect: boolean; awake: boolean; clients: { address: string; since: number }[]; addresses: string[];
+  codeCreatedAt: number | null; passwordSetAt: number | null; webhook: string | null; keepAwake: boolean; keepAwakeOnBattery: boolean; wakeOnConnect: boolean; awake: boolean; clients: { address: string; since: number }[]; addresses: string[];
 }
 
 async function hostCall<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -316,7 +316,7 @@ export function useHostClients(): number {
 
 export const hostApi = {
   status: () => hostCall<HostStatus>('GET', '/api/remote/host'),
-  configure: (patch: { enabled?: boolean; port?: number; keepAwake?: boolean; wakeOnConnect?: boolean }) => hostCall<HostStatus & { code: string | null }>('PUT', '/api/remote/host', patch),
+  configure: (patch: { enabled?: boolean; port?: number; keepAwake?: boolean; keepAwakeOnBattery?: boolean; wakeOnConnect?: boolean }) => hostCall<HostStatus & { code: string | null }>('PUT', '/api/remote/host', patch),
   setWebhook: (url: string | null) => hostCall<HostStatus>('PUT', '/api/remote/host/webhook', { url }),
   testWebhook: () => hostCall<{ ok: true }>('POST', '/api/remote/host/webhook/test'),
   setPassword: (password: string) => hostCall<HostStatus>('PUT', '/api/remote/host/password', { password }),

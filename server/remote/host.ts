@@ -14,6 +14,7 @@ import { listClaudeModels } from '../agents/claude.js';
 import { listCodexModels } from '../agents/codex.js';
 import { which } from '../shell.js';
 import { getUsage } from '../usage.js';
+import { readPowerSource } from '../powerSource.js';
 import { loadIdentity } from './identity.js';
 import { maskWebhook, noticeMessage, sendDiscord, testMessage, validWebhook } from './notify.js';
 import {
@@ -34,6 +35,8 @@ const MAX_CLIENTS = 4;
 /** A client that stops reading (half-open link) is dropped before its queue eats memory. */
 const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
 const IDLE_TIMEOUT_MS = 90_000;
+/** How often the power source is re-read while keep-awake is limited to AC power. */
+const POWER_POLL_MS = 60_000;
 /** A logged-in client that does nothing for this long is logged out (pings and automatic refreshes do not count). */
 export const INACTIVE_LOGOUT_MS = 60 * 60_000;
 /** Calls that mean the person is working; list refreshes the app makes on its own do not. */
@@ -74,6 +77,8 @@ export interface RemoteHostStatus {
   fingerprint: string | null;
   codeCreatedAt: number | null;
   keepAwake: boolean;
+  /** Keep-awake also holds on battery power; false limits it to AC. */
+  keepAwakeOnBattery: boolean;
   wakeOnConnect: boolean;
   /** A password (second factor) is set; when it was. */
   passwordSetAt: number | null;
@@ -103,6 +108,8 @@ export class RemoteHost {
   private sessionsTimer: NodeJS.Timeout | null = null;
   /** `caffeinate -i` while listening: an idle-sleeping Mac would not answer at all. */
   private caffeinate: ChildProcess | null = null;
+  /** Set while keep-awake applies on AC power only: re-reads the power source (unplugging releases the hold). */
+  private powerTimer: NodeJS.Timeout | null = null;
   /** Failed-login notices: when one last went out per address, and all of them in the last minute. */
   private failNoticeAt = new Map<string, number>();
   private failNotices: number[] = [];
@@ -127,7 +134,7 @@ export class RemoteHost {
   private async applyNow() {
     const cfg = (await loadConfig()).remote;
     const want = cfg?.enabled ? cfg.port : 0;
-    if (this.server && this.listeningPort === want) { this.holdAwake(cfg?.keepAwake !== false); return; }
+    if (this.server && this.listeningPort === want) { this.syncAwake(cfg); return; }
     await this.stop();
     if (!cfg?.enabled) return;
     try {
@@ -145,11 +152,37 @@ export class RemoteHost {
       this.listeningPort = cfg.port;
       this.error = null;
       console.log(`[vibrato] remote host listening on port ${cfg.port}`);
-      this.holdAwake(cfg.keepAwake !== false);
+      this.syncAwake(cfg);
     } catch (err) {
       this.error = (err as Error).message;
       console.warn(`[vibrato] remote host failed: ${this.error}`);
     }
+  }
+
+  /**
+   * Keep-awake per the settings: off, always, or only on AC power. With the battery excluded, the power source is
+   * read now and then every POWER_POLL_MS; an unknown source counts as AC so the host stays reachable.
+   */
+  private syncAwake(cfg: RemoteHostConfig | undefined) {
+    const keep = cfg?.keepAwake !== false;
+    const acOnly = keep && cfg?.keepAwakeOnBattery === false && process.platform === 'darwin';
+    if (acOnly && !this.powerTimer) {
+      this.powerTimer = setInterval(() => void this.checkPower(), POWER_POLL_MS);
+      this.powerTimer.unref();
+    } else if (!acOnly) this.stopPowerWatch();
+    if (acOnly) void this.checkPower();
+    else this.holdAwake(keep);
+  }
+
+  private async checkPower() {
+    const source = await readPowerSource();
+    // Turned off or stopped while pmset ran.
+    if (!this.powerTimer || !this.server) return;
+    this.holdAwake(source !== 'battery');
+  }
+
+  private stopPowerWatch() {
+    if (this.powerTimer) { clearInterval(this.powerTimer); this.powerTimer = null; }
   }
 
   /**
@@ -232,6 +265,7 @@ export class RemoteHost {
   }
 
   async stop() {
+    this.stopPowerWatch();
     this.holdAwake(false);
     const server = this.server;
     this.server = null;
@@ -253,6 +287,7 @@ export class RemoteHost {
       fingerprint: this.fingerprint,
       codeCreatedAt: cfg?.codeCreatedAt ?? null,
       keepAwake: cfg?.keepAwake !== false,
+      keepAwakeOnBattery: cfg?.keepAwakeOnBattery !== false,
       wakeOnConnect: cfg?.wakeOnConnect !== false,
       passwordSetAt: cfg?.password?.setAt ?? null,
       webhook: cfg?.discordWebhook ? maskWebhook(cfg.discordWebhook) : null,
@@ -263,7 +298,7 @@ export class RemoteHost {
   }
 
   /** Settings: turn on/off, change the port. The first time also creates the identity and an access code. */
-  async configure(patch: { enabled?: boolean; port?: number; keepAwake?: boolean; wakeOnConnect?: boolean }): Promise<{ code: string | null }> {
+  async configure(patch: { enabled?: boolean; port?: number; keepAwake?: boolean; keepAwakeOnBattery?: boolean; wakeOnConnect?: boolean }): Promise<{ code: string | null }> {
     let code: string | null = null;
     await withConfigLock(async () => {
       const cfg = await loadConfig();
@@ -276,6 +311,7 @@ export class RemoteHost {
       if (patch.enabled === true && !remote.password) throw new RemoteError('Set a password first.');
       if (typeof patch.enabled === 'boolean') remote.enabled = patch.enabled;
       if (typeof patch.keepAwake === 'boolean') remote.keepAwake = patch.keepAwake;
+      if (typeof patch.keepAwakeOnBattery === 'boolean') remote.keepAwakeOnBattery = patch.keepAwakeOnBattery;
       if (typeof patch.wakeOnConnect === 'boolean') remote.wakeOnConnect = patch.wakeOnConnect;
       if (patch.port !== undefined) {
         if (!Number.isInteger(patch.port) || patch.port < 1024 || patch.port > 65535) throw new RemoteError('Port must be between 1024 and 65535.');

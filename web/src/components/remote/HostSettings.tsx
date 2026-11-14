@@ -100,8 +100,13 @@ export default function HostSettings({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-2">
-              <Toggle on={status.keepAwake} disabled={busy} label={t('remote.host.keepAwake')} hint={t(status.awake ? 'remote.host.keepAwakeOn' : 'remote.host.keepAwakeHint')}
+              <Toggle on={status.keepAwake} disabled={busy} label={t('remote.host.keepAwake')}
+                hint={t(status.awake ? 'remote.host.keepAwakeOn' : status.keepAwake && !status.keepAwakeOnBattery && status.listening ? 'remote.host.keepAwakeOnAc' : 'remote.host.keepAwakeHint')}
                 onChange={(v) => void run(() => hostApi.configure({ keepAwake: v }))} />
+              <div className="pl-6">
+                <Toggle on={status.keepAwake && status.keepAwakeOnBattery} disabled={busy || !status.keepAwake} label={t('remote.host.keepAwakeOnBattery')} hint={t('remote.host.keepAwakeOnBatteryHint')}
+                  onChange={(v) => void run(() => hostApi.configure({ keepAwakeOnBattery: v }))} />
+              </div>
               <Toggle on={status.wakeOnConnect} disabled={busy} label={t('remote.host.wakeOnConnect')} hint={t('remote.host.wakeOnConnectHint')}
                 onChange={(v) => void run(() => hostApi.configure({ wakeOnConnect: v }))} />
             </div>

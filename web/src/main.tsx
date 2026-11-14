@@ -4,6 +4,7 @@ import 'highlight.js/styles/github-dark.css';
 import './index.css';
 import { initWallpaper } from './lib/wallpaper';
 import { initStyle } from './lib/style';
+import { watchMotionPause } from './lib/motionPause';
 import { finishIntro, needsIntro } from './lib/intro';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -15,6 +16,8 @@ const lock = params.get('lock');
 // IDE windows load it with ?ide=<project root>; likewise without the chat app.
 const ide = params.get('ide');
 initStyle();
+// Not on lock covers: they are what is on screen while the user is away, and they never take focus.
+if (lock !== 'main' && lock !== 'sub') watchMotionPause();
 if (lock === 'main' || lock === 'sub') {
   initWallpaper();
   void import('./components/lock/LockScreen').then(({ default: LockScreen }) => root.render(<LockScreen />));

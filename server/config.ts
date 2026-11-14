@@ -84,6 +84,8 @@ export interface RemoteHostConfig {
   codeCreatedAt: number;
   /** Keep the Mac from idle-sleeping while the host waits, so it can still be reached (display may sleep). Absent means on. */
   keepAwake?: boolean;
+  /** Keep-awake also holds on battery power. Absent means on; false limits it to AC power. */
+  keepAwakeOnBattery?: boolean;
   /** Wake the display when a client logs in. Absent means on. */
   wakeOnConnect?: boolean;
   /** Second factor: a password set on this Mac and typed on the client at every login. Only its PBKDF2 result. */

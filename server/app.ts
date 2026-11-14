@@ -500,10 +500,10 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   // Cheap poll for the title bar's "remote connected" dot: no config read.
   app.get('/api/remote/host/clients', (c) => c.json({ clients: remoteHost().authedCount() }));
   app.put('/api/remote/host', async (c) => {
-    const b = await c.req.json<{ enabled?: unknown; port?: unknown; keepAwake?: unknown; wakeOnConnect?: unknown }>();
+    const b = await c.req.json<{ enabled?: unknown; port?: unknown; keepAwake?: unknown; keepAwakeOnBattery?: unknown; wakeOnConnect?: unknown }>();
     const bool = (v: unknown) => (typeof v === 'boolean' ? v : undefined);
     try {
-      const { code } = await remoteHost().configure({ enabled: bool(b.enabled), port: b.port === undefined ? undefined : Number(b.port), keepAwake: bool(b.keepAwake), wakeOnConnect: bool(b.wakeOnConnect) });
+      const { code } = await remoteHost().configure({ enabled: bool(b.enabled), port: b.port === undefined ? undefined : Number(b.port), keepAwake: bool(b.keepAwake), keepAwakeOnBattery: bool(b.keepAwakeOnBattery), wakeOnConnect: bool(b.wakeOnConnect) });
       return c.json({ code, ...(await remoteHost().status()) });
     } catch (err) { return c.json({ error: (err as Error).message }, 400); }
   });

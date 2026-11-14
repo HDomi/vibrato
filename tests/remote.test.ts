@@ -241,6 +241,17 @@ test('notices: MAC_LOGIN for successes and failures, MAC_LOGOUT clean or dropped
   host.sendNotice = async () => {};
 });
 
+test('keep-awake on battery: on unless turned off, saved with the other settings', async () => {
+  assert.equal((await host.status()).keepAwakeOnBattery, true, 'absent means on (as before the setting existed)');
+  await host.configure({ keepAwakeOnBattery: false });
+  const st = await host.status();
+  assert.equal(st.keepAwakeOnBattery, false);
+  assert.equal(st.keepAwake, false, 'the tests keep caffeinate off');
+  assert.equal(st.awake, false);
+  await host.configure({ keepAwakeOnBattery: true });
+  assert.equal((await host.status()).keepAwakeOnBattery, true);
+});
+
 test('webhook setting: rejects other URLs, status shows it masked only', async () => {
   await assert.rejects(host.setWebhook('https://example.com/hook'), /Discord webhook/);
   await host.setWebhook('https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123');
