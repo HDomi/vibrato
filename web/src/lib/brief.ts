@@ -1,4 +1,5 @@
 import { currentTodos, isInjected, type ChatSession } from './chatStore';
+import { relativeTo } from './paths';
 
 export interface SessionBrief { asks: number; files: string[]; commits: string[]; todos: string[]; last: string | null }
 
@@ -27,7 +28,7 @@ export function sessionBrief(s: Pick<ChatSession, 'items' | 'todos' | 'cwd'>): S
   const commits: string[] = [];
   let asks = 0;
   let last: string | null = null;
-  const rel = (p: string) => (p.startsWith(s.cwd + '/') ? p.slice(s.cwd.length + 1) : p);
+  const rel = (p: string) => relativeTo(p, s.cwd);
   for (const it of s.items) {
     if (it.kind === 'user' && !isInjected(it) && it.text.trim()) asks++;
     else if (it.kind === 'assistant' && !it.parent && it.text.trim()) last = it.text.trim();

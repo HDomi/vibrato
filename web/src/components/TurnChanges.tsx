@@ -4,6 +4,7 @@ import type { TurnFile } from '../lib/agent';
 import { api } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
+import { joinPath } from '../lib/paths';
 
 type ChangesItem = Extract<ChatItem, { kind: 'changes' }>;
 
@@ -94,7 +95,7 @@ export function TurnChangesItem({ item, onReview, reviewer }: { item: ChangesIte
       if (r.reverted.length) setReverted((prev) => new Set([...prev, ...r.reverted]));
     } catch (e) { window.alert((e as Error).message); } finally { setBusy(false); }
   };
-  const openFile = (p: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: `${item.root}/${p}` } }));
+  const openFile = (p: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: joinPath(item.root, p) } }));
 
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.02] text-[12px] overflow-hidden">

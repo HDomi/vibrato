@@ -2,6 +2,7 @@ import type { TaskInfo, TodoItem } from './agent';
 import { isInjected, liveTasks, todosFromInput, type ChatItem } from './chatStore';
 import { codePathCandidate } from './localPath';
 import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, stepEntries } from './textPlan';
+import { isAbsPath, joinPath } from './paths';
 
 export { doneMarks, textPlan } from './textPlan';
 
@@ -191,7 +192,7 @@ function createdFiles(it: Item<'tool'>): string[] {
   if (it.name === 'Write') return typeof i.file_path === 'string' && /^File created successfully/.test(it.output ?? '') ? [i.file_path] : [];
   if (it.name === 'FileChange') {
     return ((i.changes as { path?: unknown; kind?: { type?: unknown } }[] | undefined) ?? [])
-      .flatMap((c) => (typeof c.path === 'string' && c.path.startsWith('/') && c.kind?.type === 'add' ? [c.path] : []));
+      .flatMap((c) => (typeof c.path === 'string' && isAbsPath(c.path) && c.kind?.type === 'add' ? [c.path] : []));
   }
   return [];
 }
@@ -355,7 +356,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     }
     if (it.kind === 'tool' && (TASK_TOOLS.has(it.name) || SILENT_TOOLS.has(it.name))) continue;
     if (it.kind === 'result') { t.result = it; continue; }
-    if (it.kind === 'changes') { t.changes.push(it); addCreated(t, it.files.filter((f) => f.status === 'A').map((f) => `${it.root}/${f.path}`)); continue; }
+    if (it.kind === 'changes') { t.changes.push(it); addCreated(t, it.files.filter((f) => f.status === 'A').map((f) => joinPath(it.root, f.path))); continue; }
     if (it.kind === 'tool') {
       addCreated(t, createdFiles(it));
       const cmd = (it.input as { command?: unknown } | null)?.command;

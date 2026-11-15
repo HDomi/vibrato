@@ -187,5 +187,6 @@ export async function revertTurn(root: string, from: string, to: string, opts: {
 export function repoRelative(root: string, p: string): string | null {
   const strip = (x: string) => x.replace(/^\/private(?=\/(?:tmp|var)\/)/, '');
   const rel = path.relative(strip(root), strip(path.resolve(root, p)));
-  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : null;
+  // Git's own form: `/` on every platform.
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : null;
 }

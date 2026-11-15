@@ -14,6 +14,8 @@ import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
 import { toast } from './Toast';
 import { useEvent } from '../lib/useEvent';
+import { hasView } from '../platform';
+import { lastSep } from '../lib/paths';
 
 interface Props {
   entry: Entry | null;
@@ -120,7 +122,7 @@ function TextView({ path, markdown, name, ext, reload }: { path: string; markdow
       )}
       {mode === 'tables' && editable
         ? <Suspense fallback={null}><MdTableEditor text={state.content} onSave={saveTables} /></Suspense>
-        : <MarkdownView text={state.content} baseDir={path.slice(0, path.lastIndexOf('/'))} className="prose-md max-w-3xl text-[15px]" />}
+        : <MarkdownView text={state.content} baseDir={path.slice(0, lastSep(path))} className="prose-md max-w-3xl text-[15px]" />}
     </div>
   );
 }
@@ -207,7 +209,7 @@ const Preview = memo(function Preview({ entry, onClose, layer }: Props) {
         {entry.kind === 'image' && (
           <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => setConverting(true)}>{t('image.convertButton')}</button>
         )}
-        {entry.kind === 'pdf' && (
+        {entry.kind === 'pdf' && hasView('tools') && (
           <>
             <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => openTool('pdf', { paths: [entry.path] } satisfies PdfToolPayload)}>{t('pdf.editButton')}</button>
             <button className="text-xs px-2 py-1 rounded-md border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10" onClick={() => openTool('pdf', { paths: [entry.path], exportImages: true } satisfies PdfToolPayload)}>{t('pdf.toImagesButton')}</button>

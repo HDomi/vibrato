@@ -4,6 +4,7 @@ import type { EditorView } from '@codemirror/view';
 import { api, ApiError, type PreviewKind, type TextFile } from '../api';
 import { t } from '../i18n';
 import { languageOf } from './languages';
+import { isInside, isWindowsPath, lastSegment, parentDir } from '../paths';
 
 /**
  * Open editor tabs and their buffers. Kept outside React: a keystroke updates the buffer here and
@@ -51,9 +52,9 @@ const BACKUP = 'vibe.editor.backup:';
 const TABS = 'vibe.editor.tabs:';
 const BACKUP_MAX = 1024 * 1024;
 
-const nameOf = (p: string) => p.slice(p.lastIndexOf('/') + 1);
-const dirOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
-const within = (p: string, root: string) => p === root || p.startsWith(root.endsWith('/') ? root : root + '/');
+const nameOf = lastSegment;
+const dirOf = parentDir;
+const within = (p: string, root: string) => p === root || (isWindowsPath(root) ? isInside(p, root) : p.startsWith(root.endsWith('/') ? root : root + '/'));
 
 interface Backup { content: string; mtime: number | null }
 function readBackup(path: string): Backup | null {

@@ -2,6 +2,7 @@ import type { WebSocket, WebSocketServer } from 'ws';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { resolvePath } from './fs.js';
+import { loginShell } from './shell.js';
 
 type PtyModule = typeof import('node-pty');
 let ptyMod: PtyModule | null = null;
@@ -99,7 +100,7 @@ export function attachPty(wss: WebSocketServer) {
       return;
     }
     if (existing) { try { existing.ws?.close(); } catch { /* ignore */ } endShell(existing); } // same tab id twice: the newest connection wins
-    const shell = process.env.SHELL || '/bin/zsh';
+    const shell = loginShell();
     // Track a close that happens while node-pty is still loading, so the shell is not orphaned.
     let closedEarly = false;
     const onEarlyClose = () => { closedEarly = true; };
@@ -112,7 +113,7 @@ export function attachPty(wss: WebSocketServer) {
     try {
       const pty = await loadPty();
       if (closedEarly || generation !== shutdownGeneration) { ws.close(); return; }
-      term = pty.spawn(shell, ['-l'], {
+      term = pty.spawn(shell.file, shell.args, {
         name: 'xterm-256color', cols, rows, cwd,
         env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: process.env.LANG || 'ko_KR.UTF-8' } as Record<string, string>,
       });

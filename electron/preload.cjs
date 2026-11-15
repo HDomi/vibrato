@@ -5,6 +5,10 @@ let fullScreen = false;
 ipcRenderer.on('full-screen', (_e, on) => { fullScreen = !!on; });
 
 const remoteOnly = process.argv.includes('--vibrato-remote-only');
+// Targets without the app's lock screen (electron/platform.cts) get no lock bridge, so the page offers none.
+const noLock = process.argv.includes('--vibrato-no-lock');
+// Same for the in-app browser window: open-browser then hands URLs to the default browser.
+const noBrowser = process.argv.includes('--vibrato-no-browser');
 const platform = (process.argv.find((a) => a.startsWith('--vibrato-platform=')) || '').slice('--vibrato-platform='.length) || 'darwin';
 
 contextBridge.exposeInMainWorld('vibe', {
@@ -32,7 +36,7 @@ contextBridge.exposeInMainWorld('vibe', {
   // In-app browser window (electron/browser.cts); `url` opens in a new tab.
   openBrowser: (url) => ipcRenderer.invoke('open-browser', url),
   // The browser window's own UI: tabs, the page area it reserves for the native web view, and the logs.
-  browser: {
+  browser: noBrowser ? undefined : {
     info: () => ipcRenderer.invoke('browser:info'),
     frame: (rect) => ipcRenderer.send('browser:frame', rect),
     open: (url) => ipcRenderer.invoke('browser:open', url),
@@ -87,7 +91,7 @@ contextBridge.exposeInMainWorld('vibe', {
   onFullScreen: (cb) => { cb(fullScreen); const h = (_e, on) => cb(on); ipcRenderer.on('full-screen', h); return () => ipcRenderer.removeListener('full-screen', h); },
   // Lock screen (see electron/lockScreen.cts). App window: settings, password, session counts, lock now.
   // Cover windows: init / unlock / live updates.
-  lock: {
+  lock: noLock ? undefined : {
     get: () => ipcRenderer.invoke('lock:get'),
     set: (patch) => ipcRenderer.invoke('lock:set', patch),
     setPassword: (req) => ipcRenderer.invoke('lock:password', req),

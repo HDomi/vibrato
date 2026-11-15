@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadConfig, saveConfig, withConfigLock, type Backlog, type BacklogItem, type ProjectSettings } from './config.js';
 import { resolvePath } from './fs.js';
+import { shellCommand, signalProcessTree } from './shell.js';
 
 /** Keep the end of the output: that is where test runners and compilers summarize failures. */
 const MAX_LINES = 400;
@@ -91,8 +92,9 @@ export function runVerify(cwd: string, command: string): { done: Promise<VerifyO
       while (lines.length > MAX_LINES || bytes > MAX_BYTES) bytes -= (lines.shift()?.length ?? 0) + 1;
     }
   };
-  const child = spawn('/bin/zsh', ['-lc', command], { cwd: resolvePath(cwd), env: { ...process.env, CI: '1', FORCE_COLOR: '0', NO_COLOR: '1' }, detached: true });
-  const killGroup = (sig: NodeJS.Signals) => { try { if (child.pid) process.kill(-child.pid, sig); } catch { /* exited */ } };
+  const sh = shellCommand(command);
+  const child = spawn(sh.file, sh.args, { cwd: resolvePath(cwd), env: { ...process.env, CI: '1', FORCE_COLOR: '0', NO_COLOR: '1' }, ...sh.options, stdio: 'pipe' });
+  const killGroup = (sig: NodeJS.Signals) => { try { if (child.pid) signalProcessTree(child.pid, sig); } catch { /* exited */ } };
   const timer = setTimeout(() => {
     push('\nVerification exceeded 15 minutes; stopped.\n');
     killGroup('SIGTERM');

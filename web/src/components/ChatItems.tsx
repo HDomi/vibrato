@@ -11,6 +11,7 @@ import { t, useLang } from '../lib/i18n';
 import { useContextMenu } from './ContextMenu';
 import { setDragTransfer, transferMenu, type Transfer } from '../lib/transfer';
 import type { Attachment } from '../lib/agent';
+import { isAbsPath, lastSegment } from '../lib/paths';
 
 /** Text selected inside `el`, if any: right-clicking a selection sends only that part. */
 function selectionIn(el: HTMLElement | null): string {
@@ -32,7 +33,7 @@ export function clockTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-const fileAttachment = (path: string, kind: 'image' | 'file' = 'image'): Attachment => ({ path, name: path.split('/').pop() ?? path, kind });
+const fileAttachment = (path: string, kind: 'image' | 'file' = 'image'): Attachment => ({ path, name: lastSegment(path) ?? path, kind });
 
 export function summarizeInput(name: string, input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>;
@@ -154,8 +155,8 @@ function ToolImages({ images }: { images: { src: string; label: string }[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {images.map((im, n) => (
-        <img key={n} src={im.src} alt={im.label} title={im.label} loading="lazy" draggable={!im.label.startsWith('data:') && im.label.startsWith('/')}
-          onDragStart={(e) => { if (im.label.startsWith('/')) setDragTransfer(e, { text: '', attachments: [fileAttachment(im.label)] }); }}
+        <img key={n} src={im.src} alt={im.label} title={im.label} loading="lazy" draggable={!im.label.startsWith('data:') && isAbsPath(im.label)}
+          onDragStart={(e) => { if (isAbsPath(im.label)) setDragTransfer(e, { text: '', attachments: [fileAttachment(im.label)] }); }}
           className="max-h-56 max-w-full rounded-md border border-white/10 bg-black/30 object-contain cursor-zoom-in hover:border-white/25 transition-colors"
           onClick={(e) => { e.stopPropagation(); openLightbox(im.src, im.label); }} />
       ))}

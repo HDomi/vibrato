@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolvePath } from './fs.js';
+import { shellCommand, signalProcessTree } from './shell.js';
 
 /**
  * Project scripts (dev servers, watchers, builds) run by the Run panel. The server owns the processes,
@@ -56,7 +57,8 @@ export async function startRun(cwd: string, name: string, command: string): Prom
   // One instance per script: starting it again replaces the old process, once it has let go of its port.
   await Promise.all([...procs.values()].filter((p) => p.info.cwd === dir && p.info.name === name).map((p) => removeRun(p.info.id)));
   const id = `run-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  const child = spawn('/bin/zsh', ['-lc', command], { cwd: dir, detached: true, env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none' } });
+  const sh = shellCommand(command);
+  const child = spawn(sh.file, sh.args, { ...sh.options, stdio: 'pipe', cwd: dir, env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', BROWSER: 'none' } });
   const proc: Proc = { info: { id, cwd: dir, name, command, status: 'running', exitCode: null, startedAt: Date.now(), url: null }, child, lines: [], next: 0, events: new EventEmitter() };
   proc.events.setMaxListeners(50);
   procs.set(id, proc);
@@ -95,7 +97,7 @@ function push(p: Proc, raw: string, err: boolean) {
 }
 
 function killGroup(p: Proc, sig: NodeJS.Signals) {
-  try { if (p.child.pid) process.kill(-p.child.pid, sig); } catch { /* exited */ }
+  try { if (p.child.pid) signalProcessTree(p.child.pid, sig); } catch { /* exited */ }
 }
 
 export function stopRun(id: string): boolean {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { run, streamShell } from './shell.js';
 import { REPO_ROOT } from './paths.js';
+import { checkoutUpdateCommand } from './os/update.js';
 import { bundleOf, bundleProblem, installableReleases, latestRelease, releaseByTag, releaseCommits, stageRelease, summarize, type ReleaseSummary } from './releaseUpdate.js';
 export { REPO_ROOT };
 
@@ -166,8 +167,8 @@ export function applyUpdate(onLine: (line: string, stream: 'stdout' | 'stderr') 
       .finally(() => { applying = false; cached = null; });
   }
   if (version) return Promise.reject(new Error('Installing a specific release needs the standalone app'));
-  const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-  const cmd = `/bin/zsh ${quote(path.join(REPO_ROOT, 'scripts/apply-update.sh'))}`;
+  const cmd = checkoutUpdateCommand(REPO_ROOT);
+  if (!cmd) return Promise.reject(new Error('Updating a source checkout is not available on this platform'));
   if (applying) return Promise.reject(new Error('An update is already running'));
   applying = true;
   return (checking ?? Promise.resolve()).then(() => streamShell(cmd, onLine)).finally(() => { applying = false; cached = null; });

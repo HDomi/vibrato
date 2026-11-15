@@ -3,6 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { saveToolImage } from '../attachments.js';
 import type { AgentEvent, AgentSession, Attachment, PermissionModeId, Question } from './types.js';
+import { homedir } from 'node:os';
+import path from 'node:path';
+import { startable } from '../shell.js';
 
 /*
  * Codex app-server adapter. Speaks the JSON-RPC-style protocol over stdio
@@ -25,7 +28,8 @@ class AppServerClient {
   onExit: (code: number | null) => void = () => {};
 
   constructor(codexPath: string, cwd: string, extraArgs: string[] = []) {
-    this.proc = spawn(codexPath, ['app-server', '--listen', 'stdio://', ...extraArgs], { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const start = startable(codexPath, ['app-server', '--listen', 'stdio://', ...extraArgs]);
+    this.proc = spawn(start.file, start.args, { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const rl = createInterface({ input: this.proc.stdout! });
     // A codex CLI update can change message shapes; a TypeError in a handler must not take the server down.
     rl.on('line', (line) => {
@@ -201,7 +205,7 @@ export class CodexSession implements AgentSession {
       for (const raw of (t.items as ThreadItem[] | undefined) ?? []) {
         if (raw.type === 'userMessage') {
           const text = ((raw.content as Json[]) ?? []).filter((c) => c.type === 'text').map((c) => String(c.text)).join('\n');
-          const atts: Attachment[] = ((raw.content as Json[]) ?? []).filter((c) => c.type === 'localImage').map((c) => ({ path: String(c.path), name: String(c.path).split('/').pop() ?? '', kind: 'image' }));
+          const atts: Attachment[] = ((raw.content as Json[]) ?? []).filter((c) => c.type === 'localImage').map((c) => ({ path: String(c.path), name: path.basename(String(c.path)), kind: 'image' }));
           this.emit({ kind: 'user', text, attachments: atts });
         } else {
           this.itemStarted(raw, true);
@@ -475,7 +479,7 @@ export class CodexSession implements AgentSession {
 
 /** List Codex threads for a directory using a short-lived app-server process. */
 export async function listCodexThreads(codexPath: string, cwd: string | null, limit = 30): Promise<{ sessionId: string; summary: string; lastModified: number; firstPrompt?: string; gitBranch?: string; cwd?: string }[]> {
-  const c = new AppServerClient(codexPath, cwd ?? process.env.HOME ?? '/');
+  const c = new AppServerClient(codexPath, cwd ?? process.env.HOME ?? homedir());
   try {
     await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null });
     c.notify('initialized');
@@ -494,7 +498,7 @@ export async function listCodexThreads(codexPath: string, cwd: string | null, li
 }
 
 export async function listCodexModels(codexPath: string): Promise<{ id: string; name: string; description?: string; isDefault?: boolean }[]> {
-  const c = new AppServerClient(codexPath, process.env.HOME ?? '/');
+  const c = new AppServerClient(codexPath, process.env.HOME ?? homedir());
   try {
     await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null });
     c.notify('initialized');
@@ -507,7 +511,7 @@ export async function listCodexModels(codexPath: string): Promise<{ id: string; 
 
 /** Installed skills and plugins as the app-server reports them, for Settings > Agent CLIs. */
 export async function listCodexExtensions(codexPath: string): Promise<{ skills: { name: string; description: string; source: 'user' | 'system' | 'admin' | 'project'; plugin?: string; enabled: boolean }[]; plugins: { id: string; name: string; description: string; enabled: boolean; toggle: boolean }[] }> {
-  const home = process.env.HOME ?? '/';
+  const home = process.env.HOME ?? homedir();
   const c = new AppServerClient(codexPath, home);
   try {
     await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null });
@@ -534,7 +538,7 @@ export async function listCodexExtensions(codexPath: string): Promise<{ skills: 
 
 /** Account rate-limit snapshot (`account/rateLimits/read`). Reads the account state only; no model turn starts. */
 export async function readCodexRateLimits(codexPath: string, timeoutMs = 20000): Promise<Json> {
-  const c = new AppServerClient(codexPath, process.env.HOME ?? '/');
+  const c = new AppServerClient(codexPath, process.env.HOME ?? homedir());
   try {
     await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null }, timeoutMs);
     c.notify('initialized');
@@ -546,7 +550,7 @@ export async function readCodexRateLimits(codexPath: string, timeoutMs = 20000):
 
 /** Rename / archive Codex threads through a short-lived app-server. */
 export async function codexThreadOp(codexPath: string, op: 'rename' | 'delete', threadId: string, name?: string): Promise<void> {
-  const c = new AppServerClient(codexPath, process.env.HOME ?? '/');
+  const c = new AppServerClient(codexPath, process.env.HOME ?? homedir());
   try {
     await c.request('initialize', { clientInfo: { name: 'vibrato', title: 'vibrato', version: '0.1.0' }, capabilities: null });
     c.notify('initialized');

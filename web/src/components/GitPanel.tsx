@@ -4,6 +4,8 @@ import { t, useLang } from '../lib/i18n';
 import { pollWhileActive } from '../lib/poll';
 import CommitGraph from './CommitGraph';
 import Icon from './Icon';
+import { joinPath } from '../lib/paths';
+import { keyLabel } from '../platform/strings';
 
 interface Props { cwd: string | null; visible: boolean }
 
@@ -323,7 +325,7 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
               <button disabled={busy || !msg.trim() || !staged.length} className="rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs px-3 py-1.5 disabled:opacity-40" onClick={() => commit()}>{t('git.commit', { n: staged.length })}</button>
               <button disabled={busy || !msg.trim() || !staged.length || !!remoteBusy} className="rounded-full bg-fill hover:bg-fill-2 transition-colors text-xs px-3 py-1.5 disabled:opacity-40"
                 onClick={() => commit(true)}>{t('git.commitPush')}</button>
-              <span className="ml-auto text-[10px] text-zinc-600">⌘↩</span>
+              <span className="ml-auto text-[10px] text-zinc-600">{keyLabel('⌘↩')}</span>
             </div>
           </div>
         </div>
@@ -347,7 +349,7 @@ function CommitDetail({ view, root, file, diff, onFile, onClose }: {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const preview = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: `${root.replace(/\/$/, '')}/${path}` } }));
+  const preview = (path: string) => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: joinPath(root.replace(/\/$/, ''), path) } }));
   return (
     <div className="glass-fill absolute inset-0 flex flex-col z-20">
       <SectionHeader color="bg-violet-400" title={commit.subject} count={files?.length} fill={false}>

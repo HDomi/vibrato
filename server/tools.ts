@@ -1,4 +1,5 @@
 import { forgetCommandPaths, run, which } from './shell.js';
+import { INSTALLERS } from './os/programs.js';
 
 export type ToolId = 'claude' | 'codex';
 export type InstallMethod = 'official' | 'brew' | 'npm';
@@ -13,23 +14,10 @@ export interface ToolStatus {
   authInfo: string | null;
 }
 
-export interface Installers {
-  brew: string | null;
-  npm: string | null;
-  node: string | null;
-}
+/** Path of each package manager the platform reports (os/programs.ts INSTALLERS), null when it is not installed. */
+export type Installers = Record<string, string | null>;
 
-export const INSTALL_COMMANDS: Record<ToolId, Partial<Record<InstallMethod, string>>> = {
-  claude: {
-    official: 'curl -fsSL https://claude.ai/install.sh | bash',
-    brew: 'brew install --cask claude-code',
-    npm: 'npm install -g @anthropic-ai/claude-code',
-  },
-  codex: {
-    brew: 'brew install codex',
-    npm: 'npm install -g @openai/codex',
-  },
-};
+export { INSTALL_COMMANDS } from './os/programs.js';
 
 export const UPDATE_COMMANDS: Record<ToolId, string> = {
   claude: 'claude update',
@@ -66,10 +54,8 @@ async function codexStatus(): Promise<ToolStatus> {
 }
 
 async function probeTools(): Promise<{ tools: ToolStatus[]; installers: Installers }> {
-  const [claude, codex, brew, npm, node] = await Promise.all([
-    claudeStatus(), codexStatus(), which('brew'), which('npm'), which('node'),
-  ]);
-  return { tools: [claude, codex], installers: { brew, npm, node } };
+  const [claude, codex, ...found] = await Promise.all([claudeStatus(), codexStatus(), ...INSTALLERS.map((name) => which(name))]);
+  return { tools: [claude, codex], installers: Object.fromEntries(INSTALLERS.map((name, i) => [name, found[i] as string | null])) };
 }
 
 /**

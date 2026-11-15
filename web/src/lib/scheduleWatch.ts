@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { api, type ScheduleRun } from './api';
 import { t } from './i18n';
+import { lastSegment } from './paths';
 
 const POLL_MS = 20000;
 /** While the window is hidden (minimized, other Space) runs are still watched, just less often. */
@@ -29,7 +30,7 @@ export function useScheduleWatch() {
         if (stopped) return;
         for (const r of runTransitions(prev, snap.runs)) {
           const title = t(NOTIFY[r.status]!);
-          const body = `${r.name} · ${r.cwd.split('/').pop()}${r.error && r.status !== 'done' ? ` — ${r.error}` : ''}`;
+          const body = `${r.name} · ${lastSegment(r.cwd)}${r.error && r.status !== 'done' ? ` — ${r.error}` : ''}`;
           if (window.vibe?.notify) window.vibe.notify({ title, body, sessionId: `schedule:${r.id}` });
           window.dispatchEvent(new CustomEvent('vibe:toast', { detail: { text: `${title} · ${r.name}`, kind: r.status === 'failed' ? 'error' : undefined } }));
         }

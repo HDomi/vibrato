@@ -15,4 +15,5 @@ function findRoot(start: string): string {
   }
 }
 
-export const REPO_ROOT = findRoot(path.dirname(fileURLToPath(import.meta.url)));
+/** VIBRATO_REPO_ROOT: set when the server runs from a staged copy of the sources (scripts/platform.cjs dev, serve). */
+export const REPO_ROOT = process.env.VIBRATO_REPO_ROOT || findRoot(path.dirname(fileURLToPath(import.meta.url)));

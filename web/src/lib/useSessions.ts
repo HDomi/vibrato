@@ -4,6 +4,7 @@ import { ACTIVITY_EVENTS, displayTitle, itemsFromHistory, reduceEvent, type Chat
 import { api, type WorktreeInfo } from './api';
 import { t } from './i18n';
 import { agentDefaults } from './agentDefaults';
+import { lastSegment } from './paths';
 
 const LS_ACTIVE = 'vibe.sessions';
 
@@ -11,7 +12,7 @@ const LS_ACTIVE = 'vibe.sessions';
 let onScreenSession: string | null = null;
 export function setOnScreenSession(id: string | null) { onScreenSession = id; }
 
-function sessionName(s: ChatSession) { return displayTitle(s, 24) ?? s.cwd.split('/').pop() ?? s.agent; }
+function sessionName(s: ChatSession) { return displayTitle(s, 24) ?? lastSegment(s.cwd) ?? s.agent; }
 
 /**
  * Notify when the user is not looking at this session: the window is unfocused or hidden, or

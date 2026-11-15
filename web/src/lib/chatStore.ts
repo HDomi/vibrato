@@ -1,5 +1,6 @@
 import type { WorktreeInfo } from './api';
 import type { AgentEvent, AgentId, Attachment, PermissionModeId, Question, TaskInfo, TodoItem, TurnFile, VerifyStatus } from './agent';
+import { lastSegment } from './paths';
 
 export type ChatItem =
   | { kind: 'user'; id: string; text: string; attachments: Attachment[]; pending?: boolean; /** Sent while the agent was still working on the previous message. */ followUp?: boolean; /** Compaction summary injected by the CLI, not typed by the user. */ compact?: boolean;
@@ -187,7 +188,7 @@ export function splitAttachments(text: string): { text: string; attachments: Att
   if (!m) return { text, attachments: [] };
   const attachments: Attachment[] = m[1].split('\n').filter((l) => l.startsWith('- ')).map((l) => {
     const path = l.slice(2).trim();
-    const name = path.split('/').pop() ?? path;
+    const name = lastSegment(path) ?? path;
     return { path, name, kind: IMAGE_RE.test(name) ? 'image' as const : 'file' as const };
   });
   return { text: text.slice(0, m.index).trimEnd(), attachments };

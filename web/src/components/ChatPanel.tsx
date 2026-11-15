@@ -29,6 +29,8 @@ import { claudeShellLine, EFFORT_LEVELS, routeSlash, withAppCommands, type Slash
 import { ChoiceDialog, McpManagerDialog } from './SlashDialogs';
 import { revealSkipped, useSkipOffscreen } from '../lib/skipOffscreen';
 import { useClock } from '../lib/clock';
+import { isAbsPath, isInside, joinPath, lastSegment, relativeTo, segments } from '../lib/paths';
+import { keyLabel } from '../platform/strings';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -255,7 +257,7 @@ function ResumeBrief({ session }: { session: ChatSession }) {
         {open && (
           <div className="border-t border-sky-400/10 px-3 py-2 space-y-2 max-h-72 overflow-y-auto">
             {b.files.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.filesTitle')}</div><div className="flex flex-wrap gap-1">{b.files.slice(0, 30).map((f) => (
-              <button key={f} onClick={() => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: f.startsWith('/') ? f : `${session.cwd}/${f}` } }))} className="rounded-full bg-fill hover:bg-fill-2 transition-colors px-1.5 py-0.5 font-mono text-[11px] text-zinc-300">{f}</button>
+              <button key={f} onClick={() => window.dispatchEvent(new CustomEvent('vibe:open-file', { detail: { path: isAbsPath(f) ? f : joinPath(session.cwd, f) } }))} className="rounded-full bg-fill hover:bg-fill-2 transition-colors px-1.5 py-0.5 font-mono text-[11px] text-zinc-300">{f}</button>
             ))}{b.files.length > 30 && <span className="text-[11px] text-zinc-500">+{b.files.length - 30}</span>}</div></div>}
             {b.commits.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.commitsTitle')}</div>{b.commits.slice(-8).map((c, i) => <div key={i} className="font-mono text-[11.5px] text-zinc-300 truncate">{c}</div>)}</div>}
             {b.todos.length > 0 && <div><div className="text-[11px] text-zinc-500 mb-0.5">{t('brief.todosTitle')}</div>{b.todos.map((x, i) => <div key={i} className="text-zinc-300">☐ {x}</div>)}</div>}
@@ -374,7 +376,7 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
       <div className="text-xs text-zinc-500 mb-1">{scope === 'home' ? t('chat.agent') : t('chat.project')}</div>
       {scope === 'home'
         ? <div className="text-lg font-medium mb-6">{t('chat.freeConversation')}</div>
-        : <div className="flex items-center gap-3 mb-6" title={cwd}><ProjectIcon path={cwd} name={cwd.split('/').pop() || cwd} size={40} /><div className="text-xl font-semibold truncate">{cwd.split('/').pop() || cwd}</div>
+        : <div className="flex items-center gap-3 mb-6" title={cwd}><ProjectIcon path={cwd} name={lastSegment(cwd) || cwd} size={40} /><div className="text-xl font-semibold truncate">{cwd.split('/').pop() || cwd}</div>
             <div className="flex-1" />
             <button onClick={() => window.dispatchEvent(new Event('vibe:agent-context'))} className="shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-zinc-300 bg-fill hover:text-white hover:bg-fill-2 transition-colors"><Icon name="file" size={13} />{t('context.menu')}</button>
           </div>}
@@ -394,7 +396,7 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
           <div className="flex items-center gap-2 flex-wrap">
             <button disabled={!pairPrompt.trim()} className="rounded-full bg-violet-300 hover:bg-violet-200 text-violet-950 font-medium disabled:opacity-40 px-4 py-2 text-sm transition-colors"
               onClick={() => onStartPair(cwd, { prompt: pairPrompt.trim(), branch: branch.trim() || undefined, permissionMode: mode, models: { claude: defaults.claude.model, codex: defaults.codex.model } })}>
-              {t('pair.start')} <span className="opacity-60 text-xs ml-1">⌘⏎</span>
+              {t('pair.start')} <span className="opacity-60 text-xs ml-1">{keyLabel('⌘⏎')}</span>
             </button>
             <select value={mode} onChange={(e) => setMode(e.target.value as PermissionModeId)} className="bg-black/20 border border-line rounded-full text-xs px-3 py-1.5 outline-none">
               {MODE_IDS.filter((m) => m.id !== 'auto').map((m) => <option key={m.id} value={m.id}>{t(m.key)}</option>)}
@@ -596,8 +598,8 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     if (!files.length) { window.alert(t('rewind.nothing')); return; }
     // macOS reports /tmp and /var through /private; compare without it so paths show relative to the project.
     const strip = (p: string) => p.replace(/^\/private(?=\/(?:tmp|var)\/)/, '');
-    const base = strip(session.cwd).replace(/\/$/, '') + '/';
-    const rel = (p: string) => (strip(p).startsWith(base) ? strip(p).slice(base.length) : p);
+    const base = strip(session.cwd).replace(/\/$/, '');
+    const rel = (p: string) => (isInside(strip(p), base) ? relativeTo(strip(p), base) : p);
     const list = files.slice(0, 12).map((f) => `• ${rel(f)}`).join('\n') + (files.length > 12 ? `\n… +${files.length - 12}` : '');
     if (!window.confirm(t('rewind.confirm', { n: files.length, ins: dry.insertions ?? 0, del: dry.deletions ?? 0, files: list }))) return;
     const done = await onRewind(messageId, false);
@@ -639,7 +641,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     if (!picked || !picked.size || exporting) return;
     setExporting(true);
     try {
-      const title = displayTitle(session, 80) ?? session.cwd.split('/').pop() ?? 'session';
+      const title = displayTitle(session, 80) ?? lastSegment(session.cwd) ?? 'session';
       const name = exportFileName(title);
       const agent = session.agent === 'codex' ? 'Codex' : 'Claude';
       const { markdown, images } = exportMarkdown(session.items, picked, { title, agent, cwd: session.cwd, date: new Date().toISOString().slice(0, 10), includeThinking: withThinking });
@@ -647,12 +649,12 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
       let saved: string; let missing = 0;
       if (window.vibe?.saveDialog) {
         if (!images.length) {
-          const target = await window.vibe.saveDialog({ defaultPath: `${dir}/${name}.md`, ext: 'md', label: 'Markdown' });
+          const target = await window.vibe.saveDialog({ defaultPath: joinPath(dir, `${name}.md`), ext: 'md', label: 'Markdown' });
           if (!target) return;
           await api.saveText(target, markdown, { baseMtime: null, bom: false, force: true });
           saved = target;
         } else {
-          const target = await window.vibe.saveDialog({ defaultPath: `${dir}/${name}.zip`, ext: 'zip', label: 'ZIP' });
+          const target = await window.vibe.saveDialog({ defaultPath: joinPath(dir, `${name}.zip`), ext: 'zip', label: 'ZIP' });
           if (!target) return;
           const res = await api.exportZip(target, name, markdown, images);
           saved = res.path; missing = res.missing.length;
@@ -729,7 +731,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
             </button>
           ))}
         </div>
-        <span className="text-zinc-500 truncate min-w-0 @max-[560px]:hidden" title={session.cwd}>{session.cwd.split('/').slice(-2).join('/')}</span>
+        <span className="text-zinc-500 truncate min-w-0 @max-[560px]:hidden" title={session.cwd}>{segments(session.cwd).slice(-2).join('/')}</span>
         {session.worktree && <WorktreeChip info={session.worktree} running={running} othersUsing={worktreeUsers} onFinished={onClose} commitTitle={displayTitle(session, 60) ?? session.worktree.branch}
           partner={partner && partner.worktree ? { id: partner.id, agent: partner.agent, worktree: partner.worktree, running: partner.status === 'running' } : undefined}
           onFocusPartner={onFocusPartner} onClosePartner={onClosePartner} />}

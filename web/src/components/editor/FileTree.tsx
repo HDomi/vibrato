@@ -6,6 +6,7 @@ import { t, useLang } from '../../lib/i18n';
 import { useContextMenu, type MenuItem } from '../ContextMenu';
 import FileIcon from '../FileIcon';
 import Icon from '../Icon';
+import { isInside, lastSegment, parentDir } from '../../lib/paths';
 
 interface Props {
   root: string;
@@ -22,7 +23,7 @@ const ROW = 22;
 const OVERSCAN = 12;
 const HIDE = new Set(['.git', '.DS_Store']);
 const LS_EXPANDED = 'vibe.tree.expanded:';
-const dirOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
+const dirOf = parentDir;
 
 /**
  * Project explorer: lazily loaded, virtualized (only the rows on screen are in the DOM, so a
@@ -67,7 +68,7 @@ export default function FileTree({ root, activePath, onAttach }: Props) {
     children.current = new Map();
     let saved: string[] = [];
     try { saved = JSON.parse(localStorage.getItem(LS_EXPANDED + root) ?? '[]') as string[]; } catch { /* ignore */ }
-    const set = new Set(saved.filter((p) => p.startsWith(root + '/')));
+    const set = new Set(saved.filter((p) => isInside(p, root)));
     setExpanded(set);
     void load(root);
     for (const p of set) void load(p);
@@ -114,7 +115,7 @@ export default function FileTree({ root, activePath, onAttach }: Props) {
 
   // Reveal the active editor tab: open its folders and scroll it into view.
   useEffect(() => {
-    if (!activePath || !activePath.startsWith(root + '/')) return;
+    if (!activePath || !isInside(activePath, root)) return;
     let alive = true;
     const chain: string[] = [];
     for (let d = dirOf(activePath); d.length > root.length; d = dirOf(d)) chain.unshift(d);
@@ -168,10 +169,10 @@ export default function FileTree({ root, activePath, onAttach }: Props) {
     const r = renaming; setRenaming(null);
     if (!r) return;
     const name = r.draft.trim();
-    if (!name || name === r.path.slice(r.path.lastIndexOf('/') + 1)) return;
+    if (!name || name === lastSegment(r.path)) return;
     api.fsRename(r.path, name).then(async (res) => {
       editor.renamed(r.path, res.path);
-      if (expanded.has(r.path)) setExpanded((prev) => new Set([...prev].map((p) => (p === r.path || p.startsWith(r.path + '/') ? res.path + p.slice(r.path.length) : p))));
+      if (expanded.has(r.path)) setExpanded((prev) => new Set([...prev].map((p) => (p === r.path || isInside(p, r.path) ? res.path + p.slice(r.path.length) : p))));
       await load(dirOf(r.path));
       setSelected(res.path);
     }).catch(fail);
@@ -237,7 +238,7 @@ export default function FileTree({ root, activePath, onAttach }: Props) {
   return (
     <div className="h-full flex flex-col min-w-0" style={{ background: M.sidebar, color: M.dim }}>
       <div className="h-8 shrink-0 flex items-center gap-1 pl-3 pr-1 text-[11px] uppercase tracking-wide" style={{ color: M.fg, borderBottom: `1px solid ${M.border}` }}>
-        <span className="flex-1 truncate" title={root}>{root.slice(root.lastIndexOf('/') + 1) || root}</span>
+        <span className="flex-1 truncate" title={root}>{lastSegment(root) || root}</span>
         {note && <span className="normal-case tracking-normal text-[10px] truncate max-w-28" style={{ color: M.yellow }} title={note}>{note}</span>}
         <button className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/10" title={t('tree.newFile')} onClick={() => startCreate(selectedDir(), 'file')}><Icon name="filePlus" size={14} /></button>
         <button className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/10" title={t('files.newFolderMenu')} onClick={() => startCreate(selectedDir(), 'folder')}><Icon name="folderPlus" size={14} /></button>

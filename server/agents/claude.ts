@@ -12,6 +12,7 @@ import type { AgentEvent, AgentSession, AssistantBlock, Attachment, McpAction, M
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { mimeOf } from '../mime.js';
+import { homedir } from 'node:os';
 
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 /** Tools that are housekeeping, not work on a step: they do not count toward the plan progress reminder. */
@@ -550,7 +551,7 @@ export async function listClaudeModels(claudePath: string): Promise<{ id: string
 }
 
 async function fetchClaudeModels(claudePath: string): Promise<{ id: string; name: string; description?: string }[]> {
-  const q = query({ prompt: (async function* () { /* never yields */ })(), options: { pathToClaudeCodeExecutable: claudePath, cwd: process.env.HOME, env: process.env as Record<string, string>, persistSession: false } });
+  const q = query({ prompt: (async function* () { /* never yields */ })(), options: { pathToClaudeCodeExecutable: claudePath, cwd: process.env.HOME ?? homedir(), env: process.env as Record<string, string>, persistSession: false } });
   try {
     const models = await Promise.race([
       q.supportedModels(),

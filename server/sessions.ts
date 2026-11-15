@@ -12,6 +12,7 @@ import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
 import type { RemoteSessionSummary } from './remote/protocol.cjs';
 import { forgetCodexThreads, isCompactSummary, listHistory } from './history.js';
+import { FEATURES } from './os/features.js';
 
 const BUFFER_LIMIT = 5000;
 const BUFFER_BYTES = 16 * 1024 * 1024;
@@ -204,7 +205,7 @@ export class SessionRegistry {
     const cfg = await loadConfig().catch(() => null);
     const instructions = sessionInstructions(cfg);
     const off = sanitizeExtensions(cfg?.extensionsOff);
-    const browserTools = cfg?.browserTools !== false;
+    const browserTools = FEATURES.browserTools && cfg?.browserTools !== false;
     // The plan checklist tool (browserMcp.ts PLAN_TOOLS) rides on the same MCP server, so it is attached for either.
     const groups = { browser: browserTools, plan: cfg?.alwaysPlan !== false };
     const mcp = groups.browser || groups.plan;

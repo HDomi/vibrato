@@ -1,12 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { promisify } from 'node:util';
 import { CONFIG_DIR } from './config.js';
 import { resolvePath } from './fs.js';
+import { encodeImage } from './os/images.js';
 
-const execFileP = promisify(execFile);
 const ICON_CACHE = path.join(CONFIG_DIR, 'icons');
 const TTL_MS = 5 * 60 * 1000;
 
@@ -123,7 +121,7 @@ export async function findProjectIcon(dir: string): Promise<string | null> {
   return found;
 }
 
-/** Path of a browser-displayable file for the icon: .icns is converted to png with sips and cached. */
+/** Path of a browser-displayable file for the icon: .icns is converted to png (os/images.ts) and cached. */
 export async function displayableIcon(file: string): Promise<string> {
   if (!/\.icns$/i.test(file)) return file;
   await fs.mkdir(ICON_CACHE, { recursive: true });
@@ -132,7 +130,7 @@ export async function displayableIcon(file: string): Promise<string> {
   const out = path.join(ICON_CACHE, `${key}-${Math.floor(st.mtimeMs)}.png`);
   if (!(await exists(out))) {
     for (const old of await fs.readdir(ICON_CACHE)) if (old.startsWith(key + '-') && path.join(ICON_CACHE, old) !== out) await fs.rm(path.join(ICON_CACHE, old), { force: true });
-    await execFileP('sips', ['-s', 'format', 'png', '-Z', '256', file, '--out', out], { timeout: 15000 });
+    await encodeImage(file, out, 'png', { fit: 256 });
   }
   return out;
 }

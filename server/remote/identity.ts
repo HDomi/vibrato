@@ -3,6 +3,7 @@ import { X509Certificate } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { CONFIG_DIR } from '../config.js';
+import { opensslPath } from '../os/programs.js';
 
 /**
  * The remote host's TLS identity: a self-signed P-256 certificate made once with the system openssl and kept in
@@ -34,9 +35,10 @@ async function ensure(): Promise<Identity> {
   await fs.chmod(REMOTE_DIR, 0o700);
   const tmp = await fs.mkdtemp(path.join(REMOTE_DIR, 'new-'));
   try {
+    const openssl = await opensslPath();
     const k = path.join(tmp, 'key.pem');
     const c = path.join(tmp, 'cert.pem');
-    await new Promise<void>((resolve, reject) => execFile('/usr/bin/openssl', [
+    await new Promise<void>((resolve, reject) => execFile(openssl, [
       'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
       // LibreSSL writes explicit curve parameters unless told otherwise; BoringSSL (Electron) rejects those.
       '-pkeyopt', 'ec_param_enc:named_curve', '-nodes', '-sha256', '-days', '36500',

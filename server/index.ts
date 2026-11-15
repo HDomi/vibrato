@@ -1,4 +1,5 @@
 import { serve, type ServerType } from '@hono/node-server';
+import { pathToFileURL } from 'node:url';
 import { createApp } from './app.js';
 import { HOST, PORT } from './config.js';
 import { syncLoginShellPath } from './shell.js';
@@ -71,7 +72,8 @@ export async function startServer(port = PORT): Promise<ServerType> {
   });
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+// pathToFileURL: a Windows path (C:\...) is not a URL path as it is.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   startServer().catch((err) => {
     console.error(err);

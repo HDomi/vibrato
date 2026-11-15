@@ -13,6 +13,7 @@ import Icon from './Icon';
 import MarkdownView from './MarkdownView';
 import { useSkipOffscreen } from '../lib/skipOffscreen';
 import { useClock } from '../lib/clock';
+import { lastSep } from '../lib/paths';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
@@ -222,7 +223,7 @@ function CreatedFiles({ paths }: { paths: string[] }) {
     <div className="rounded-xl bg-black/15 border border-line px-2 py-2">
       <div className="px-1.5 mb-1 flex items-baseline gap-2 text-[11.5px] font-medium text-zinc-400">{t('plan.created')}<span className="tabular-nums text-zinc-500">{paths.length}</span></div>
       {shown.map((p) => {
-        const slash = p.lastIndexOf('/');
+        const slash = lastSep(p);
         const name = p.slice(slash + 1);
         return (
           <div key={p} className="group flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-fill transition-colors">

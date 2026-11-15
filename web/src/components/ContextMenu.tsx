@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { keyLabel } from '../platform/strings';
 
 export interface MenuItem {
   label?: string;
@@ -60,7 +61,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
                 className={`w-full flex items-center gap-4 rounded-lg px-3 py-1.5 text-left disabled:opacity-40 ${it.danger ? 'text-red-300 hover:bg-red-500/15' : 'text-zinc-200 hover:bg-white/10'}`}
                 onClick={() => { close(); it.onClick?.(); }}>
                 <span className="flex-1">{it.label}</span>
-                {it.shortcut && <span className="text-[11px] text-zinc-500">{it.shortcut}</span>}
+                {it.shortcut && <span className="text-[11px] text-zinc-500">{keyLabel(it.shortcut)}</span>}
               </button>
             ))}
         </div>

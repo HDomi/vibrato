@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolvePath } from './fs.js';
+import { resolvePath } from '../fs.js';
 
 /**
  * Files on the macOS general pasteboard, so the file browser can paste what Finder copied
@@ -47,11 +47,11 @@ const osa = (script: string, args: string[] = []) =>
   promisify(execFile)('osascript', ['-l', 'JavaScript', '-e', script, ...args], { timeout: 5000 }).then((r) => JSON.parse(r.stdout));
 
 /** `change` is NSPasteboard.changeCount: it moves whenever anything (any app) writes the pasteboard. */
-export async function readPasteboardFiles(): Promise<{ change: number; paths: string[] }> {
+export async function readClipboardFiles(): Promise<{ change: number; paths: string[] }> {
   return osa(READ);
 }
 
-export async function writePasteboardFiles(paths: string[]): Promise<{ change: number }> {
+export async function writeClipboardFiles(paths: string[]): Promise<{ change: number }> {
   const abs = (Array.isArray(paths) ? paths : []).filter((p) => typeof p === 'string' && p).map((p) => resolvePath(p));
   return osa(WRITE, abs);
 }

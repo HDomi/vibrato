@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CONFIG_DIR, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import type { SessionRegistry } from './sessions.js';
 import { cleanSchedule, dueAction, earliestNext, nextOccurrence, promptText, ScheduleError, type Schedule, type ScheduleRun } from './schedule.js';
-import { SchedulePower, type PowerStatus } from './schedulePower.js';
+import { SchedulePower, type PowerStatus } from './os/schedulePower.js';
 
 const TICK_MS = 30 * 1000;
 /** Keep an awake Mac from idle-sleeping this long before a run. */

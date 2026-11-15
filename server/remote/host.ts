@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -14,7 +14,7 @@ import { listClaudeModels } from '../agents/claude.js';
 import { listCodexModels } from '../agents/codex.js';
 import { which } from '../shell.js';
 import { getUsage } from '../usage.js';
-import { readPowerSource } from '../powerSource.js';
+import { keepAwake, readPowerSource, wakeDisplay } from '../os/power.js';
 import { loadIdentity } from './identity.js';
 import { maskWebhook, noticeMessage, sendDiscord, testMessage, validWebhook } from './notify.js';
 import {
@@ -106,7 +106,7 @@ export class RemoteHost {
   inactiveLogoutMs = INACTIVE_LOGOUT_MS;
   private applying: Promise<void> = Promise.resolve();
   private sessionsTimer: NodeJS.Timeout | null = null;
-  /** `caffeinate -i` while listening: an idle-sleeping Mac would not answer at all. */
+  /** Held while listening (os/power.ts keepAwake): an idle-sleeping machine would not answer at all. */
   private caffeinate: ChildProcess | null = null;
   /** Set while keep-awake applies on AC power only: re-reads the power source (unplugging releases the hold). */
   private powerTimer: NodeJS.Timeout | null = null;
@@ -165,7 +165,7 @@ export class RemoteHost {
    */
   private syncAwake(cfg: RemoteHostConfig | undefined) {
     const keep = cfg?.keepAwake !== false;
-    const acOnly = keep && cfg?.keepAwakeOnBattery === false && process.platform === 'darwin';
+    const acOnly = keep && cfg?.keepAwakeOnBattery === false;
     if (acOnly && !this.powerTimer) {
       this.powerTimer = setInterval(() => void this.checkPower(), POWER_POLL_MS);
       this.powerTimer.unref();
@@ -176,7 +176,7 @@ export class RemoteHost {
 
   private async checkPower() {
     const source = await readPowerSource();
-    // Turned off or stopped while pmset ran.
+    // Turned off or stopped while the source was read.
     if (!this.powerTimer || !this.server) return;
     this.holdAwake(source !== 'battery');
   }
@@ -187,12 +187,12 @@ export class RemoteHost {
 
   /**
    * Like legato's host: no idle system sleep while waiting for clients (the display may still sleep).
-   * Tied to this process (-w) so it never outlives the server. A closed lid on battery still sleeps.
+   * The helper process never outlives the server. A closed lid on battery still sleeps.
    */
   private holdAwake(on: boolean) {
-    if (process.platform !== 'darwin') return;
     if (on && !this.caffeinate) {
-      const child = spawn('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
+      const child = keepAwake();
+      if (!child) return;
       child.on('error', (err) => { console.warn(`[vibrato] remote keep-awake failed: ${err.message}`); if (this.caffeinate === child) this.caffeinate = null; });
       child.on('exit', () => { if (this.caffeinate === child) this.caffeinate = null; });
       this.caffeinate = child;
@@ -204,12 +204,9 @@ export class RemoteHost {
 
   /** A client got in: wake the display (user activity for a few seconds), as legato does on connect. */
   clientLoggedIn() {
-    if (process.platform !== 'darwin') return;
     void loadConfig().then((cfg) => {
       if (cfg.remote?.wakeOnConnect === false) return;
-      const child = spawn('/usr/bin/caffeinate', ['-u', '-t', '3'], { stdio: 'ignore' });
-      child.on('error', () => { /* best effort */ });
-      child.unref();
+      wakeDisplay();
     }).catch(() => {});
   }
 

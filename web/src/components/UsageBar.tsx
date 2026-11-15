@@ -6,9 +6,10 @@ import { UpdateBadge } from './UpdatePanel';
 import Icon from './Icon';
 import { useHostClients, useRemoteState, useRemoteUnread } from '../lib/remote';
 import { useScheduleCount } from '../lib/scheduleCount';
+import { PLATFORM } from '../platform';
 
 export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule' | 'remote';
-export const VIEW_ORDER: ViewMode[] = ['vibe', 'agent', 'tools', 'schedule', 'remote'];
+export const VIEW_ORDER: ViewMode[] = [...PLATFORM.views];
 
 interface Props {
   mode: ViewMode;
@@ -136,11 +137,11 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
   const { usage: u, loading, error: loadError, forecast } = useUsage();
   const [fullScreen, setFullScreen] = useState(false);
   useEffect(() => window.vibe?.onFullScreen?.(setFullScreen), []);
-  const windowButtons = typeof window !== 'undefined' && !!window.vibe?.isElectron && !fullScreen;
+  const windowButtons = typeof window !== 'undefined' && !!window.vibe?.isElectron && PLATFORM.windowButtons && !fullScreen;
   const claudeError = loadError ?? u?.errors.find((e) => e.startsWith('claude:'));
   const codexError = loadError ?? u?.errors.find((e) => e.startsWith('codex:'));
   const showFolder = mode === 'vibe' && !!onPickFolder;
-  const openBrowser = typeof window !== 'undefined' ? window.vibe?.openBrowser : undefined;
+  const openBrowser = typeof window !== 'undefined' && PLATFORM.inAppBrowser ? window.vibe?.openBrowser : undefined;
 
   return (
     // z-30: the usage tooltips hang over the cards below.

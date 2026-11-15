@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useSyncExternalStore } from 'react';
+import { lastSegment } from './paths';
 
 /**
  * Terminal tabs live outside React so a shell survives any re-render or unmount of the panel
@@ -53,7 +54,7 @@ export function useTerminals(): TerminalState {
 export function openTerminal(cwd: string, cmd?: string, title?: string): TerminalTab {
   const host = document.createElement('div');
   host.className = 'absolute inset-0 p-2';
-  const tab: TerminalTab = { id: nextId++, title: title ?? (cmd ? cmd.split(' ')[0] : cwd.split('/').pop() || 'shell'), cwd, cmd, status: 'connecting', host, key: crypto.randomUUID() };
+  const tab: TerminalTab = { id: nextId++, title: title ?? (cmd ? cmd.split(' ')[0] : lastSegment(cwd) || 'shell'), cwd, cmd, status: 'connecting', host, key: crypto.randomUUID() };
   publish({ tabs: [...state.tabs, tab], active: tab.id });
   return tab;
 }

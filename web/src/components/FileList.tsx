@@ -9,6 +9,8 @@ import FileIcon from './FileIcon';
 import Icon from './Icon';
 import { editor } from '../lib/editor/store';
 import { shortcutKey } from '../lib/keys';
+import { hasView } from '../platform';
+import { parentDir, pathOfSegments, segments } from '../lib/paths';
 
 interface Props {
   listing: Listing | null;
@@ -54,7 +56,7 @@ export default memo(function FileList({ listing, error, isFavorite, onNavigate, 
 
   const entries = (listing?.entries ?? []).filter((e) => showHidden || !e.hidden);
   const selectedEntries = entries.filter((e) => selected.has(e.path));
-  const crumbs = listing ? listing.path.split('/').filter(Boolean) : [];
+  const crumbs = listing ? segments(listing.path) : [];
 
   useEffect(() => { setSelected(new Set()); setAnchor(null); setRenaming(null); setQuery(''); }, [listing?.path]);
   useEffect(() => {
@@ -78,7 +80,7 @@ export default memo(function FileList({ listing, error, isFavorite, onNavigate, 
   const hitMenu = (h: SearchHit): MenuItem[] => [
     { label: h.isDir ? t('common.open') : t('files.preview'), onClick: () => openHit(h) },
     ...(onAttach && !h.isDir ? [{ label: t('files.attachToChat'), onClick: () => { api.stat(h.path).then((e) => onAttach([e])).catch(fail); } }] : []),
-    { label: t('files.openContainingFolder'), onClick: () => onNavigate(h.path.slice(0, h.path.lastIndexOf('/')) || '/') },
+    { label: t('files.openContainingFolder'), onClick: () => onNavigate(parentDir(h.path)) },
     { separator: true },
     { label: t('common.revealInFinder'), onClick: () => api.open(h.path, 'finder').catch(fail) },
     { label: t('common.copyPath'), onClick: () => navigator.clipboard.writeText(h.path) },
@@ -183,7 +185,7 @@ export default memo(function FileList({ listing, error, isFavorite, onNavigate, 
   const pdfItems = (sel: Entry[]): MenuItem[] => {
     const files = sel.filter((x) => !x.isDir && (x.kind === 'pdf' || (x.kind === 'image' && isImageName(x.name))));
     const pdfs = files.filter((x) => x.kind === 'pdf').map((x) => x.path);
-    if (!files.length) return [];
+    if (!files.length || !hasView('tools')) return [];
     const paths = files.map((x) => x.path);
     return [
       { label: paths.length > 1 ? t('pdf.mergeN', { n: paths.length }) : pdfs.length ? t('pdf.editButton') : t('pdf.imageToPdf'), onClick: () => openTool('pdf', { paths } satisfies PdfToolPayload) },
@@ -238,7 +240,7 @@ export default memo(function FileList({ listing, error, isFavorite, onNavigate, 
         <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap text-zinc-400">
           <span className="cursor-pointer hover:text-white" onClick={() => onNavigate('/')}>/</span>
           {crumbs.map((c, i) => {
-            const p = '/' + crumbs.slice(0, i + 1).join('/');
+            const p = pathOfSegments(listing!.path, i);
             return <span key={p} className="flex items-center gap-1"><span className="text-zinc-600">›</span><span className={`cursor-pointer hover:text-white ${i === crumbs.length - 1 ? 'text-white' : ''}`} onClick={() => onNavigate(p)}>{c}</span></span>;
           })}
         </div>

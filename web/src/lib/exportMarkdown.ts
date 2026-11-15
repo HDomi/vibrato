@@ -1,4 +1,5 @@
 import type { ChatItem } from './chatStore';
+import { lastSegment } from './paths';
 
 /**
  * Turns picked conversation blocks into one Markdown document plus the pictures it refers to.
@@ -68,7 +69,7 @@ class ImageBundle {
       const mime = src.slice(5, src.indexOf(';')).toLowerCase();
       base = `${exportFileName(hint, 'image').replace(/\s+/g, '-').toLowerCase()}.${MIME_EXT[mime] ?? 'png'}`;
     } else {
-      base = exportFileName(src.split('/').pop() ?? 'image', 'image').replace(/\s+/g, '-');
+      base = exportFileName(lastSegment(src) ?? 'image', 'image').replace(/\s+/g, '-');
     }
     const name = `images/${n}-${base}`;
     this.byRef.set(src, name);
@@ -115,7 +116,7 @@ export function exportMarkdown(items: ChatItem[], selected: Set<string>, opts: E
         const srcs = toolImageSources(it);
         const output = srcs.length && it.output ? it.output.split('\n').filter((l) => l.trim() !== '[image]').join('\n').trim() : (it.output ?? '').trim();
         if (output) body.push(`**Output**\n\n${fence(clip(output, outputMax))}`);
-        for (const s of srcs) body.push(`![${escapeAlt(s.startsWith('data:') ? it.name : s.split('/').pop() ?? it.name)}](${images.add(s, it.name)})`);
+        for (const s of srcs) body.push(`![${escapeAlt(s.startsWith('data:') ? it.name : lastSegment(s) ?? it.name)}](${images.add(s, it.name)})`);
         for (const kid of childrenOf.get(it.id) ?? []) { const r = render(kid, depth + 1); if (r) body.push(r); }
         return `<details>\n<summary>${head.replace(/</g, '&lt;')}</summary>\n\n${body.join('\n\n')}\n\n</details>`;
       }

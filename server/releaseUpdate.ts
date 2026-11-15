@@ -1,40 +1,25 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { run } from './shell.js';
+import { isReleasePackage, unpackRelease, UPDATE_DIR } from './os/update.js';
 
 /*
- * Updates for the standalone app (the .app built by electron-builder, see electron-builder.yml).
- * The release workflow attaches Vibrato-<version>-<arch>-mac.zip and SHA256SUMS.txt to every
- * version tag's GitHub release. Applying an update downloads the zip, checks its hash, unpacks it next to
- * the cache and records it as pending; the Electron main process swaps the bundle in after the app quits
- * and reopens it (electron/main.cts startBundleSwap). Nothing touches the installed app until then.
+ * Updates for the standalone app (built by electron-builder, see electron-builder.yml).
+ * The release workflow attaches each target's package and SHA256SUMS.txt to every version tag's GitHub release.
+ * Applying an update downloads this target's package, checks its hash, lets the platform unpack and verify it
+ * (os/update.ts) and records it as pending; the Electron main process installs it after the app quits and reopens
+ * it (electron/platform.cts). Nothing touches the installed app until then.
  */
 
-export const BUNDLE_ID = 'com.hdomi.vibrato';
+export { BUNDLE_ID, UPDATE_DIR, bundleOf, bundleProblem } from './os/update.js';
 /** GitHub REST base for the releases. Overridable for local end-to-end tests against a fake feed. */
 export const FEED = process.env.VIBRATO_UPDATE_FEED || 'https://api.github.com/repos/HDomi/vibrato';
 /** The repository's web pages (Atom feed, asset downloads). Not subject to the API rate limit. */
 export const WEB = process.env.VIBRATO_UPDATE_WEB || 'https://github.com/HDomi/vibrato';
-export const UPDATE_DIR = process.env.VIBRATO_UPDATE_DIR || path.join(homedir(), 'Library', 'Caches', BUNDLE_ID, 'update');
 export const PENDING_FILE = 'pending.json';
-
-/** The .app bundle this code runs from, or null when it runs from a source checkout. */
-export function bundleOf(root: string): string | null {
-  const marker = '.app/Contents/Resources/app';
-  const i = root.indexOf(marker);
-  return i < 0 ? null : root.slice(0, i + 4);
-}
-
-/** Why the bundle cannot replace itself, or null. Translocated or mounted copies are read-only. */
-export function bundleProblem(bundle: string): string | null {
-  if (bundle.includes('/AppTranslocation/') || bundle.startsWith('/Volumes/')) return 'Move Vibrato to the Applications folder and open it from there to enable updates.';
-  return null;
-}
 
 export interface ReleaseAsset { name: string; browser_download_url: string; size: number }
 export interface Release { tag_name: string; name?: string | null; body?: string | null; draft?: boolean; prerelease?: boolean; published_at?: string | null; assets: ReleaseAsset[] }
@@ -42,11 +27,11 @@ export interface Release { tag_name: string; name?: string | null; body?: string
 /** One installable release as the update dialog lists it. */
 export interface ReleaseSummary { version: string; tag: string; name: string; publishedAt: string | null; notes: string }
 
-/** The zip for this machine's architecture and the checksum list, as published by the release workflow. */
+/** This target's package for the machine's architecture (`zip`) and the checksum list, as published by the release workflow. */
 export function pickAssets(release: Release, arch: string = process.arch): { zip: ReleaseAsset | null; sums: ReleaseAsset | null } {
   const a = arch === 'arm64' ? 'arm64' : 'x64';
   return {
-    zip: release.assets.find((x) => x.name.endsWith(`-${a}-mac.zip`)) ?? null,
+    zip: release.assets.find((x) => isReleasePackage(x.name, a)) ?? null,
     sums: release.assets.find((x) => x.name === 'SHA256SUMS.txt') ?? null,
   };
 }
@@ -192,14 +177,9 @@ async function sha256(file: string): Promise<string> {
   return h.digest('hex');
 }
 
-async function plist(app: string, key: string): Promise<string> {
-  const r = await run('/usr/bin/plutil', ['-extract', key, 'raw', '-o', '-', path.join(app, 'Contents', 'Info.plist')], 10000);
-  return r.ok ? r.stdout.trim() : '';
-}
-
 /**
  * Download, verify and unpack `release` into UPDATE_DIR, then record it as pending. Resolves with 0 on success.
- * The running app is not touched; the swap happens after it quits.
+ * The running app is not touched; the install happens after it quits.
  */
 export async function stageRelease(release: Release, onLine: (line: string, stream: 'stdout' | 'stderr') => void): Promise<number> {
   const version = release.tag_name.replace(/^v/, '');
@@ -221,17 +201,9 @@ export async function stageRelease(release: Release, onLine: (line: string, stre
     if (!want || want !== got) { onLine(`Checksum mismatch for ${zip.name}.`, 'stderr'); return 1; }
     onLine('▸ unpack', 'stdout');
     await fs.mkdir(stage, { recursive: true });
-    const unzip = await run('/usr/bin/ditto', ['-x', '-k', zipFile, stage], 5 * 60 * 1000);
-    if (!unzip.ok) { onLine(unzip.stderr || 'unzip failed', 'stderr'); return 1; }
-    const appName = (await fs.readdir(stage)).find((n) => n.endsWith('.app'));
-    if (!appName) { onLine('The zip holds no .app bundle.', 'stderr'); return 1; }
-    const app = path.join(stage, appName);
-    const [id, v] = [await plist(app, 'CFBundleIdentifier'), await plist(app, 'CFBundleShortVersionString')];
-    if (id !== BUNDLE_ID || v !== version) { onLine(`Unexpected bundle ${id} ${v} (want ${BUNDLE_ID} ${version}).`, 'stderr'); return 1; }
-    const sig = await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], 120000);
-    if (!sig.ok) { onLine(`Signature check failed: ${sig.stderr}`, 'stderr'); return 1; }
-    await run('/usr/bin/xattr', ['-cr', app], 60000);
-    await fs.writeFile(path.join(UPDATE_DIR, PENDING_FILE), JSON.stringify({ app, version, stagedAt: new Date().toISOString() }));
+    const unpacked = await unpackRelease(zipFile, stage, version, onLine);
+    if (!unpacked) return 1;
+    await fs.writeFile(path.join(UPDATE_DIR, PENDING_FILE), JSON.stringify({ ...unpacked, version, stagedAt: new Date().toISOString() }));
     onLine(`▸ v${version} ready; restarting to install`, 'stdout');
     return 0;
   } finally {

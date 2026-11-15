@@ -3,6 +3,7 @@ import { api, ApiError, type AgentContext, type ContextDoc } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
 import Icon from './Icon';
 import { shortcutKey } from '../lib/keys';
+import { lastSegment } from '../lib/paths';
 
 type Tab = 'docs' | 'skills' | 'hooks' | 'mcp';
 
@@ -76,7 +77,7 @@ export default function AgentContextDialog({ cwd, onClose, onOpenFile }: { cwd: 
       <div className="w-[1040px] max-w-[94vw] h-[720px] max-h-[88vh] glass-pop pop-in !rounded-[22px] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 pl-6 pr-4 h-[60px] shrink-0 border-b border-white/10">
           <div className="text-[15px] font-semibold">{t('context.title')}</div>
-          <span className="text-xs text-zinc-500 truncate">{cwd.split('/').pop()}</span>
+          <span className="text-xs text-zinc-500 truncate">{lastSegment(cwd)}</span>
           <div className="ml-4 flex items-center rounded-md bg-white/5 p-0.5 text-[12px]">
             {(['docs', 'skills', 'hooks', 'mcp'] as Tab[]).map((k) => (
               <button key={k} onClick={() => setTab(k)} className={`px-3 py-1 rounded ${tab === k ? 'bg-white/15 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>
@@ -130,7 +131,7 @@ export default function AgentContextDialog({ cwd, onClose, onOpenFile }: { cwd: 
                   {h.matcher && <span className="shrink-0 font-mono text-zinc-400">{h.matcher}</span>}
                   <code className="truncate min-w-0 text-zinc-200">{h.command}</code>
                   <div className="flex-1" />
-                  <span className="shrink-0 text-[10.5px] text-zinc-500">{t(`context.scope.${h.scope}`)} · {h.file.split('/').pop()}</span>
+                  <span className="shrink-0 text-[10.5px] text-zinc-500">{t(`context.scope.${h.scope}`)} · {lastSegment(h.file)}</span>
                 </button>
               ))}
               {tab === 'mcp' && ctx.mcp.map((m, i) => (

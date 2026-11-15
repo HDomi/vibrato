@@ -4,11 +4,12 @@ import Lightbox from '../Lightbox';
 import SpaceBackdrop from '../SpaceBackdrop';
 import { t, useLang } from '../../lib/i18n';
 import RemoteView from './RemoteView';
+import { PLATFORM } from '../../platform';
 
 /** The remote-only app (Windows build): no local server, so only the Remote tab, under a plain title row. */
 export default function RemoteApp() {
   useLang();
-  const mac = (window.vibe as { platform?: string } | undefined)?.platform === 'darwin';
+  const mac = PLATFORM.windowButtons;
   return (
     <ContextMenuProvider>
       <div className="app-wall isolate h-full flex flex-col overflow-hidden">

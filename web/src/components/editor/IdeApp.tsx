@@ -11,6 +11,7 @@ import TextSearch from '../TextSearch';
 import Toaster from '../Toast';
 import EditorPanel from './EditorPanel';
 import { shortcutKey } from '../../lib/keys';
+import { baseName } from '../../lib/paths';
 
 /**
  * The IDE window (`/?ide=<root>[&file=<path>]`, opened by electron/main.cts `open-ide`). One project per
@@ -21,7 +22,7 @@ export default function IdeApp({ root, file }: { root: string; file: string | nu
   const [quickOpen, setQuickOpen] = useState(false);
   // ⇧⌘F; the string prefills the query (the editor's one-line selection).
   const [textSearch, setTextSearch] = useState<string | null>(null);
-  const name = root.split('/').filter(Boolean).pop() ?? root;
+  const name = baseName(root) ?? root;
   useEffect(() => {
     document.title = `${name} — IDE`;
     editor.setRoot(root);

@@ -15,6 +15,8 @@ import Splitter, { usePaneWidth } from '../Splitter';
 import CodeEditor from './CodeEditor';
 import FileTree from './FileTree';
 import { shortcutKey } from '../../lib/keys';
+import { lastSep } from '../../lib/paths';
+import { keyLabel } from '../../platform/strings';
 
 interface Props { root: string | null; visible: boolean; onAttach?: (entries: Entry[]) => void }
 
@@ -123,7 +125,7 @@ export default function EditorPanel({ root, visible, onAttach }: Props) {
           {!doc && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-[13px]" style={{ color: M.faint }}>
               <div>{t('editor.emptyHint')}</div>
-              <div className="text-[11px]">⌘P {t('editor.quickOpen')} · ⌘S {t('editor.save')} · ⌘F {t('editor.find')}</div>
+              <div className="text-[11px]">{keyLabel('⌘P')} {t('editor.quickOpen')} · {keyLabel('⌘S')} {t('editor.save')} · {keyLabel('⌘F')} {t('editor.find')}</div>
             </div>
           )}
           {doc && (doc.status === 'loading' || doc.status === 'idle') && <div className="absolute inset-0 p-4 text-[13px]" style={{ color: M.faint }}>{t('common.loading')}</div>}
@@ -132,7 +134,7 @@ export default function EditorPanel({ root, visible, onAttach }: Props) {
           {doc?.status === 'ready' && doc.kind && MEDIA.includes(doc.kind) && <div className="absolute inset-0" style={{ background: '#0b0d12' }}><MediaView path={doc.path} name={doc.name} kind={doc.kind} rev={doc.rev} /></div>}
           {doc?.kind === 'markdown' && doc.mdMode === 'preview' && isText(doc) && (
             <div className="absolute inset-0 overflow-auto p-5" style={{ background: '#0b0d12' }}>
-              <MarkdownView text={mdText} baseDir={doc.path.slice(0, doc.path.lastIndexOf('/'))} className="prose-md max-w-3xl text-[15px] text-[#e6e8ee]" />
+              <MarkdownView text={mdText} baseDir={doc.path.slice(0, lastSep(doc.path))} className="prose-md max-w-3xl text-[15px] text-[#e6e8ee]" />
             </div>
           )}
         </div>

@@ -9,15 +9,6 @@ process.env.CODEX_HOME = join(home, '.codex');
 process.env.CLAUDE_CONFIG_DIR = join(home, '.claude');
 process.env.VIBRATO_CONFIG_DIR = join(home, '.vibrato');
 
-test('permissions: TCC and PhotoKit states', async () => {
-  const { tccState, photosState } = await import('../server/permissions');
-  assert.equal(tccState(2), 'granted');
-  assert.equal(tccState(3), 'limited');
-  assert.equal(tccState(0), 'denied');
-  assert.equal(tccState(1), 'unknown');
-  assert.deepEqual([0, 1, 2, 3, 4, 9].map(photosState), ['notDetermined', 'restricted', 'denied', 'granted', 'limited', 'unknown']);
-});
-
 test('permissions: Codex config and execpolicy rules', async () => {
   const { parseCodexConfig, parseCodexRules } = await import('../server/permissions');
   const cfg = parseCodexConfig([
@@ -65,10 +56,4 @@ test('permissions: Claude rules are read and removed without touching the rest o
   await removeCodexRule(rulesFile, 'prefix_rule(pattern=["ls"], decision="allow")');
   assert.equal(readFileSync(rulesFile, 'utf8'), 'prefix_rule(pattern=["git", "status"], decision="allow")\n');
   await assert.rejects(removeCodexRule(join(home, 'x.rules'), 'a'), /Not a Codex rules file/);
-});
-
-test('permissions: reset only takes known TCC services', async () => {
-  const { resetPermission } = await import('../server/permissions');
-  await assert.rejects(resetPermission('All; rm -rf /'), /Unknown service/);
-  await assert.rejects(resetPermission('Calendar'), /Unknown service/);
 });

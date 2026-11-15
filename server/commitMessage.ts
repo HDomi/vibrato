@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { resolvePath } from './fs.js';
-import { which } from './shell.js';
+import { startable, which } from './shell.js';
 
 /**
  * Commit message for the staged changes, written by the user's own CLI (Claude, else Codex) in one
@@ -70,7 +70,8 @@ async function viaCodex(codexPath: string, cwd: string, prompt: string): Promise
   const out = path.join(dir, 'last.txt');
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = execFile(codexPath, ['exec', '--skip-git-repo-check', '-s', 'read-only', '--output-last-message', out, '-'], { cwd, timeout: 90000, maxBuffer: 16 * 1024 * 1024 }, (err) => (err ? reject(err) : resolve()));
+      const start = startable(codexPath, ['exec', '--skip-git-repo-check', '-s', 'read-only', '--output-last-message', out, '-']);
+      const child = execFile(start.file, start.args, { cwd, timeout: 90000, maxBuffer: 16 * 1024 * 1024 }, (err) => (err ? reject(err) : resolve()));
       child.stdin?.end(prompt);
     });
     return await fs.readFile(out, 'utf8');

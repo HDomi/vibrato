@@ -36,7 +36,7 @@ export interface ToolStatus {
   loggedIn: boolean | null;
   authInfo: string | null;
 }
-export interface ToolsInfo { tools: ToolStatus[]; installers: { brew: string | null; npm: string | null; node: string | null } }
+export interface ToolsInfo { tools: ToolStatus[]; /** Package managers the platform reports, by name; null when not installed. */ installers: Record<string, string | null> }
 
 export interface GradientStop { color: string; pos: number }
 export interface Gradient { angle: number; stops: GradientStop[] }

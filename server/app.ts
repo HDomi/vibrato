@@ -18,10 +18,9 @@ import { listClaudeModels } from './agents/claude.js';
 import { which, run } from './shell.js';
 import { applyUpdate, checkUpdate, isUpdating, readBuildInfo, REPO_ROOT, RESTART_EXIT_CODE, UPDATE_SOURCE } from './updater.js';
 import { rejectReason } from './guard.js';
-import { readPasteboardFiles, writePasteboardFiles } from './pasteboard.js';
+import { readClipboardFiles, writeClipboardFiles } from './os/clipboard.js';
 import { watch } from 'node:fs';
 import { requestShutdown } from './lifecycle.js';
-import { lockBeat, type LockBeat } from './lockWatch.js';
 import { gitBranches, gitCheckout, gitCommit, gitCommitDiff, gitCommitFiles, gitDiff, gitLog, gitRemoteOp, gitStage, gitStatus } from './git.js';
 import { displayableIcon, findProjectIcon } from './icons.js';
 import { convertImage, imageInfo, renderPng, writeImageBytes } from './image.js';
@@ -43,6 +42,9 @@ import type { RemoteHost } from './remote/host.js';
 import { openSettingsPane, PermissionsError, permissionsSnapshot, removeClaudeRule, removeCodexRule, requestPermission, resetPermission, type ClaudeList } from './permissions.js';
 import { ScheduleError } from './schedule.js';
 import { cleanFormTypes, FormTypeError } from '../web/src/lib/promptForm.js';
+import { FEATURES } from './os/features.js';
+import { registerOsRoutes } from './os/routes.js';
+import { OPEN_TARGETS, openFolder, type OpenTarget } from './os/files.js';
 
 const WEB_DIST = path.join(REPO_ROOT, 'web', 'dist');
 
@@ -139,8 +141,8 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.post('/api/fs/move', async (c) => { const b = await c.req.json<{ paths: string[]; dest: string }>(); return c.json({ paths: await transfer(b.paths, b.dest, true) }); });
   app.post('/api/fs/duplicate', async (c) => { const b = await c.req.json<{ path: string }>(); return c.json({ path: await duplicate(b.path) }); });
   app.post('/api/fs/trash', async (c) => { const b = await c.req.json<{ paths: string[] }>(); await trash(b.paths); return c.json({ ok: true }); });
-  app.get('/api/clipboard/files', async (c) => c.json(await readPasteboardFiles()));
-  app.post('/api/clipboard/files', async (c) => { const b = await c.req.json<{ paths: string[] }>(); return c.json(await writePasteboardFiles(b.paths)); });
+  app.get('/api/clipboard/files', async (c) => c.json(await readClipboardFiles()));
+  app.post('/api/clipboard/files', async (c) => { const b = await c.req.json<{ paths: string[] }>(); return c.json(await writeClipboardFiles(b.paths)); });
   // Pushes a "change" event whenever a watched folder's contents change (agent edits, Finder,
   // a terminal), so the file browser stays current without ⌘R. Throttled: a burst of writes
   // (npm install, git checkout) becomes one event every 300ms instead of hundreds. The data is a
@@ -179,7 +181,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
         } catch { /* skipped */ }
       };
       for (const d of new Set(deep)) add(d, true);
-      for (const d of new Set(flat)) if (!deep.some((r) => d === r || d.startsWith(r + '/'))) add(d, false);
+      for (const d of new Set(flat)) if (!deep.some((r) => d === r || d.startsWith(r + path.sep))) add(d, false);
       // Comment pings keep idle connections from being reaped and surface a dead client as an abort.
       const ping = setInterval(() => { void stream.write(': ping\n\n').catch(() => {}); }, 30000);
       await new Promise<void>((resolve) => stream.onAbort(resolve));
@@ -226,7 +228,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     }) });
   });
   app.get('/api/settings/always-plan', async (c) => c.json({ on: (await loadConfig()).alwaysPlan !== false }));
-  app.get('/api/settings/browser-tools', async (c) => c.json({ on: (await loadConfig()).browserTools !== false }));
+  app.get('/api/settings/browser-tools', async (c) => c.json({ on: FEATURES.browserTools && (await loadConfig()).browserTools !== false }));
   app.put('/api/settings/browser-tools', async (c) => {
     const body = await c.req.json<{ on?: unknown }>().catch(() => null);
     if (!body || typeof body.on !== 'boolean') return c.json({ error: 'Expected { on }' }, 400);
@@ -628,24 +630,11 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return c.json({ command: next.verify?.command ?? '', auto: next.verify?.auto ?? false });
   });
 
-  // Open a folder in the native Terminal / iTerm / Finder / VS Code.
-  // The path is passed to AppleScript as argv and shell-quoted with `quoted form of`, so folder names
-  // containing quotes, backslashes or $(...) cannot inject commands.
+  // Open a folder in another app: the file manager, a terminal or an editor (os/files.ts lists what this platform has).
   app.post('/api/open', async (c) => {
-    const body = await c.req.json<{ path: string; app?: 'terminal' | 'iterm' | 'finder' | 'vscode' | 'cursor' }>();
-    const abs = resolvePath(body.path);
-    const target = body.app ?? 'terminal';
-    const osa = (lines: string[]) => run('osascript', [...lines.flatMap((l) => ['-e', l]), '--', abs]);
-    let r;
-    if (target === 'finder') r = await run('open', [abs]);
-    else if (target === 'vscode') r = await run('open', ['-a', 'Visual Studio Code', abs]);
-    else if (target === 'cursor') r = await run('open', ['-a', 'Cursor', abs]);
-    else if (target === 'iterm') {
-      r = await osa(['on run argv', 'tell application "iTerm"', 'activate', 'set w to (create window with default profile)',
-        'tell current session of w to write text ("cd " & quoted form of (item 1 of argv))', 'end tell', 'end run']);
-    } else {
-      r = await osa(['on run argv', 'tell application "Terminal"', 'activate', 'do script ("cd " & quoted form of (item 1 of argv))', 'end tell', 'end run']);
-    }
+    const body = await c.req.json<{ path: string; app?: string }>();
+    const target = (OPEN_TARGETS as readonly string[]).includes(body.app ?? '') ? body.app as OpenTarget : OPEN_TARGETS[0];
+    const r = await openFolder(resolvePath(body.path), target);
     if (!r.ok) return c.json({ error: r.stderr, code: 'OPEN_FAILED' }, 500);
     return c.json({ ok: true });
   });
@@ -710,15 +699,11 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
       setTimeout(() => requestShutdown('update applied', RESTART_EXIT_CODE), 800);
     }
   }));
-  // Lock screen failsafe (see lockWatch.ts). Only the Electron main process calls this; pages always send an Origin.
-  app.post('/api/lock-watch', async (c) => {
-    if (c.req.header('origin')) return c.json({ ok: false }, 403);
-    return c.json(lockBeat(await c.req.json<LockBeat>().catch(() => ({ active: false }))));
-  });
+  registerOsRoutes(app);
   app.post('/api/restart', (c) => { setTimeout(() => requestShutdown('restart requested', RESTART_EXIT_CODE), 300); return c.json({ ok: true }); });
 
   // Static SPA (production build)
-  const root = path.relative(process.cwd(), WEB_DIST) || '.';
+  const root = path.relative(process.cwd(), WEB_DIST).split(path.sep).join('/') || '.';
   app.use('/*', serveStatic({ root }));
   app.get('*', serveStatic({ root, path: 'index.html' }));
 

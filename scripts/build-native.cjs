@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Builds the native modules (native/*) with node-gyp and copies them to dist/native.
+// Builds the target's native modules (native/* of the staged tree; platforms/mac/native in the repo) with node-gyp
+// and copies them to dist/native. Run through scripts/platform.cjs build:native.
 // They use N-API only, so one build loads in any Electron. A machine without Xcode's command line tools
 // still gets a working app (the in-app browser reports itself unavailable) unless VIBRATO_NATIVE_REQUIRED=1,
 // which release builds set so a broken module never ships.

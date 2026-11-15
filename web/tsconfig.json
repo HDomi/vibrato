@@ -10,7 +10,8 @@
     "noEmit": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "rootDirs": [".", "../platforms/mac/web"]
   },
-  "include": ["src"]
+  "include": ["src", "../platforms/mac/web/src"]
 }

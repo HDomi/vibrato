@@ -4,6 +4,7 @@ import { t, useLang } from '../../lib/i18n';
 import { usePersisted } from './ui';
 import { takeRequestedTool } from './bus';
 import { SideSplitter, usePaneWidth } from '../Splitter';
+import { keyLabel } from '../../platform/strings';
 
 type Group = 'data' | 'web' | 'security' | 'time' | 'image' | 'doc' | 'system';
 const GROUPS: Group[] = ['data', 'web', 'security', 'time', 'image', 'doc', 'system'];
@@ -81,7 +82,7 @@ export default function ToolboxView() {
               else if (e.key === 'Escape') { setQuery(''); (e.target as HTMLInputElement).blur(); }
             }}
             className="flex-1 min-w-0 bg-black/20 border border-line rounded-full px-3 py-1.5 text-[12px] text-zinc-200 outline-none focus:border-white/30 placeholder:text-zinc-500 transition-colors" />
-          <span className="text-[10px] text-zinc-600 shrink-0">⌘K</span>
+          <span className="text-[10px] text-zinc-600 shrink-0">{keyLabel('⌘K')}</span>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           {q ? visible.map((x, i) => <Item key={x.id} x={x} active={active === x.id} hot={i === cursor} n={order.indexOf(x)} onClick={() => pick(x.id)} />)
@@ -122,7 +123,7 @@ function Item({ x, active, hot, n, onClick }: { x: (typeof TOOLS)[number]; activ
       className={`w-full flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ${active ? 'bg-fill-3 text-white' : hot ? 'bg-fill text-zinc-200' : 'text-zinc-300 hover:bg-fill'}`}>
       <span className={`w-9 h-5 shrink-0 flex items-center justify-center rounded-full font-mono text-[9.5px] transition-colors ${active ? 'bg-selected text-on-selected' : 'bg-white/5 text-zinc-500'}`}>{x.badge}</span>
       <span className="flex-1 min-w-0 truncate">{t(`tb.${x.id}.name`)}</span>
-      {n < 10 && <span className="text-[10px] text-zinc-600 shrink-0">⌘{(n + 1) % 10}</span>}
+      {n < 10 && <span className="text-[10px] text-zinc-600 shrink-0">{keyLabel(`⌘${(n + 1) % 10}`)}</span>}
     </button>
   );
 }

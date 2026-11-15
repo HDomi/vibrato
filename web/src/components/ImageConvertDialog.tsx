@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiError, formatSize, type Entry } from '../lib/api';
 import { t, useLang } from '../lib/i18n';
+import { lastSep } from '../lib/paths';
+import { PLATFORM } from '../platform';
 
 interface Format { id: string; label: string; ext: string; group: 'common' | 'other' | 'icon' | 'texture'; lossy?: boolean; alpha?: boolean }
 
-/** Everything macOS ImageIO can write (server, `sips`), plus WebP, which Chromium's canvas encodes. */
-export const IMAGE_FORMATS: Format[] = [
+/**
+ * Everything macOS ImageIO can write (server, `sips`), plus WebP, which Chromium's canvas encodes. A platform whose
+ * server writes fewer formats lists them (platform PLATFORM.imageFormats) and the rest is not offered.
+ */
+const ALL_FORMATS: Format[] = [
   { id: 'png', label: 'PNG', ext: '.png', group: 'common', alpha: true },
   { id: 'jpeg', label: 'JPEG', ext: '.jpg', group: 'common', lossy: true },
   { id: 'webp', label: 'WebP', ext: '.webp', group: 'common', lossy: true, alpha: true },
@@ -27,6 +32,7 @@ export const IMAGE_FORMATS: Format[] = [
   { id: 'ktx', label: 'KTX', ext: '.ktx', group: 'texture', alpha: true },
   { id: 'pvr', label: 'PVR', ext: '.pvr', group: 'texture', alpha: true },
 ];
+export const IMAGE_FORMATS: Format[] = ALL_FORMATS.filter((f) => !PLATFORM.imageFormats || PLATFORM.imageFormats.includes(f.id));
 // The only sizes ImageIO writes for icon containers (checked against sips on macOS 26).
 const ICON_SIZES: Record<string, number[]> = { ico: [16, 24, 32, 48, 64, 128, 256], icns: [16, 32, 48, 128, 256, 512] };
 const EXT_ALIASES: Record<string, string> = { '.jpeg': 'jpeg', '.jpg': 'jpeg', '.jfif': 'jpeg', '.tif': 'tiff', '.j2k': 'jp2' };
@@ -101,7 +107,7 @@ export default function ImageConvertDialog({ entry, onClose, onSaved }: Props) {
   const scale = (pct: number) => { if (info) { setWidth(Math.max(1, Math.round(info.width * pct / 100))); setHeight(Math.max(1, Math.round(info.height * pct / 100))); } };
 
   // Same folder, same name, new extension; converting to the file's own format overwrites it in place.
-  const dir = entry.path.slice(0, entry.path.lastIndexOf('/'));
+  const dir = entry.path.slice(0, lastSep(entry.path));
   const base = entry.ext ? entry.name.slice(0, -entry.ext.length) : entry.name;
   const dest = current?.id === format ? entry.path : `${dir}/${base}${fmt.ext}`;
   const inPlace = dest === entry.path;

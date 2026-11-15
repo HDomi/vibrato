@@ -1,12 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import { blocksQuit, initLockScreen, isLocked, isLockShortcut, lockNow, openLockSettings, rememberLockForRelaunch } from './lockScreen.cjs';
-import { initBrowser, openBrowser } from './browser.cjs';
 import { initRemote, remoteResume } from './remote.cjs';
+import * as platform from './platform.cjs';
 
 /*
  * Electron shell. The Node server (dist/server/index.js) runs as a child process.
@@ -15,6 +13,7 @@ import { initRemote, remoteResume } from './remote.cjs';
  * The last option always exists, so the app never depends on a user-installed Node.
  * node-pty is N-API, so it loads under either ABI. macOS TCC attributes the child's
  * file access to this app, so folder permission prompts show the app name.
+ * What differs per target (window chrome, lock screen, in-app browser, installing an update) is in platform.cts.
  */
 
 const PORT = Number(process.env.VIBRATO_PORT) || 11398; // VIBRATO_PORT: test copies only (server/config.ts)
@@ -25,15 +24,8 @@ const RESTART_EXIT_CODE = 75;
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_ICON = path.join(REPO_ROOT, 'web', 'public', 'icon.png');
 const APP_NAME = 'Vibrato';
-/** The .app this code runs from (standalone build), or null for a source checkout / the install.sh launcher. */
-const APP_BUNDLE = (() => { const i = __dirname.indexOf('.app/Contents/Resources/app/'); return i < 0 ? null : __dirname.slice(0, i + 4); })();
-/** Shared with server/releaseUpdate.ts: where a downloaded update waits until the app restarts. */
-const UPDATE_DIR = process.env.VIBRATO_UPDATE_DIR || path.join(os.homedir(), 'Library', 'Caches', 'com.hdomi.vibrato', 'update');
-/**
- * Remote-only app (the Windows build, or VIBRATO_REMOTE_ONLY=1 for testing on a Mac): no local server, agents, lock
- * screen or browser; the page shows just the Remote tab, served from web/dist by a small static server below.
- */
-const REMOTE_ONLY = process.platform === 'win32' || process.env.VIBRATO_REMOTE_ONLY === '1';
+/** Remote-only app (see platform.cts): the page shows just the Remote tab, served by startStaticServer below. */
+const REMOTE_ONLY = platform.REMOTE_ONLY;
 const EXPECTED_BUILD = (() => { try { return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'dist/build-info.json'), 'utf8')); } catch { return null; } })();
 
 // Name used by dialogs, the app menu title and notifications. The menu bar / Dock label of the
@@ -72,27 +64,17 @@ if (!primaryInstance) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (isLocked()) return; // the lock cover keeps focus; never surface the app window under it
+    if (platform.isLocked()) return; // the lock cover keeps focus; never surface the app window under it
     const w = mainWin ?? BrowserWindow.getAllWindows()[0];
     if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
   });
 }
 
-function loginShellLookup(cmd: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    // -i so ~/.zshrc (where nvm lives) is sourced; -l for Homebrew paths from ~/.zprofile.
-    execFile('/bin/zsh', ['-lic', `command -v ${cmd}`], { timeout: 8000 }, (err, stdout) => {
-      const p = stdout?.trim().split('\n').pop() ?? '';
-      resolve(!err && p.startsWith('/') ? p : null);
-    });
-  });
-}
-
 /** Pick the Node runtime for the server; returns the executable and extra env. */
 async function resolveNode(): Promise<{ exe: string; env: NodeJS.ProcessEnv; label: string }> {
-  const bundled = path.join(REPO_ROOT, 'runtime', 'node', 'bin', 'node');
+  const bundled = platform.bundledNode(REPO_ROOT);
   if (fs.existsSync(bundled)) return { exe: bundled, env: {}, label: 'bundled' };
-  const system = await loginShellLookup('node');
+  const system = await platform.findSystemNode();
   if (system) {
     const major = await new Promise<number>((resolve) => execFile(system, ['-p', 'process.versions.node.split(".")[0]'], { timeout: 5000 }, (err, out) => resolve(err ? 0 : Number(out.trim()))));
     if (major >= 20) return { exe: system, env: {}, label: `system ${system}` };
@@ -143,7 +125,7 @@ async function startServer(): Promise<void> {
   const runtime = await resolveNode();
   const entry = path.join(REPO_ROOT, 'dist', 'server', 'index.js');
   if (quitting) return;
-  const env: NodeJS.ProcessEnv = { ...process.env, VIBRATO_DEV: DEV ? '1' : '0', VIBRATO_ELECTRON_EXEC_PATH: process.execPath, VIBRATO_ELECTRON_VERSION: process.versions.electron, VIBRATO_UPDATE_DIR: UPDATE_DIR };
+  const env: NodeJS.ProcessEnv = { ...process.env, VIBRATO_DEV: DEV ? '1' : '0', VIBRATO_ELECTRON_EXEC_PATH: process.execPath, VIBRATO_ELECTRON_VERSION: process.versions.electron, VIBRATO_UPDATE_DIR: platform.UPDATE_DIR };
   delete env.ELECTRON_RUN_AS_NODE;
   // A file call into a privacy-protected folder (Desktop, Documents, ...) blocks its libuv worker until the user
   // answers the macOS prompt. With the default 4 workers a few of those stall every other file read, static
@@ -151,7 +133,8 @@ async function startServer(): Promise<void> {
   if (!env.UV_THREADPOOL_SIZE) env.UV_THREADPOOL_SIZE = '32';
   Object.assign(env, runtime.env);
   console.log(`[vibrato] server runtime: ${runtime.label}`);
-  server = spawn(runtime.exe, [entry], { cwd: REPO_ROOT, env, stdio: ['ignore', 'inherit', 'inherit'] });
+  // windowsHide: the server is a console program, which Windows would otherwise give a console window.
+  server = spawn(runtime.exe, [entry], { cwd: REPO_ROOT, env, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true });
   server.on('error', (err) => console.error('[vibrato] server spawn failed', err.message));
   server.on('close', (code) => {
     server = null;
@@ -172,57 +155,14 @@ async function startServer(): Promise<void> {
 }
 
 /**
- * Restart after an update. A standalone app with a downloaded release waiting swaps its bundle first:
- * a detached helper waits for this process to exit, moves the new .app into place (rolling back on
- * failure) and opens it. Otherwise (source checkout, or nothing staged) Electron relaunches itself.
+ * Restart after an update. A standalone app with a downloaded release waiting installs it first (platform.cts),
+ * which also reopens the app. Otherwise (source checkout, or nothing staged) Electron relaunches itself.
  */
 function restartApp() {
-  rememberLockForRelaunch();
-  if (startBundleSwap()) { app.exit(0); return; }
+  platform.rememberLockForRelaunch();
+  if (platform.installStagedUpdate()) { app.exit(0); return; }
   app.relaunch();
   app.exit(0);
-}
-
-const SWAP_SCRIPT = `#!/bin/zsh
-# Written by Vibrato (electron/main.cts). Installs a staged update once the app has quit.
-PID="$1"; APP="$2"; NEW="$3"; shift 3
-for i in {1..300}; do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
-echo "$(date '+%F %T') install $NEW -> $APP"
-OLD="\${NEW:h}/previous.app"
-rm -rf "$OLD"
-if mv "$APP" "$OLD"; then
-  if mv "$NEW" "$APP"; then
-    xattr -cr "$APP" 2>/dev/null
-    rm -rf "$OLD"
-    echo "installed"
-  else
-    echo "could not move the new app into place; keeping the old one"
-    mv "$OLD" "$APP"
-  fi
-else
-  echo "could not move the old app aside; keeping it"
-fi
-open "$@" "$APP"
-`;
-
-function startBundleSwap(): boolean {
-  if (!APP_BUNDLE) return false;
-  const pendingFile = path.join(UPDATE_DIR, 'pending.json');
-  try {
-    const pending = JSON.parse(fs.readFileSync(pendingFile, 'utf8')) as { app?: unknown };
-    fs.rmSync(pendingFile, { force: true }); // one attempt per staged update, even if this one fails
-    const staged = typeof pending.app === 'string' ? path.resolve(pending.app) : '';
-    if (!staged.startsWith(UPDATE_DIR + path.sep) || !staged.endsWith('.app') || !fs.existsSync(path.join(staged, 'Contents', 'Info.plist'))) return false;
-    const script = path.join(UPDATE_DIR, 'install-update.sh');
-    fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
-    // Test copies keep their isolation across the restart (open --env).
-    const keep = ['VIBRATO_PORT', 'VIBRATO_USER_DATA', 'VIBRATO_CONFIG_DIR', 'VIBRATO_UPDATE_FEED', 'VIBRATO_UPDATE_DIR'].filter((k) => process.env[k]).flatMap((k) => ['--env', `${k}=${process.env[k]}`]);
-    const log = fs.openSync(path.join(UPDATE_DIR, 'install.log'), 'a');
-    spawn('/bin/zsh', [script, String(process.pid), APP_BUNDLE, staged, ...keep], { detached: true, stdio: ['ignore', log, log] }).unref();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 let mainWin: BrowserWindow | null = null;
@@ -274,11 +214,9 @@ async function openIdeWindow(root: string, file?: string) {
 
 /** `buttons`: where the window buttons sit (the IDE has a 28px strip instead of the 46px title bar). */
 function createAppWindow(size: { width: number; height: number; minWidth: number; minHeight: number; title: string }, buttons = { x: 14, y: 16 }) {
-  const mac = process.platform === 'darwin';
   const win = new BrowserWindow({
     ...size,
-    // Windows keeps its standard frame (no traffic lights to make room for).
-    ...(mac ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: buttons } : { autoHideMenuBar: true }), // main window: unchanged from before the 88px title bar (UsageBar)
+    ...platform.windowChrome(buttons), // main window: unchanged from before the 88px title bar (UsageBar)
     backgroundColor: '#0b0d12',
     icon: APP_ICON,
     webPreferences: {
@@ -286,7 +224,7 @@ function createAppWindow(size: { width: number; height: number; minWidth: number
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      additionalArguments: [...(REMOTE_ONLY ? ['--vibrato-remote-only'] : []), `--vibrato-platform=${process.platform}`],
+      additionalArguments: [...(REMOTE_ONLY ? ['--vibrato-remote-only'] : []), ...platform.PRELOAD_FLAGS, `--vibrato-platform=${process.platform}`],
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -304,7 +242,7 @@ function createAppWindow(size: { width: number; height: number; minWidth: number
   };
   // Option+L locks the screen (see lockScreen.cts). Handled here rather than as a menu accelerator so it
   // fires from any focused field; the menu item only displays it.
-  win.webContents.on('before-input-event', (e, input) => { if (!REMOTE_ONLY && isLockShortcut(input)) { e.preventDefault(); lockNow(); } });
+  win.webContents.on('before-input-event', (e, input) => { if (!REMOTE_ONLY && platform.isLockShortcut(input)) { e.preventDefault(); platform.lockNow(); } });
   win.webContents.on('will-navigate', keepInApp);
   win.webContents.on('will-redirect', keepInApp);
   // The title bar leaves room for the window buttons, which macOS hides in full screen.
@@ -315,16 +253,16 @@ function createAppWindow(size: { width: number; height: number; minWidth: number
 }
 
 ipcMain.handle('open-ide', async (e, root: unknown, file: unknown) => {
-  if (!fromApp(e) || isLocked() || typeof root !== 'string' || !path.isAbsolute(root)) return;
+  if (!fromApp(e) || platform.isLocked() || typeof root !== 'string' || !path.isAbsolute(root)) return;
   await openIdeWindow(path.resolve(root), typeof file === 'string' && path.isAbsolute(file) ? file : undefined);
 });
 
 ipcMain.handle('open-browser', async (e, url: unknown) => {
-  if (!fromApp(e) || isLocked()) return;
-  await openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : undefined);
+  if (!fromApp(e) || platform.isLocked()) return;
+  await platform.openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : undefined);
 });
 
-/** The in-app browser window (electron/browser.cts): same page as the app, `?browser=1`. */
+/** The in-app browser's window (platform.cts start): same page as the app, `?browser=1`. */
 function createBrowserWindow() {
   const win = createAppWindow({ width: 1440, height: 920, minWidth: 760, minHeight: 480, title: 'Vibrato Browser' }, { x: 12, y: 7 });
   const url = new URL(DEV ? URL_DEV : URL_PROD);
@@ -359,25 +297,9 @@ ipcMain.handle('login-item', (e, enable: boolean | null) => {
   return app.getLoginItemSettings().openAtLogin;
 });
 
-// Settings > Permissions: the privacy states only the app process can read, plus which bundle it runs as
-// (the server checks TCC rows against that bundle's current signature).
-const appBundle = () => { const m = /^(.*?\.app)\/Contents\//.exec(process.execPath); return m ? m[1] : null; };
-ipcMain.handle('permissions:info', (e) => {
-  if (!fromApp(e) || process.platform !== 'darwin') return null;
-  const media = (k: 'screen' | 'camera' | 'microphone') => { try { return systemPreferences.getMediaAccessStatus(k); } catch { return 'unknown'; } };
-  return {
-    bundlePath: appBundle(),
-    screen: media('screen'), camera: media('camera'), microphone: media('microphone'),
-    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
-    loginItem: app.getLoginItemSettings().openAtLogin,
-  };
-});
-ipcMain.handle('permissions:ask', async (e, id: unknown) => {
-  if (!fromApp(e) || process.platform !== 'darwin') return false;
-  if (id === 'accessibility') return systemPreferences.isTrustedAccessibilityClient(true);
-  if (id === 'camera' || id === 'microphone') return systemPreferences.askForMediaAccess(id);
-  return false;
-});
+// Settings > Permissions: the privacy states only the app process can read (platform.cts).
+ipcMain.handle('permissions:info', (e) => (fromApp(e) ? platform.permissionsInfo() : null));
+ipcMain.handle('permissions:ask', async (e, id: unknown) => (fromApp(e) ? platform.askPermission(id) : false));
 
 // Native notifications (task finished, approval needed) so the user is reached while in another app.
 // Approval notifications carry buttons (macOS shows the first, the rest under its chevron) that answer the
@@ -390,7 +312,7 @@ const INFO_NOTIFICATION_MS = 8000;
 const approvalNotes = new Map<string, Notification>();
 ipcMain.on('notify', (e, payload: { title?: unknown; body?: unknown; sessionId?: unknown; approval?: unknown; requestId?: unknown }) => {
   // While locked nothing is shown: banners would leak session names and their buttons could approve tool use.
-  if (!fromApp(e) || isLocked() || !Notification.isSupported() || !payload || typeof payload !== 'object') return;
+  if (!fromApp(e) || platform.isLocked() || !Notification.isSupported() || !payload || typeof payload !== 'object') return;
   const title = String(payload.title ?? '').slice(0, 200);
   const body = String(payload.body ?? '').slice(0, 500);
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
@@ -404,7 +326,7 @@ ipcMain.on('notify', (e, payload: { title?: unknown; body?: unknown; sessionId?:
     : [];
   const n = new Notification({ title, body, silent: false, actions: choices.map((c) => ({ type: 'button', text: c.text })) });
   n.on('click', () => {
-    if (isLocked()) return;
+    if (platform.isLocked()) return;
     const win = BrowserWindow.fromWebContents(sender);
     if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
     app.focus({ steal: true });
@@ -414,7 +336,7 @@ ipcMain.on('notify', (e, payload: { title?: unknown; body?: unknown; sessionId?:
     approvalNotes.get(requestId)?.close();
     approvalNotes.set(requestId, n);
     n.on('action', (_ev, index) => {
-      if (isLocked()) return;
+      if (platform.isLocked()) return;
       const choice = choices[index];
       if (choice && !sender.isDestroyed()) sender.send('notify-approval', { sessionId, requestId, decision: choice.decision });
     });
@@ -433,12 +355,7 @@ ipcMain.on('keep-awake', (e, busy: unknown) => {
   if (busy === true && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-app-suspension');
   else if (busy !== true && awakeBlocker !== null) { powerSaveBlocker.stop(awakeBlocker); awakeBlocker = null; }
 });
-// macOS remembers the first style it registered for the app, so the "alert" default in Info.plist only helps fresh
-// installs; existing users switch to alerts in System Settings, which this opens straight at the app's page.
-ipcMain.on('open-notification-settings', (e) => {
-  if (!fromApp(e)) return;
-  void shell.openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=com.hdomi.vibrato');
-});
+ipcMain.on('open-notification-settings', (e) => { if (fromApp(e)) platform.openNotificationSettings(); });
 ipcMain.on('notify-close', (e, requestId: unknown) => {
   if (!fromApp(e) || typeof requestId !== 'string') return;
   approvalNotes.get(requestId)?.close();
@@ -463,37 +380,28 @@ function buildMenu() {
     label: language === 'ko' ? '언어' : 'Language',
     submenu: LANGS.map((l) => ({ label: l.label, type: 'radio' as const, checked: language === l.id, click: () => setLanguage(l.id) })),
   };
-  const ko = language === 'ko';
-  const lockMenu: Electron.MenuItemConstructorOptions = {
-    label: ko ? '잠금화면' : 'Lock Screen',
-    submenu: [
-      // registerAccelerator false: Option+L is caught in before-input-event (works inside text fields).
-      { label: ko ? '지금 잠그기' : 'Lock Now', accelerator: 'Alt+L', registerAccelerator: false, click: () => lockNow() },
-      { type: 'separator' },
-      { label: ko ? '잠금화면 설정…' : 'Lock Screen Settings…', click: () => openLockSettings() },
-    ],
-  };
+  const own = platform.menu(language === 'ko');
   if (REMOTE_ONLY) {
     // Remote-only: nothing to lock and no in-app browser. Windows hides the bar (Alt shows it).
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : [{ role: 'fileMenu' as const }]),
+      ...(platform.MENU_LEADING.length ? platform.MENU_LEADING : [{ role: 'fileMenu' as const }]),
       { role: 'editMenu' }, { role: 'viewMenu' }, languageMenu, { role: 'windowMenu' },
     ]));
     return;
   }
   const template: Electron.MenuItemConstructorOptions[] = [
-    { role: 'appMenu' },
+    ...platform.MENU_LEADING,
     { role: 'fileMenu' },
     { role: 'editMenu' },
     { role: 'viewMenu' },
     languageMenu,
-    lockMenu,
+    ...(own.lock ? [own.lock] : []),
     {
       role: 'windowMenu',
       submenu: [
         { role: 'minimize' }, { role: 'zoom' }, { type: 'separator' },
-        { label: ko ? 'Vibrato 브라우저' : 'Vibrato Browser', accelerator: 'Shift+CmdOrCtrl+B', click: () => { if (!isLocked()) void openBrowser(); } },
-        { type: 'separator' }, { role: 'front' },
+        ...(own.browser ? [own.browser, { type: 'separator' as const }] : []),
+        { role: 'front' },
       ],
     },
     { role: 'help', submenu: [{ label: 'Repository', click: () => { void shell.openExternal('https://github.com/HDomi/vibrato'); } }] },
@@ -516,11 +424,7 @@ app.whenReady().then(async () => {
     app.on('activate', () => { if (!mainWin) void createWindow(); });
     return;
   }
-  // The installed app is a bundle the server can reopen if it has to kill a hung, locked app.
-  const exe = app.getPath('exe');
-  const bundle = app.isPackaged && exe.includes('.app/Contents/MacOS/') ? exe.slice(0, exe.indexOf('.app/Contents/MacOS/') + 4) : null;
-  const lock = initLockScreen({ appUrl: DEV ? URL_DEV : URL_PROD, preload: path.join(__dirname, 'preload.cjs'), fromApp, serverUrl: URL_PROD, relaunchBundle: bundle });
-  initBrowser({ createWindow: createBrowserWindow, port: PORT, isLocked });
+  const started = platform.start({ appUrl: DEV ? URL_DEV : URL_PROD, serverUrl: URL_PROD, preload: path.join(__dirname, 'preload.cjs'), port: PORT, fromApp, createBrowserWindow });
   if (!DEV) {
     await startServer();
     let checking = false;
@@ -531,18 +435,18 @@ app.whenReady().then(async () => {
     }, 5000);
   }
   await createWindow();
-  if (lock.resumeLocked) lockNow();
+  if (started.resumeLocked) platform.lockNow();
   // After sleep the renderer's sockets may be half-open; tell it to reconnect now rather than wait for the heartbeat.
   powerMonitor.on('resume', () => { remoteResume(); for (const w of BrowserWindow.getAllWindows()) w.webContents.send('power-resume'); });
   app.on('activate', () => {
     // The app window may be closed while IDE windows stay open; clicking the Dock icon brings it back.
-    if (!mainWin && !isLocked()) void createWindow();
+    if (!mainWin && !platform.isLocked()) void createWindow();
   });
 }).catch((err) => { dialog.showErrorBox(APP_NAME, (err as Error).message); app.quit(); });
 
 app.on('before-quit', (e) => {
   // Cmd+Q is already swallowed on the cover; this also refuses Dock / AppleScript quits while locked.
-  if (blocksQuit()) { e.preventDefault(); return; }
+  if (platform.blocksQuit()) { e.preventDefault(); return; }
   quitting = true;
   if (healthTimer) { clearInterval(healthTimer); healthTimer = null; }
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
@@ -551,5 +455,5 @@ app.on('before-quit', (e) => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (platform.QUIT_WHEN_WINDOWS_CLOSE) app.quit();
 });

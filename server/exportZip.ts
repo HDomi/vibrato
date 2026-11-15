@@ -2,14 +2,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { FsError, resolvePath } from './fs.js';
-import { run } from './shell.js';
+import { zipFolder } from './os/files.js';
 
 /**
  * Bundles an exported conversation as <name>.zip containing <name>/<name>.md and <name>/images/*.
  * Images arrive as absolute paths (copied) or data: URIs (decoded); a source that cannot be read is
- * reported in `missing` and left out rather than failing the whole export. Zipping uses the ditto
- * that ships with macOS, the same binary the updater unpacks releases with; `--norsrc` keeps the
- * AppleDouble `._*` entries out of the archive.
+ * reported in `missing` and left out rather than failing the whole export. Zipping is the platform's (os/files.ts).
  */
 
 export interface ExportImageRef { name: string; src: string }
@@ -18,7 +16,6 @@ export interface ExportOutcome { path: string; missing: string[] }
 
 const SAFE_NAME = /^[^/\\\u0000-\u001f]{1,120}$/;
 const SAFE_IMAGE = /^images\/[A-Za-z0-9._ -]{1,160}$/;
-const DITTO = '/usr/bin/ditto';
 
 function dataUriBytes(src: string): Buffer {
   const comma = src.indexOf(',');
@@ -60,8 +57,8 @@ export async function exportZip(bundle: ExportBundle, dest: string | null): Prom
     const zip = target ?? path.join(tmp, `${bundle.name}.zip`);
     if (target) await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.rm(zip, { force: true });
-    const res = await run(DITTO, ['-c', '-k', '--norsrc', '--keepParent', folder, zip], 120000);
-    if (!res.ok) throw new FsError('EEXPORT', res.stderr || 'ditto failed', 500);
+    const res = await zipFolder(folder, zip);
+    if (!res.ok) throw new FsError('EEXPORT', res.stderr || 'zip failed', 500);
     return target ? { path: target, missing } : { path: zip, missing, bytes: await fs.readFile(zip) };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });

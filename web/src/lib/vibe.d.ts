@@ -80,6 +80,8 @@ declare global {
   interface Window {
     vibe?: {
       isElectron: boolean;
+      /** process.platform of the Electron main process (electron/preload.cjs). */
+      platform?: string;
       pickFolder: () => Promise<string | null>;
       /** Opens (or focuses) the IDE window for `root`, optionally opening `file` in it. */
       openIde?: (root: string, file?: string) => Promise<void>;

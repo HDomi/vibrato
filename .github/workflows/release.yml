@@ -1,4 +1,4 @@
-# Builds the standalone macOS app and the Windows remote client for every pushed version tag (vX.Y.Z) and publishes
+# Builds the standalone macOS app and the Windows app (platforms/windows overrides) for every pushed version tag (vX.Y.Z) and publishes
 # a GitHub release with the DMG (first install), the mac zip (in-app updater), the Windows installer and zip, and
 # SHA256SUMS.txt (the updater checks it).
 # Run by hand (workflow_dispatch) it only builds both apps and keeps them as workflow artifacts: no release.
@@ -58,6 +58,8 @@ jobs:
       - name: Typecheck and test
         run: |
           npm run typecheck
+          npm run typecheck:win
+          npm run check:platforms
           npm test
 
       - name: Build app
@@ -120,6 +122,12 @@ jobs:
             [ "$i" -lt 3 ] && sleep $((i * 30))
           done
           exit 1
+
+      - name: Typecheck and test
+        run: |
+          set -o pipefail
+          npm run typecheck
+          npm test 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }
 
       - name: Build app
         run: |

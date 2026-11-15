@@ -3,27 +3,29 @@ import { api, type ToolsInfo, type ToolStatus } from '../lib/api';
 import { LANGS, setLang, t, useLang, type Lang } from '../lib/i18n';
 import { keepAwakeEnabled, setKeepAwakeEnabled } from '../lib/power';
 import Icon from './Icon';
-import LockSettings from './LockSettings';
 import FormTypesSettings from './FormTypesSettings';
 import StyleSettings from './StyleSettings';
 import AgentDefaultsSettings from './AgentDefaultsSettings';
 import PermissionsSettings from './PermissionsSettings';
 import AgentExtensionsSettings from './AgentExtensionsSettings';
 import { UpdateBadge } from './UpdatePanel';
+import { PLATFORM } from '../platform';
+import { SETTINGS_TABS } from '../platform/settings';
 
-interface Props { onClose: () => void; /** Open at the lock screen tab (from the menu bar). */ focusLock?: boolean; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
+interface Props { onClose: () => void; /** Open at this section (a platform's own, from its menu bar). */ focusTab?: string; /** Open at the form type editor (from the prompt form). */ focusFormTypes?: boolean }
 
-type Tab = 'general' | 'agentDefaults' | 'style' | 'customPrompt' | 'formTypes' | 'lock' | 'agents' | 'permissions';
-const TABS: { id: Tab; key: string }[] = [
+type Tab = string;
+const SHARED_TABS: { id: Tab; key: string }[] = [
   { id: 'general', key: 'settings.general' },
   { id: 'agentDefaults', key: 'settings.tab.agentDefaults' },
   { id: 'style', key: 'settings.tab.style' },
   { id: 'customPrompt', key: 'settings.customPrompt' },
   { id: 'formTypes', key: 'settings.tab.formTypes' },
-  { id: 'lock', key: 'settings.tab.lock' },
   { id: 'agents', key: 'settings.tab.agents' },
   { id: 'permissions', key: 'settings.tab.permissions' },
 ];
+/** The shared sections, each followed by the platform's own sections that go after it (platform/settings.tsx). */
+const TABS: { id: Tab; key: string; available?: () => boolean }[] = SHARED_TABS.flatMap((x) => [x, ...SETTINGS_TABS.filter((p) => p.after === x.id)]);
 
 function methodLabel(m: string): string {
   if (m === 'official') return t('settings.method.official');
@@ -69,14 +71,16 @@ function GeneralSettings() {
         </label>
         <div className="text-xs text-zinc-500 leading-relaxed pl-6">{t('settings.alwaysPlanNote')}</div>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={!!browserTools} disabled={browserTools === null}
-            onChange={(e) => { const on = e.target.checked; setBrowserTools(on); api.setBrowserTools(on).catch(() => setBrowserTools(!on)); }} />
-          {t('settings.browserTools')}
-        </label>
-        <div className="text-xs text-zinc-500 leading-relaxed pl-6">{t('settings.browserToolsNote')}</div>
-      </div>
+      {PLATFORM.inAppBrowser && (
+        <div className="flex flex-col gap-1">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={!!browserTools} disabled={browserTools === null}
+              onChange={(e) => { const on = e.target.checked; setBrowserTools(on); api.setBrowserTools(on).catch(() => setBrowserTools(!on)); }} />
+            {t('settings.browserTools')}
+          </label>
+          <div className="text-xs text-zinc-500 leading-relaxed pl-6">{t('settings.browserToolsNote')}</div>
+        </div>
+      )}
       {window.vibe?.isElectron ? (
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={!!login} disabled={login === null} onChange={(e) => window.vibe!.loginItem(e.target.checked).then(setLogin)} />
@@ -124,17 +128,17 @@ function CustomPromptSettings() {
   );
 }
 
-export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props) {
+export default function ToolsPanel({ onClose, focusTab, focusFormTypes }: Props) {
   useLang();
   const [info, setInfo] = useState<ToolsInfo | null>(null);
   const [log, setLog] = useState<{ line: string; err: boolean }[]>([]);
   const [running, setRunning] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<Tab>(focusLock ? 'lock' : focusFormTypes ? 'formTypes' : 'general');
+  const [tab, setTab] = useState<Tab>(focusTab ?? (focusFormTypes ? 'formTypes' : 'general'));
   // Opened again while already showing (menu bar, prompt form): jump to the asked section.
-  useEffect(() => { if (focusLock) setTab('lock'); }, [focusLock]);
+  useEffect(() => { if (focusTab) setTab(focusTab); }, [focusTab]);
   useEffect(() => { if (focusFormTypes) setTab('formTypes'); }, [focusFormTypes]);
-  const tabs = TABS.filter((x) => x.id !== 'lock' || !!window.vibe?.lock);
+  const tabs = TABS.filter((x) => !x.available || x.available());
   const agentsNeedAttention = !!info?.tools.some((x) => !x.installed || x.loggedIn === false);
 
   const [extReload, setExtReload] = useState(0);
@@ -190,7 +194,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
             <div className={tab === 'style' ? '' : 'hidden'}><StyleSettings /></div>
             <div className={tab === 'customPrompt' ? '' : 'hidden'}><CustomPromptSettings /></div>
             <div className={tab === 'formTypes' ? '' : 'hidden'}><FormTypesSettings focus={focusFormTypes} /></div>
-            <div className={tab === 'lock' ? '' : 'hidden'}><LockSettings focus={focusLock} /></div>
+            {SETTINGS_TABS.map((x) => <div key={x.id} className={tab === x.id ? '' : 'hidden'}>{x.render({ focus: focusTab === x.id })}</div>)}
             <div className={tab === 'permissions' ? '' : 'hidden'}><PermissionsSettings active={tab === 'permissions'} /></div>
             <div className={tab === 'agents' ? 'space-y-4' : 'hidden'}>
               {!info && <div className="text-sm text-zinc-500">{t('settings.detecting')}</div>}
@@ -231,7 +235,7 @@ export default function ToolsPanel({ onClose, focusLock, focusFormTypes }: Props
               ))}
               {info && (
                 <div className="text-xs text-zinc-500">
-                  {t('settings.installers')}: brew {info.installers.brew ? '✓' : '✗'} · npm {info.installers.npm ? '✓' : '✗'} · node {info.installers.node ? '✓' : '✗'}
+                  {t('settings.installers')}: {Object.entries(info.installers).map(([name, found]) => `${name} ${found ? '✓' : '✗'}`).join(' · ')}
                 </div>
               )}
               {log.length > 0 && (

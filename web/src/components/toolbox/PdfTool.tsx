@@ -11,6 +11,7 @@ import { imageToPdf } from '../../lib/pdfImage';
 import { openPdf, PdfPasswordError, renderPageImage, renderThumb, type OpenedPdf } from '../../lib/pdfRender';
 import { takePayload } from './bus';
 import { Check, Seg, blobToBase64, btn, btnPrimary, errText, fmtBytes, select, usePersisted } from './ui';
+import { keyLabel } from '../../platform/strings';
 
 /** What other parts of the app send with `openTool('pdf', …)`. */
 export interface PdfToolPayload { paths: string[]; exportImages?: boolean }
@@ -368,13 +369,13 @@ export default function PdfTool() {
         <span className="mx-1 h-4 w-px bg-white/10" />
         <button className={btn} disabled={!one || !!busy} onClick={() => rotate(-90)} title={t('pdf.rotateLeft')} aria-label={t('pdf.rotateLeft')}><Icon name="rotateLeft" size={14} className="-my-0.5" /></button>
         <button className={btn} disabled={!one || !!busy} onClick={() => rotate(90)} title={t('pdf.rotateRight')} aria-label={t('pdf.rotateRight')}><Icon name="rotateRight" size={14} className="-my-0.5" /></button>
-        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(-1)} title={`${t('pdf.moveEarlier')} (⌥←)`} aria-label={t('pdf.moveEarlier')}><Icon name="left" size={14} className="-my-0.5" /></button>
-        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(1)} title={`${t('pdf.moveLater')} (⌥→)`} aria-label={t('pdf.moveLater')}><Icon name="arrowRight" size={14} className="-my-0.5" /></button>
-        <button className={btn} disabled={!one || !!busy} onClick={duplicate} title="⌘D">{t('pdf.duplicate')}</button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(-1)} title={`${t('pdf.moveEarlier')} (${keyLabel('⌥←')})`} aria-label={t('pdf.moveEarlier')}><Icon name="left" size={14} className="-my-0.5" /></button>
+        <button className={btn} disabled={!one || !!busy} onClick={() => nudge(1)} title={`${t('pdf.moveLater')} (${keyLabel('⌥→')})`} aria-label={t('pdf.moveLater')}><Icon name="arrowRight" size={14} className="-my-0.5" /></button>
+        <button className={btn} disabled={!one || !!busy} onClick={duplicate} title={keyLabel('⌘D')}>{t('pdf.duplicate')}</button>
         <button className={`${btn} hover:!bg-red-500/30`} disabled={!one || !!busy} onClick={remove} title="⌫">{t('pdf.delete')}</button>
         <span className="mx-1 h-4 w-px bg-white/10" />
-        <button className={btn} disabled={!past.current.length || !!busy} onClick={undo} title="⌘Z">{t('pdf.undo')}</button>
-        <button className={btn} disabled={!future.current.length || !!busy} onClick={redo} title="⇧⌘Z">{t('pdf.redo')}</button>
+        <button className={btn} disabled={!past.current.length || !!busy} onClick={undo} title={keyLabel('⌘Z')}>{t('pdf.undo')}</button>
+        <button className={btn} disabled={!future.current.length || !!busy} onClick={redo} title={keyLabel('⇧⌘Z')}>{t('pdf.redo')}</button>
         <div className="flex-1" />
         <span className="text-[11px] text-zinc-500 tabular-nums">{one ? t('pdf.selectedOf', { n: selected.length, total: pages.length }) : t('pdf.pageCount', { n: pages.length })}</span>
         <button className={btn} disabled={!pages.length || !!busy} onClick={() => setShowExport((v) => !v)}>{t('pdf.exportImages')}</button>

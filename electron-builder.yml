@@ -1,5 +1,5 @@
 # Standalone macOS app: Electron shell, local server, web build and production node_modules in one bundle.
-# Windows: the remote-only client (see win: below).
+# Windows: the same shared code with platforms/windows (VIBRATO_TARGET=windows), see win: below.
 # Built by .github/workflows/release.yml on every pushed version tag; locally with `npm run dist` / `npm run dist:win`.
 appId: com.hdomi.vibrato
 productName: Vibrato
@@ -49,7 +49,8 @@ mac:
     NSAppleEventsUsageDescription: Agents running in Vibrato can automate other apps when you allow it.
 dmg:
   artifactName: Vibrato-${version}-${arch}.${ext}
-# Windows: the remote-only app (electron/main.cts REMOTE_ONLY): just the Remote tab, no local server or agents.
+# Windows: the local server and agents with the VIBE, Agent, Tools and Remote tabs (platforms/windows/). No in-app
+# browser or lock screen. The NSIS installer is also the update package (platforms/windows/server/os/update.ts).
 # Not code-signed: SmartScreen warns on first run ("More info" > "Run anyway").
 win:
   target:

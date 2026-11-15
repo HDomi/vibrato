@@ -7,9 +7,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "rootDir": ".",
+    "rootDirs": [".", "platforms/mac"],
     "outDir": "dist",
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["electron/**/*.cts", "server/**/*.ts", "server/**/*.cts"]
+  "include": ["electron/**/*.cts", "server/**/*.ts", "server/**/*.cts", "platforms/mac/electron/**/*.cts", "platforms/mac/server/**/*.ts"]
 }

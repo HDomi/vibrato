@@ -4,7 +4,7 @@ import { api, ApiError, type Entry, type Favorites, type HomeInfo, type Listing,
 import { agentClient, type Attachment } from './lib/agent';
 import { openTerminal, reconnectTerminals, terminalsBusy } from './lib/terminals';
 import { keepAwakeEnabled, workInProgress } from './lib/power';
-import { lockSummary } from './lib/lockScreen';
+import { usePlatformApp } from './platform/app';
 import { requestNotificationPermission, useSessions, setOnScreenSession } from './lib/useSessions';
 import Dock from './components/Dock';
 import SpaceBackdrop from './components/SpaceBackdrop';
@@ -38,6 +38,7 @@ import { BROWSER_CHANNEL, type BrowserChannelMessage } from './lib/browserChanne
 import { ViewActiveContext } from './lib/viewActive';
 import { shortcutKey } from './lib/keys';
 import { useEvent } from './lib/useEvent';
+import { isInside, lastSegment } from './lib/paths';
 
 // The toolbox and schedules load the first time their view is shown.
 const ToolboxView = lazy(() => import('./components/toolbox/ToolboxView'));
@@ -82,7 +83,8 @@ function AppInner() {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [selected, setSelected] = useState<Entry | null>(null);
   const [showTools, setShowTools] = useState(false);
-  const [toolsFocusLock, setToolsFocusLock] = useState(false);
+  /** Settings section to open at (a platform's own, e.g. from its menu bar). */
+  const [toolsTab, setToolsTab] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<'files' | 'preview' | 'terminal' | 'git' | 'run'>('files');
   const [runStatus, setRunStatus] = useState({ running: 0, errors: false });
   // Remembered so an update/relaunch comes back to the tab that was on screen, not the new-session view.
@@ -105,7 +107,8 @@ function AppInner() {
   const viewRef = useRef(view);
   viewRef.current = view;
   const setView = useCallback((v: ViewMode) => {
-    if (v === viewRef.current) return;
+    // A view this platform leaves out (lib/platform.ts) would slide in empty.
+    if (v === viewRef.current || !VIEW_ORDER.includes(v)) return;
     setSlide(VIEW_ORDER.indexOf(v) > VIEW_ORDER.indexOf(viewRef.current) ? 'right' : 'left');
     setMountedViews((m) => (m.has(v) ? m : new Set(m).add(v)));
     setViewState(v);
@@ -255,7 +258,7 @@ function AppInner() {
   // Sessions a message can be sent to (right-click / drag): every open one except the one on screen.
   const onScreenId = view === 'agent' ? (agentActive && agentActive !== 'new' ? agentActive : null) : (session?.id ?? null);
   setTransferTargets(() => sortSessions(Object.values(S.sessions)).filter((s) => s.id !== onScreenId && s.status !== 'closed')
-    .map((s) => ({ id: s.id, agent: s.agent, name: `${displayTitle(s, 28) ?? t('common.new')} · ${(s.worktree?.origin ?? s.cwd).split('/').pop()}` })));
+    .map((s) => ({ id: s.id, agent: s.agent, name: `${displayTitle(s, 28) ?? t('common.new')} · ${lastSegment(s.worktree?.origin ?? s.cwd)}` })));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const dropProps = (id: string) => ({
@@ -289,15 +292,7 @@ function AppInner() {
     return () => { window.clearInterval(timer); window.removeEventListener('vibe:keep-awake', update); window.vibe!.keepAwake!(false); };
   }, []);
   useEffect(() => { window.dispatchEvent(new Event('vibe:keep-awake')); }, [S.sessions]);
-  // Lock screen: per-agent session counts for the cover windows (no titles), and the menu's "Lock Screen Settings…".
-  const lastLockSummary = useRef('');
-  useEffect(() => {
-    if (!window.vibe?.lock) return;
-    const list = lockSummary(Object.values(S.sessions));
-    const key = JSON.stringify(list);
-    if (key !== lastLockSummary.current) { lastLockSummary.current = key; window.vibe.lock.reportSessions(list); }
-  }, [S.sessions]);
-  useEffect(() => window.vibe?.lock?.onOpenSettings(() => { setToolsFocusLock(true); setShowTools(true); }), []);
+  usePlatformApp({ sessions: S.sessions, openSettings: (tab) => { setToolsTab(tab); setShowTools(true); } });
   // A built-in Claude command the SDK cannot show (/plugin, /hooks, ...) runs in a terminal tab of the right panel.
   useEffect(() => {
     const h = (e: Event) => {
@@ -359,7 +354,7 @@ function AppInner() {
     if (panelRoot === lastPanelRoot.current) return;
     const prev = lastPanelRoot.current;
     lastPanelRoot.current = panelRoot;
-    if (panelRoot && (cwd === prev || (prev && cwd.startsWith(prev + '/')))) navigate(panelRoot);
+    if (panelRoot && (cwd === prev || (prev && isInside(cwd, prev)))) navigate(panelRoot);
   }, [panelRoot, cwd, navigate]);
   const closeSession = (id: string, confirmed = false) => {
     const s = S.sessions[id];
@@ -658,7 +653,7 @@ function AppInner() {
           </ViewActiveContext.Provider>
         ))}
         </div>
-        {showTools && <ToolsPanel focusLock={toolsFocusLock} focusFormTypes={toolsFocusForms} onClose={() => { setShowTools(false); setToolsFocusLock(false); setToolsFocusForms(false); }} />}
+        {showTools && <ToolsPanel focusTab={toolsTab ?? undefined} focusFormTypes={toolsFocusForms} onClose={() => { setShowTools(false); setToolsTab(null); setToolsFocusForms(false); }} />}
       </div>
   );
 }
@@ -703,7 +698,7 @@ function AgentView({ home, S, active, setActive, onFocusSession }: { home: strin
                 ? <RenameInput s={s} onDone={(v) => { setRenaming(null); if (v) S.rename(s.id, v); }} className="flex-1 min-w-0 rounded-lg bg-black/30 px-2 py-0.5 text-sm text-zinc-100 outline-none border border-white/20" />
                 : <span className="truncate flex-1">{displayTitle(s, 40) ?? t('common.new')}</span>}
               <AttentionBadge s={s} />
-              <span className="text-[10px] text-zinc-600 truncate max-w-[70px]" title={s.cwd}>{s.cwd.split('/').pop()}</span>
+              <span className="text-[10px] text-zinc-600 truncate max-w-[70px]" title={s.cwd}>{lastSegment(s.cwd)}</span>
             </div>
           ))}
         </div>
@@ -768,7 +763,7 @@ function backgroundSessions(sessions: Record<string, ChatSession>, currentId?: s
   for (const s of Object.values(sessions)) {
     if (s.id === currentId) continue;
     const state = backgroundState(s);
-    if (state) out.push({ id: s.id, name: displayTitle(s, 18) ?? s.cwd.split('/').pop() ?? t('common.new'), state });
+    if (state) out.push({ id: s.id, name: displayTitle(s, 18) ?? lastSegment(s.cwd) ?? t('common.new'), state });
   }
   // Sessions that stopped to ask something come first: they block until the user answers.
   return out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'waiting' ? -1 : 1));

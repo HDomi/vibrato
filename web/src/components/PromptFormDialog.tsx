@@ -7,6 +7,7 @@ import { t, useLang } from '../lib/i18n';
 import { APPROACHES, assemblePrompt, chipPresets, emptyForm, readFormState, switchType, withSkill, type FormField, type FormState } from '../lib/promptForm';
 import FileIcon from './FileIcon';
 import Icon from './Icon';
+import { keyLabel } from '../platform/strings';
 
 const box = 'w-full bg-black/20 rounded-md px-2.5 py-1.5 outline-none border border-white/5 focus:border-white/20 placeholder:text-zinc-600';
 const storeKey = (k: string) => `vibe.form.${k}`;
@@ -182,7 +183,7 @@ export default function PromptFormDialog({ cwd, agent, draftKey, running, onSend
           <div className="flex-1" />
           <button className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-white/10" onClick={onClose}>{t('form.cancel')}</button>
           <button disabled={!canSend} className="rounded-full bg-fill-2 hover:bg-fill-3 transition-colors px-3 py-1.5 text-zinc-100 disabled:opacity-40" onClick={() => finish(false)}>{t('form.toComposer')}</button>
-          <button disabled={!canSend} className="rounded-md bg-blue-500/40 hover:bg-blue-500/50 px-3.5 py-1.5 text-white disabled:opacity-40" onClick={() => finish(true)} title="⌘↵">{running ? t('form.queue') : t('form.send')}</button>
+          <button disabled={!canSend} className="rounded-md bg-blue-500/40 hover:bg-blue-500/50 px-3.5 py-1.5 text-white disabled:opacity-40" onClick={() => finish(true)} title={keyLabel('⌘↵')}>{running ? t('form.queue') : t('form.send')}</button>
         </div>
       </div>
     </div>

@@ -5,4 +5,4 @@ web/dist/
 *.log
 runtime/
 release/
-native/*/build/
+platforms/*/native/*/build/

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import { Readable } from 'node:stream';
 import { mimeOf, previewKind, type PreviewKind } from './mime.js';
+import { moveToTrash } from './os/files.js';
 
 export interface Entry {
   name: string;
@@ -36,6 +37,9 @@ function wrap(err: unknown, p: string): never {
   if (e.code === 'ENOTDIR') throw new FsError('ENOTDIR', `Not a directory: ${p}`, 400);
   throw new FsError(e.code ?? 'UNKNOWN', e.message ?? String(err), 500);
 }
+
+/** `full` relative to `base` as the client gets it: always with `/`, whatever the platform's separator. */
+const relativeSlash = (base: string, full: string) => path.relative(base, full).split(path.sep).join('/');
 
 export function resolvePath(input: string | undefined): string {
   if (!input || input === '~') return homedir();
@@ -250,7 +254,7 @@ export async function searchFiles(root: string, query: string, limit = 200): Pro
       visited++;
       if (d.name.startsWith('.') && d.name !== '.claude') continue;
       const full = path.join(dir, d.name);
-      const rel = path.relative(base, full);
+      const rel = relativeSlash(base, full);
       const lower = rel.toLowerCase();
       if (d.isDirectory()) {
         if (SKIP_DIRS.has(d.name)) continue;
@@ -306,7 +310,7 @@ export async function grepFiles(root: string, query: string, opts: { caseSensiti
         found = true;
         // Long lines (minified files) are cut to a window around the match; `col` stays the real column.
         const from = Math.max(0, m.index - 80);
-        hits.push({ path: full, rel: path.relative(base, full), line: i + 1, col: m.index, len: m[0].length, text: (from ? '…' : '') + text.slice(from, m.index + m[0].length + 160) });
+        hits.push({ path: full, rel: relativeSlash(base, full), line: i + 1, col: m.index, len: m[0].length, text: (from ? '…' : '') + text.slice(from, m.index + m[0].length + 160) });
         if (hits.length >= limit) { truncated = true; break; }
       }
       if (hits.length >= limit) break;
@@ -345,7 +349,7 @@ export async function findEnvFiles(root: string, maxDepth = 4): Promise<{ path: 
         if (!SKIP_DIRS.has(d.name) && !d.name.startsWith('.')) await walk(full, depth + 1);
       } else if (d.isFile() && /^\.env(\..+)?$|\.env$/i.test(d.name)) {
         const st = await fs.stat(full).catch(() => null);
-        if (st && st.size <= 1024 * 1024) out.push({ path: full, rel: path.relative(base, full), size: st.size });
+        if (st && st.size <= 1024 * 1024) out.push({ path: full, rel: relativeSlash(base, full), size: st.size });
       }
     }
   }
@@ -419,24 +423,12 @@ export async function duplicate(p: string): Promise<string> {
   try { await fs.cp(src, dest, { recursive: true }); return dest; } catch (err) { wrap(err, src); }
 }
 
-/** Move to the macOS Trash via Finder so the user can restore it. */
+/** Move to the system trash (os/files.ts) so the user can restore it. */
 export async function trash(paths: string[]): Promise<void> {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
   const abs = paths.map((p) => resolvePath(p));
   if (!abs.length) return;
-  // Paths go in as argv, never spliced into the script: a crafted file name cannot escape the string.
-  const script = [
-    'on run argv',
-    'set targets to {}',
-    'repeat with p in argv',
-    'set end of targets to (POSIX file (p as text))',
-    'end repeat',
-    'tell application "Finder" to delete targets',
-    'end run',
-  ];
   try {
-    await promisify(execFile)('osascript', [...script.flatMap((l) => ['-e', l]), '--', ...abs], { timeout: 20000 });
+    await moveToTrash(abs);
   } catch (err) {
     throw new FsError('ETRASH', `Could not move to Trash: ${(err as Error).message}`, 500);
   }

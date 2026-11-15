@@ -1,0 +1,62 @@
+# Type checks and tests for both targets on every push to main (and to ci/** branches, for trying a change on the
+# Windows runner before it reaches main). The macOS job checks both targets' types and the platform structure;
+# each job runs the tests of its own target (scripts/platform.cjs picks windows on Windows, mac elsewhere).
+name: CI
+
+on:
+  push:
+    branches: [main, 'ci/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # package.json scripts are written for a POSIX shell (||, 2>/dev/null): run them with Git Bash.
+      - name: Use Git Bash for npm scripts
+        if: runner.os == 'Windows'
+        run: echo 'npm_config_script_shell=C:\Program Files\Git\bin\bash.exe' >> "$GITHUB_ENV"
+
+      - name: Install
+        run: |
+          for i in 1 2 3; do
+            npm ci --no-audit --no-fund && exit 0
+            echo "::warning::npm ci failed (attempt $i of 3)"
+            [ "$i" -lt 3 ] && sleep $((i * 30))
+          done
+          exit 1
+
+      - name: Platform structure and both targets' types
+        if: runner.os == 'macOS'
+        run: |
+          npm run check:platforms
+          npm run typecheck
+          npm run typecheck:win
+
+      - name: Types
+        if: runner.os == 'Windows'
+        run: npm run typecheck
+
+      - name: Test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }

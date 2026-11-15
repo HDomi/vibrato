@@ -1,10 +1,11 @@
 import { api } from './api';
 import type { Attachment } from './agent';
+import { lastSegment } from './paths';
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|avif|bmp|svg|heic)$/i;
 
 export function toAttachment(path: string, name?: string): Attachment {
-  const n = name ?? path.split('/').pop() ?? path;
+  const n = name ?? lastSegment(path) ?? path;
   return { path, name: n, kind: IMAGE_RE.test(n) ? 'image' : 'file' };
 }
 

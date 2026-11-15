@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { keyLabel, STRINGS } from '../platform/strings';
 
 export type Lang = 'en' | 'ko';
 export const LANGS: { id: Lang; label: string }[] = [
@@ -3835,9 +3836,10 @@ export function setLang(l: Lang, fromHost = false) {
 }
 
 /** Translate a key; `{name}` placeholders are filled from params. Falls back to English, then the key. */
+/** The platform's own wording wins over the dictionary (platform/strings.ts), in the same order of languages. */
 export function t(key: string, params?: Record<string, string | number>): string {
-  const s = dict[current][key] ?? dict.en[key] ?? key;
-  return params ? s.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? '')) : s;
+  const s = STRINGS[current][key] ?? dict[current][key] ?? STRINGS.en[key] ?? dict.en[key] ?? key;
+  return keyLabel(params ? s.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? '')) : s);
 }
 
 /** Subscribe a component to language changes. Call once at the top of any component that renders text. */

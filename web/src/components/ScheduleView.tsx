@@ -9,6 +9,7 @@ import { ViewActiveContext } from '../lib/viewActive';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
 import Splitter, { SideSplitter, usePaneWidth } from './Splitter';
+import { lastSegment } from '../lib/paths';
 
 const STATUS_DOT: Record<ScheduleRunStatus, string> = {
   running: 'bg-amber-400 animate-pulse', waiting: 'bg-sky-400 animate-pulse', done: 'bg-emerald-400', failed: 'bg-red-400', missed: 'bg-zinc-500', skipped: 'bg-zinc-600',
@@ -183,7 +184,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                   <div className="flex-1" />
                   {last && <span className={`w-2 h-2 shrink-0 rounded-full ${STATUS_DOT[last.status]}`} title={t(`sched.status.${last.status}`)} />}
                 </div>
-                <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{describeCron(s.cron) || s.cron} · {s.cwd.split('/').pop()}{s.resumeSessionId ? ` · ↻ ${s.resumeTitle || s.resumeSessionId}` : ''}</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{describeCron(s.cron) || s.cron} · {lastSegment(s.cwd)}{s.resumeSessionId ? ` · ↻ ${s.resumeTitle || s.resumeSessionId}` : ''}</div>
                 <div className="text-[11px] text-zinc-500">{s.next ? t('sched.nextAt', { when: when(s.next), rel: rel(s.next) }) : t('sched.off')}{s.power === 'wake' ? ' · ⏰' : ''}</div>
               </button>
             );
@@ -217,7 +218,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
               <div className="flex gap-2">
                 <select className={input} value={draft.cwd} onChange={(e) => set('cwd', e.target.value)}>
                   {!draft.cwd && <option value="">{t('sched.pickProject')}</option>}
-                  {projectOptions.map((p) => <option key={p} value={p}>{p.split('/').pop()} — {p}</option>)}
+                  {projectOptions.map((p) => <option key={p} value={p}>{lastSegment(p)} — {p}</option>)}
                 </select>
                 {window.vibe?.pickFolder && <button className="shrink-0 rounded-md px-2.5 bg-white/5 hover:bg-white/10" onClick={() => void window.vibe!.pickFolder().then((p) => { if (p) set('cwd', p); })}>{t('sched.browse')}</button>}
               </div>
@@ -279,7 +280,7 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                       <div key={`${r.agent}:${r.sessionId}`} onMouseEnter={() => setSessionIdx(i)} onMouseDown={(e) => { e.preventDefault(); pickSession(r); }}
                         className={`px-3 py-1 flex items-center gap-2 cursor-pointer ${i === sessionIdx ? 'bg-blue-500/20 text-white' : 'text-zinc-300'}`}>
                         <span className="min-w-0 flex-1 truncate">{r.title}</span>
-                        {r.cwd && <span className="shrink-0 text-[11px] text-zinc-500">{r.cwd.split('/').pop()}</span>}
+                        {r.cwd && <span className="shrink-0 text-[11px] text-zinc-500">{lastSegment(r.cwd)}</span>}
                         <span className="shrink-0 text-[11px] text-zinc-600">{rel(r.lastModified)}</span>
                       </div>
                     ))}

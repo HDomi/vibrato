@@ -3,7 +3,8 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
-const asset = (v: string) => [{ name: `Vibrato-${v}-arm64-mac.zip`, browser_download_url: 'x', size: 1 }, { name: `Vibrato-${v}-x64-mac.zip`, browser_download_url: 'x', size: 1 }, { name: 'SHA256SUMS.txt', browser_download_url: 'x', size: 1 }];
+// Every target's package, so the list is the same whichever target runs the test.
+const asset = (v: string) => [...['arm64', 'x64'].flatMap((a) => [`Vibrato-${v}-${a}-mac.zip`, `Vibrato-Setup-${v}-${a}.exe`]).map((name) => ({ name, browser_download_url: 'x', size: 1 })), { name: 'SHA256SUMS.txt', browser_download_url: 'x', size: 1 }];
 const releases = [
   { tag_name: 'v2.2.0', name: 'v2.2.0', draft: true, assets: asset('2.2.0') },
   { tag_name: 'v2.1.1', name: 'Fixes', body: 'notes', published_at: '2026-10-27T00:00:00Z', assets: asset('2.1.1') },
@@ -13,7 +14,7 @@ const releases = [
   { tag_name: 'v2.0.0', assets: asset('2.0.0') },
   { tag_name: 'v1.0.11', assets: asset('1.0.11') },
 ];
-const sums = (v: string) => `${'a'.repeat(64)}  Vibrato-${v}-arm64.dmg\n${'b'.repeat(64)}  Vibrato-${v}-arm64-mac.zip\n${'c'.repeat(64)}  Vibrato-${v}-x64-mac.zip\n`;
+const sums = (v: string) => `${'a'.repeat(64)}  Vibrato-${v}-arm64.dmg\n${'b'.repeat(64)}  Vibrato-${v}-arm64-mac.zip\n${'c'.repeat(64)}  Vibrato-${v}-x64-mac.zip\n${'d'.repeat(64)}  Vibrato-Setup-${v}-arm64.exe\n${'e'.repeat(64)}  Vibrato-Setup-${v}-x64.exe\n`;
 const entry = (tag: string, title: string, html: string) => `<entry><id>${tag}</id><updated>2026-10-27T00:00:00Z</updated><link rel="alternate" type="text/html" href="https://github.com/HDomi/vibrato/releases/tag/${tag}"/><title>${title}</title><content type="html">${html}</content></entry>`;
 const atom = `<?xml version="1.0"?><feed>${entry('v2.1.1', 'Fixes', '&lt;p&gt;notes &amp;amp; more&lt;/p&gt;')}${entry('v2.1.0-rc1', 'rc', '')}${entry('v2.1.0', 'gone', '')}${entry('v2.0.1', 'v2.0.1', '')}</feed>`;
 
@@ -62,7 +63,7 @@ test('rate limited API: the Atom feed and SHA256SUMS.txt stand in', async () => 
     assert.equal(list[0].notes, 'notes & more');
     assert.ok(asked.includes('/releases.atom') && asked.includes('/releases/download/v2.1.1/SHA256SUMS.txt'), asked.join(' '));
     const byTag = await feed.releaseByTag('v2.0.1');
-    assert.equal(feed.pickAssets(byTag, 'arm64').zip?.browser_download_url, `${origin}/releases/download/v2.0.1/Vibrato-2.0.1-arm64-mac.zip`);
+    assert.match(feed.pickAssets(byTag, 'arm64').zip?.browser_download_url ?? '', new RegExp(`^${origin}/releases/download/v2\\.0\\.1/Vibrato-(2\\.0\\.1-arm64-mac\\.zip|Setup-2\\.0\\.1-arm64\\.exe)$`));
     assert.equal(feed.pickAssets(byTag, 'arm64').sums?.name, 'SHA256SUMS.txt');
   } finally { mode = 'ok'; }
 });

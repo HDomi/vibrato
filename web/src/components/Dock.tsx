@@ -10,6 +10,7 @@ import { useEvent } from '../lib/useEvent';
 import ProjectIcon from './ProjectIcon';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
+import { baseName as nameOf } from '../lib/paths';
 
 interface Props {
   favorites: Favorites;
@@ -43,7 +44,7 @@ export function commonItems(path: string): MenuItem[] {
   ];
 }
 
-const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
+const baseName = (p: string) => nameOf(p) ?? p;
 
 /** Label beside the dock. Fixed-positioned: the dock scrolls, so an absolute child would be clipped. */
 function Tip({ tip }: { tip: { text: string; sub?: string; x: number; y: number } | null }) {
