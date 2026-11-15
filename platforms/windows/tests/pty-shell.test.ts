@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import WebSocket, { WebSocketServer } from 'ws';
 import { attachPty, detachedPtys, killAllPtys } from '../server/pty';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// node-pty's ConPTY worker keeps the process alive after the shells are killed, so this file would never end
+// on its own. The server itself exits through process.exit (index.ts shutdown), as this does once the results are out.
+after(() => { setTimeout(() => process.exit(), 1000); });
 
 async function listen() {
   const http = createServer();
