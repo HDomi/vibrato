@@ -127,7 +127,7 @@ jobs:
         run: |
           set -o pipefail
           npm run typecheck
-          npm test -- --test-timeout=180000 --test-force-exit 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }
+          npm test -- --each --test-timeout=180000 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }
 
       - name: Build app
         run: |

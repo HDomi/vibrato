@@ -10,7 +10,7 @@
 // Usage: node scripts/platform.cjs <command> [--target=mac|windows] [args]
 //   Target: --target, else VIBRATO_TARGET, else the machine's own (windows on Windows, mac elsewhere).
 //   build:main | build:web | build:native   compile to dist/, web/dist/, dist/native/
-//   typecheck | test [node --test args] | test:ui
+//   typecheck | test [--each] [node --test args] | test:ui
 //   dev      Vite and the server from the stage, kept in step with edits in the repo
 //   serve    the server from the stage
 //   stage    assemble the tree and print its path
@@ -220,7 +220,21 @@ switch (cmd) {
     const stage = sync();
     const tests = fs.readdirSync(path.join(stage, 'tests')).filter((f) => /\.test\.tsx?$/.test(f)).sort().map((f) => path.join('tests', f));
     // Fixed locale: a few tests compare formatted dates and sorted names.
-    run('tsx', ['--tsconfig', path.join('web', 'tsconfig.json'), '--test', ...rest, ...tests], stage, { ...process.env, LC_ALL: 'en_US.UTF-8' });
+    const env = { ...process.env, LC_ALL: 'en_US.UTF-8' };
+    const args = (files) => ['--tsconfig', path.join('web', 'tsconfig.json'), '--test', ...rest.filter((a) => a !== '--each'), ...files];
+    if (!rest.includes('--each')) { run('tsx', args(tests), stage, env); break; }
+    // --each (CI): one run per file with a time limit, so a file that never finishes is named instead of
+    // holding the whole run until the job is cancelled.
+    let failed = 0;
+    for (const file of tests) {
+      try { execFileSync(process.execPath, [cli('tsx'), ...args([file])], { cwd: stage, stdio: 'inherit', env, timeout: 5 * 60 * 1000, killSignal: 'SIGKILL' }); }
+      catch (err) {
+        failed++;
+        if (err.code === 'ETIMEDOUT' || err.signal) console.log(`not ok 0 - ${posix(file)} did not finish within 5 minutes\n  ---\n  error: 'the test file was stopped; a test or a process it started never ended'\n  ...`);
+      }
+    }
+    if (failed) { console.log(`# ${failed} of ${tests.length} test files failed`); process.exit(1); }
+    console.log(`# all ${tests.length} test files passed`);
     break;
   }
   case 'test:ui': {
