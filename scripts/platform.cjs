@@ -221,7 +221,8 @@ switch (cmd) {
     const tests = fs.readdirSync(path.join(stage, 'tests')).filter((f) => /\.test\.tsx?$/.test(f)).sort().map((f) => path.join('tests', f));
     // Fixed locale: a few tests compare formatted dates and sorted names.
     const env = { ...process.env, LC_ALL: 'en_US.UTF-8' };
-    const args = (files) => ['--tsconfig', path.join('web', 'tsconfig.json'), '--test', ...rest.filter((a) => a !== '--each'), ...files];
+    // --each reports as TAP: scripts/ci-annotate.cjs reads the failures from it.
+    const args = (files) => ['--tsconfig', path.join('web', 'tsconfig.json'), '--test', ...(rest.includes('--each') ? ['--test-reporter=tap'] : []), ...rest.filter((a) => a !== '--each'), ...files];
     if (!rest.includes('--each')) { run('tsx', args(tests), stage, env); break; }
     // --each (CI): one run per file with a time limit, so a file that never finishes is named instead of
     // holding the whole run until the job is cancelled.

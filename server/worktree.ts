@@ -26,7 +26,8 @@ export function sanitizeBranch(name: string): string {
 async function mainRoot(cwd: string): Promise<string> {
   const common = await git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
   if (!common.ok) throw fail('Not a git repository', 'NOT_GIT', 400);
-  return path.dirname(common.stdout);
+  // Git prints paths with `/` on every platform: normalize to the platform's own form before comparing.
+  return path.dirname(path.normalize(common.stdout));
 }
 
 export async function createWorktree(cwd: string, wanted?: string): Promise<WorktreeInfo> {
@@ -144,7 +145,8 @@ export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
   if (!r.ok) return [];
   const out: WorktreeInfo[] = [];
   for (const block of r.stdout.split('\n\n')) {
-    const dir = block.match(/^worktree (.+)$/m)?.[1];
+    const listed = block.match(/^worktree (.+)$/m)?.[1];
+    const dir = listed && path.normalize(listed);
     const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1];
     if (!dir || !branch || path.dirname(dir) !== parent) continue;
     const base = (await git(root, ['config', '--get', `branch.${branch}.vibeBase`])).stdout.trim() || null;

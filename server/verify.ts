@@ -36,7 +36,7 @@ export function updateProjectSettings(cwd: string, patch: (p: ProjectSettings) =
 export async function verifySettings(cwd: string): Promise<VerifySettings | null> {
   const v = (await projectSettings(cwd)).verify;
   if (v?.command.trim()) return v;
-  const main = await new Promise<string | null>((resolve) => execFile('git', ['-C', resolvePath(cwd), 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeout: 5000 }, (err, out) => resolve(err ? null : path.dirname(String(out).trim()))));
+  const main = await new Promise<string | null>((resolve) => execFile('git', ['-C', resolvePath(cwd), 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeout: 5000 }, (err, out) => resolve(err ? null : path.dirname(path.normalize(String(out).trim())))));
   if (!main) return null;
   const real = (p: string) => fs.realpath(p).catch(() => p);
   const target = await real(main);

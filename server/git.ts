@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { run } from './shell.js';
 import { resolvePath } from './fs.js';
 
@@ -32,7 +33,7 @@ export async function gitStatus(dir: string): Promise<GitStatus> {
     if (index === 'R' || index === 'C') i++; // skip rename source entry
     files.push({ path, index, worktree, staged: index !== ' ' && index !== '?', untracked: index === '?' });
   }
-  return { repo: true, root: root.stdout, branch, ahead, behind, files };
+  return { repo: true, root: path.normalize(root.stdout), branch, ahead, behind, files };
 }
 
 export async function gitDiff(dir: string, path: string, staged: boolean): Promise<string> {

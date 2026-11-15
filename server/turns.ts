@@ -27,7 +27,7 @@ function git(cwd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; timeo
 
 export async function repoRoot(cwd: string): Promise<string | null> {
   const r = await git(resolvePath(cwd), ['rev-parse', '--show-toplevel'], { timeout: 5000 });
-  return r.ok ? r.stdout.trim() : null;
+  return r.ok ? path.normalize(r.stdout.trim()) : null;
 }
 
 /** Snapshots of one repository run one at a time: overlapping `git add -A` passes over a big tree only slow each other down. */

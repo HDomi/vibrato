@@ -26,7 +26,7 @@ export async function commitPrompt(cwd: string): Promise<string | null> {
     git(cwd, ['log', '-12', '--format=%s']),
   ]);
   if (!diff.trim()) return null;
-  const top = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim() || cwd;
+  const top = path.normalize((await git(cwd, ['rev-parse', '--show-toplevel'])).trim() || cwd);
   const rules: string[] = [];
   for (const f of ['CLAUDE.md', 'AGENTS.md']) {
     const text = await fs.readFile(path.join(top, f), 'utf8').catch(() => '');
