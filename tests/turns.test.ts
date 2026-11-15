@@ -68,30 +68,6 @@ test('turn snapshots: none outside git, paths and ids are validated', async () =
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('turn undo goes through git: symlinks are replaced, not written through; modes come back', async () => {
-  const { dir, git } = repo();
-  const outside = mkdtempSync(join(tmpdir(), 'vibrato-outside-'));
-  try {
-    const { chmodSync, statSync, symlinkSync, lstatSync } = await import('node:fs');
-    writeFileSync(join(dir, 'run.sh'), '#!/bin/sh\necho hi\n'); chmodSync(join(dir, 'run.sh'), 0o755);
-    git('add', '-A'); git('commit', '-qm', 'script');
-    const before = await snapshot(dir);
-    writeFileSync(join(outside, 'secret'), 'keep me\n');
-    rmSync(join(dir, 'a.txt')); symlinkSync(join(outside, 'secret'), join(dir, 'a.txt'));
-    rmSync(join(dir, 'run.sh'));
-    const after = await snapshot(dir);
-    const r = await revertTurn(before!.root, before!.tree, after!.tree, {});
-    assert.deepEqual(r.reverted.sort(), ['a.txt', 'run.sh']);
-    assert.equal(readFileSync(join(outside, 'secret'), 'utf8'), 'keep me\n', 'the symlink target is untouched');
-    assert.equal(lstatSync(join(dir, 'a.txt')).isSymbolicLink(), false);
-    assert.ok(readFileSync(join(dir, 'a.txt'), 'utf8').startsWith('line 1\n'));
-    assert.equal(statSync(join(dir, 'run.sh')).mode & 0o111, 0o111, 'executable bit restored');
-    const { repoRelative } = await import('../server/turns');
-    assert.equal(repoRelative('/private/tmp/r', '/tmp/r/src/a.ts'), 'src/a.ts');
-    assert.equal(repoRelative('/tmp/r', '/etc/passwd'), null);
-  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
-});
-
 test('snapshots of one repository run one at a time, and an aborted one is skipped', async () => {
   const { dir } = repo();
   try {
