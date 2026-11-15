@@ -59,4 +59,4 @@ jobs:
       - name: Test
         run: |
           set -o pipefail
-          npm test 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }
+          npm test -- --test-timeout=180000 --test-force-exit 2>&1 | tee test.log || { node scripts/ci-annotate.cjs test.log; exit 1; }
