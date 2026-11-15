@@ -1,3 +1,4 @@
+import { quoteShellArg } from '../platform/strings';
 /**
  * Claude Code built-in commands whose terminal UI does not survive the SDK: sent as a message they only print a
  * one-line summary or "isn't available in this environment". The composer routes them here instead.
@@ -38,7 +39,7 @@ export function routeSlash(text: string): SlashRoute | null {
   return null;
 }
 
-/** Shell line that opens the terminal CLI straight into `command` (single-quoted, so the argument cannot run anything). */
+/** Shell line that opens the terminal CLI straight into `command` (quoted for the terminal's shell, so the argument cannot run anything). */
 export function claudeShellLine(command: string): string {
-  return `claude '${command.replace(/'/g, `'\\''`)}'`;
+  return `claude ${quoteShellArg(command)}`;
 }

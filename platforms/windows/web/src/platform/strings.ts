@@ -57,3 +57,6 @@ export function keyLabel(s: string): string {
     .replace(/⌫/g, 'Backspace')
     .replace(/[↩↵⏎]/g, 'Enter');
 }
+
+/** One argument for a terminal tab's shell (PowerShell): single-quoted, a quote inside doubled; nothing is expanded or run. */
+export const quoteShellArg = (s: string): string => `'${s.replace(/['\u2018\u2019]/g, "$&$&")}'`;

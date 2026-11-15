@@ -46,7 +46,9 @@ export async function gitDiff(dir: string, path: string, staged: boolean): Promi
   if (tracked.ok) return '';
   // Untracked file: show the whole file as additions.
   const nt = await git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--no-index', '--', '/dev/null', path]);
-  if (nt.stderr) throw new Error(nt.stderr);
+  // Line-ending notices ("warning: ... LF will be replaced by CRLF") come with a good diff.
+  const problem = nt.stderr.split('\n').filter((l) => l.trim() && !l.startsWith('warning: ')).join('\n');
+  if (problem) throw new Error(problem);
   return nt.stdout || r.stderr || '';
 }
 

@@ -12,6 +12,8 @@ foreach ($p in @(ConvertFrom-Json $env:VIBRATO_PATHS)) {
   else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p,'OnlyErrorDialogs','SendToRecycleBin') }
 }`;
 
+export const SYSTEM_TAR = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+
 /** Move to the Recycle Bin so the user can restore it. Rejects when Windows refuses. */
 export async function moveToTrash(abs: string[]): Promise<void> {
   const r = await powershell(RECYCLE, { VIBRATO_PATHS: JSON.stringify(abs) }, 60000);
@@ -20,7 +22,8 @@ export async function moveToTrash(abs: string[]): Promise<void> {
 
 /** `folder` as `zip`, with the folder itself as the top entry. tar.exe (bsdtar) ships with Windows 10 and later. */
 export async function zipFolder(folder: string, zip: string): Promise<{ ok: boolean; stderr: string }> {
-  const tar = await run('tar.exe', ['-a', '-c', '-f', zip, '-C', path.dirname(folder), path.basename(folder)], 120000);
+  // By full path: a GNU tar earlier on PATH (Git Bash) would write a tar file under the .zip name.
+  const tar = await run(SYSTEM_TAR, ['-a', '-c', '-f', zip, '-C', path.dirname(folder), path.basename(folder)], 120000);
   if (tar.ok) return tar;
   const ps = await powershell('Compress-Archive -LiteralPath $env:VIBRATO_SRC -DestinationPath $env:VIBRATO_ZIP -Force', { VIBRATO_SRC: folder, VIBRATO_ZIP: zip }, 120000);
   return ps.ok ? ps : { ok: false, stderr: tar.stderr || ps.stderr };

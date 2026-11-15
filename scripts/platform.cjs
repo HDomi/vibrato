@@ -219,8 +219,11 @@ switch (cmd) {
   case 'test': {
     const stage = sync();
     const tests = fs.readdirSync(path.join(stage, 'tests')).filter((f) => /\.test\.tsx?$/.test(f)).sort().map((f) => path.join('tests', f));
-    // Fixed locale: a few tests compare formatted dates and sorted names.
-    const env = { ...process.env, LC_ALL: 'en_US.UTF-8' };
+    // The same surroundings on every machine: a fixed locale (formatted dates, sorted names), git that leaves line
+    // endings alone (Git for Windows converts them by default), and the temp folder by its real name (Windows
+    // may hand out an 8.3 short path, which git and Node then spell differently).
+    const tmp = fs.realpathSync.native(os.tmpdir());
+    const env = { ...process.env, LC_ALL: 'en_US.UTF-8', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false', ...(process.platform === 'win32' ? { TEMP: tmp, TMP: tmp } : {}) };
     // --each reports as TAP: scripts/ci-annotate.cjs reads the failures from it.
     const args = (files) => ['--tsconfig', path.join('web', 'tsconfig.json'), '--test', ...(rest.includes('--each') ? ['--test-reporter=tap'] : []), ...rest.filter((a) => a !== '--each'), ...files];
     if (!rest.includes('--each')) { run('tsx', args(tests), stage, env); break; }

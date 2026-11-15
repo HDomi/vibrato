@@ -103,7 +103,7 @@ test('images: probe, convert and render through GDI+', windows, async () => {
 });
 
 test('files: zip with the folder as top entry, Recycle Bin', windows, async () => {
-  const { zipFolder, moveToTrash } = await import('../server/os/files');
+  const { zipFolder, moveToTrash, SYSTEM_TAR } = await import('../server/os/files');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'vibrato-files-'));
   try {
     await fs.mkdir(path.join(dir, 'pack', 'images'), { recursive: true });
@@ -112,7 +112,7 @@ test('files: zip with the folder as top entry, Recycle Bin', windows, async () =
     const zip = path.join(dir, 'pack.zip');
     assert.equal((await zipFolder(path.join(dir, 'pack'), zip)).ok, true);
     const { run } = await import('../server/shell');
-    const listing = (await run('tar.exe', ['-tf', zip])).stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const listing = (await run(SYSTEM_TAR, ['-tf', zip])).stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     assert.ok(listing.includes('pack/pack.md') && listing.includes('pack/images/x.txt'), listing.join(' '));
     const gone = path.join(dir, 'gone.txt');
     await fs.writeFile(gone, 'bye');

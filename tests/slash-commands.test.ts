@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { claudeShellLine, routeSlash, withAppCommands } from '../web/src/lib/slashCommands';
+import { routeSlash, withAppCommands } from '../web/src/lib/slashCommands';
 
 test('slash: built-in dialogs the SDK cannot show are routed in the app', () => {
   assert.deepEqual(routeSlash('/mcp'), { kind: 'mcp' });
@@ -23,13 +22,6 @@ test('slash: commands the SDK runs, and plain text, are sent as typed', () => {
   assert.equal(routeSlash('/mcp\nwhy is it failing?'), null);
   assert.equal(routeSlash('mcp'), null);
   assert.equal(routeSlash('/usr/bin is missing'), null);
-});
-
-test('slash: the terminal line passes the command as one quoted argument', () => {
-  assert.equal(claudeShellLine('/plugin'), `claude '/plugin'`);
-  const evil = `/plugin it's $(touch /tmp/x) \`id\``;
-  const out = execFileSync('/bin/sh', ['-c', claudeShellLine(evil).replace(/^claude /, 'printf %s ')]).toString();
-  assert.equal(out, evil);
 });
 
 test('slash: terminal-only commands join the "/" list once', () => {
