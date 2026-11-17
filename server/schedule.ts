@@ -156,9 +156,10 @@ export function cleanSchedule(body: unknown, prev: Schedule | null, now: number,
 
 export type RunNotice = 'start' | 'done' | 'stop';
 const NOTICE_LABEL: Record<RunNotice, string> = { start: '시작', done: '완료', stop: '중지' };
+const NOTICE_ICON: Record<RunNotice, string> = { start: '🟢', done: '✅', stop: '🔴' };
 
 /** The Discord message for a run event, with the time in the server's local zone. */
 export function discordMessage(name: string, notice: RunNotice, at: number): string {
   const label = NOTICE_LABEL[notice];
-  return `${NOTICE_RULE}\n[Vibrato Scheduler]\n\n작업이름: ${name}\n작업 여부: ${label}\n작업 ${label} 시간: ${stamp(at)}`;
+  return `${NOTICE_RULE}\n${NOTICE_ICON[notice]} [Vibrato Scheduler]\n\n작업이름: ${name}\n작업 여부: ${label}\n작업 ${label} 시간: ${stamp(at)}`;
 }

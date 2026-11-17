@@ -53,7 +53,8 @@ const plain = (s: string) => s.replace(/[`*_~|>@#[\]()\\]/g, '').slice(0, 100);
  */
 export function noticeMessage(o: { kind: 'login' | 'logout'; host: string; address: string; at: number; ok: boolean }): string {
   const state = o.kind === 'logout' ? '연결중단' : o.ok ? '연결성공' : '연결실패';
-  return `${NOTICE_RULE}\n[Vibrato Remote]\n\n접속대상: ${hostLabel(o.host)}\nIP: ${plain(o.address) || '-'}\n시간: ${stamp(o.at)}\n연결여부: ${state}`;
+  const icon = o.kind === 'logout' ? '⚪' : o.ok ? '🟢' : '🔴';
+  return `${NOTICE_RULE}\n${icon} [Vibrato Remote]\n\n접속대상: ${hostLabel(o.host)}\nIP: ${plain(o.address) || '-'}\n시간: ${stamp(o.at)}\n연결여부: ${state}`;
 }
 
 export function testMessage(host: string): string {

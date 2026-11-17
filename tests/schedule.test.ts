@@ -106,7 +106,7 @@ test('schedule: discord webhook setting and message format', async () => {
   assert.equal(cleanSchedule({ discordWebhook: '' }, prev, 2000, 'id').discordWebhook, undefined);
 
   const t = new Date(2026, 10, 7, 9, 5).getTime();
-  assert.equal(discordMessage('주간보고', 'start', t), '----------------------------------------\n[Vibrato Scheduler]\n\n작업이름: 주간보고\n작업 여부: 시작\n작업 시작 시간: 2026.11.07 09:05');
-  assert.equal(discordMessage('x', 'done', t).split('\n').slice(4).join('|'), '작업 여부: 완료|작업 완료 시간: 2026.11.07 09:05');
-  assert.equal(discordMessage('x', 'stop', t).split('\n').slice(4).join('|'), '작업 여부: 중지|작업 중지 시간: 2026.11.07 09:05');
+  assert.equal(discordMessage('주간보고', 'start', t), '----------------------------------------\n🟢 [Vibrato Scheduler]\n\n작업이름: 주간보고\n작업 여부: 시작\n작업 시작 시간: 2026.11.07 09:05');
+  assert.equal(discordMessage('x', 'done', t).split('\n').slice(1).join('|').replace(/\|\|작업이름: x/, ''), '✅ [Vibrato Scheduler]|작업 여부: 완료|작업 완료 시간: 2026.11.07 09:05');
+  assert.equal(discordMessage('x', 'stop', t).split('\n').slice(1).join('|').replace(/\|\|작업이름: x/, ''), '🔴 [Vibrato Scheduler]|작업 여부: 중지|작업 중지 시간: 2026.11.07 09:05');
 });
