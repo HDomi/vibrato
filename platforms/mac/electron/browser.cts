@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
-import { AGENT_HELPERS, cookieMatchesHost, DEVICES, diffBitmaps, handPath, MOBILE_UA, pageHooks, playwrightScript, RELAY, TABLET_UA, type MockRule } from './browserScripts.cjs';
+import { AGENT_HELPERS, cookieMatchesHost, DEVICES, diffBitmaps, handPath, INSPECTOR, MOBILE_UA, pageHooks, playwrightScript, RELAY, TABLET_UA, type MockRule } from './browserScripts.cjs';
 
 /**
  * In-app browser: a window of its own (`/?browser=1`) whose page area is a native WKWebView (native/webview)
@@ -99,6 +99,9 @@ const LOG_BATCH_MS = 50;
 const BODIES_MAX = 400;
 const DEFAULT_SESSION: SessionInfo = { key: 'agent', label: 'Agent', color: '#4299FF' };
 const DATA_DIR = path.join(os.homedir(), '.vibrato', 'browser');
+/** Isolated-world script of every frame from document start: the relay, the agent helpers and the ⌥+click inspector. */
+const ISOLATED = `${RELAY}\n${AGENT_HELPERS}\n${INSPECTOR}`;
+const INSPECT_COLOR = '#2DD4BF';
 const SAFARI_UA = (() => {
   let v = '18.0';
   try { v = execFileSync('/usr/bin/defaults', ['read', '/Applications/Safari.app/Contents/Info', 'CFBundleShortVersionString'], { encoding: 'utf8', timeout: 2000 }).trim() || v; } catch { /* keep default */ }
@@ -222,6 +225,15 @@ function onNativeEvent(json: string) {
         native?.boxes(JSON.stringify({ color: '#4299FF', items: [{ x: r.x * z, y: r.y * z, w: r.w * z, h: r.h * z, label: b.label }] }));
       } else if (b.kind === 'pick' && tab) void finishPick(tab, b);
       else if (b.kind === 'pick-cancel') { picking = false; native?.boxes('{"items":[]}'); publishFlags(); }
+      else if (b.kind === 'inspect-hover' && id === active && !picking) {
+        const r = b.rect as Rect | null; const z = tab?.zoom ?? 1;
+        if (r) native?.boxes(JSON.stringify({ color: INSPECT_COLOR, items: [{ x: r.x * z, y: r.y * z, w: r.w * z, h: r.h * z, label: b.label }] }));
+        else void drawRefs();
+      } else if (b.kind === 'inspected' && tab) {
+        send('browser:inspected', { tab: id, data: b.data ?? null, error: b.error as string | undefined });
+        const d = b.data as { rect?: Rect } | undefined;
+        if (d?.rect && id === active) flashBox(tab, d.rect);
+      }
       return;
     }
     case 'response':
@@ -254,7 +266,7 @@ function onNativeEvent(json: string) {
       const parent = tabs.get(opener);
       tabs.set(id, newTabState(id, String(e.url ?? ''), opener, parent?.owner));
       order.splice(order.indexOf(opener) + 1, 0, id);
-      if (mocks.length) native?.setScripts(id, pageHooks(mocksFor(id)), RELAY);
+      if (mocks.length) native?.setScripts(id, pageHooks(mocksFor(id)), ISOLATED);
       if (parent?.owner) sessionTab.set(parent.owner.key, id);
       activate(id);
       break;
@@ -352,7 +364,7 @@ function normalizeUrl(input: string): string {
 function openTab(url: string, owner?: SessionInfo): number {
   const nat = loadNative();
   if (!nat || !win) throw new ToolError('UNAVAILABLE', `In-app browser unavailable: ${nativeError || 'no window'}`, 'no');
-  const id = nat.create(win.getNativeWindowHandle(), { userAgent: SAFARI_UA, storeId: STORE_ID, pageScript: pageHooks(mocks.filter((m) => m.all).map(pageRule)), isolatedScript: RELAY });
+  const id = nat.create(win.getNativeWindowHandle(), { userAgent: SAFARI_UA, storeId: STORE_ID, pageScript: pageHooks(mocks.filter((m) => m.all).map(pageRule)), isolatedScript: ISOLATED });
   tabs.set(id, newTabState(id, url, undefined, owner));
   order.push(id);
   nat.load(id, normalizeUrl(url));
@@ -464,6 +476,50 @@ function setPicking(on: boolean) {
   publishFlags();
 }
 
+// ---------- element inspector (⌥+click; the page side is INSPECTOR in browserScripts) ----------
+
+let flashTimer: NodeJS.Timeout | null = null;
+/** Outlines an element in the page for a moment (after a pick, or while its row in the panel is hovered). */
+function flashBox(tab: TabState, r: Rect, ms = 1400) {
+  if (!native || picking) return;
+  const z = tab.zoom;
+  native.boxes(JSON.stringify({ color: INSPECT_COLOR, items: [{ x: r.x * z, y: r.y * z, w: r.w * z, h: r.h * z }] }));
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = ms ? setTimeout(() => { flashTimer = null; void drawRefs(); }, ms) : null;
+}
+
+const refArg = (ref: unknown) => typeof ref === 'string' && /^e\d+$/.test(ref) ? ref : null;
+
+/** Re-inspects an element of the active tab (main frame) by ref: the panel's tree navigation and refresh. */
+async function inspectRef(ref: string) {
+  const tab = active ? tabs.get(active) : null;
+  if (!tab) throw new ToolError('NO_TAB', 'no tab');
+  return { tab: tab.id, data: await evalIn(tab, `${INSPECTOR}\nreturn __vb.inspect(${JSON.stringify(ref)});`) };
+}
+
+async function inspectHighlight(ref: string | null) {
+  const tab = active ? tabs.get(active) : null;
+  if (!tab || !native) return;
+  if (!ref) { if (flashTimer) { clearTimeout(flashTimer); flashTimer = null; } void drawRefs(); return; }
+  try {
+    const [r] = await evalIn(tab, `return __vb.rectsFor([${JSON.stringify(ref)}]);`) as Rect[];
+    if (r) flashBox(tab, r, 0);
+  } catch { /* gone */ }
+}
+
+/** The inspected element to the composer, like the picker, plus its own winning declarations. */
+async function inspectSend(ref: string) {
+  const tab = active ? tabs.get(active) : null;
+  if (!tab) return false;
+  const b = await evalIn(tab, `${INSPECTOR}
+    const el = __vb.find(${JSON.stringify(ref)});
+    const d = __vb.pickData(el); const i = __vb.inspect(${JSON.stringify(ref)});
+    const css = i.rules.filter((g) => g.decls.some((x) => !x.over)).slice(0, 12).map((g) => '/* ' + (g.src || 'inline') + (g.at ? ' ' + g.at : '') + ' */\\n' + g.sel + ' { ' + g.decls.filter((x) => !x.over).map((x) => x.p + ': ' + x.v + (x.imp ? ' !important' : '')).join('; ') + ' }');
+    return { ...d, css: css.join('\\n') };`) as Record<string, unknown>;
+  await finishPick(tab, b);
+  return true;
+}
+
 /** The picked element goes to the browser window, which hands it to the main window's composer. */
 async function finishPick(tab: TabState, b: Record<string, unknown>) {
   picking = false;
@@ -483,6 +539,7 @@ async function finishPick(tab: TabState, b: Record<string, unknown>) {
     b.text ? `- text: ${JSON.stringify(b.text)}` : '',
     m ? `- box: ${JSON.stringify(m.rect)} padding ${JSON.stringify(m.padding)} margin ${JSON.stringify(m.margin)}; font ${JSON.stringify(m.font)}; color ${m.color} on ${m.background}` : '',
     '```html', String(b.html ?? ''), '```',
+    b.css ? `Applied CSS (overridden declarations left out):\n\`\`\`css\n${b.css}\n\`\`\`` : '',
   ].filter(Boolean).join('\n');
   send('browser:picked', { text, image, ref: b.ref, tab: tab.id });
 }
@@ -544,6 +601,17 @@ export function initBrowser(d: Deps) {
   ipcMain.on('browser:pause', (e, on: unknown) => { if (fromBrowserWindow(e)) setPaused(!!on); });
   ipcMain.on('browser:pick', (e, on: unknown) => { if (fromBrowserWindow(e)) setPicking(!!on); });
   ipcMain.on('browser:refs', (e, on: unknown) => { if (fromBrowserWindow(e)) setRefs(!!on); });
+  ipcMain.handle('browser:inspect', async (e, ref: unknown) => {
+    const r = refArg(ref);
+    if (!fromBrowserWindow(e) || !r) return null;
+    try { return await inspectRef(r); } catch (err) { return { error: (err as Error).message }; }
+  });
+  ipcMain.on('browser:inspect-highlight', (e, ref: unknown) => { if (fromBrowserWindow(e)) void inspectHighlight(refArg(ref)); });
+  ipcMain.handle('browser:inspect-send', async (e, ref: unknown) => {
+    const r = refArg(ref);
+    if (!fromBrowserWindow(e) || !r) return false;
+    try { return await inspectSend(r); } catch { return false; }
+  });
   ipcMain.handle('browser:net-detail', (e, s: unknown) => {
     if (!fromBrowserWindow(e)) return null;
     const entry = netLog.find((n) => n.seq === s);
@@ -594,7 +662,7 @@ function setMocks(next: MockEntry[]) {
   // Next loads get the rules from the injected script; pages already open get them swapped in right away.
   for (const id of order) {
     const rules = mocksFor(id);
-    native?.setScripts(id, pageHooks(rules), RELAY);
+    native?.setScripts(id, pageHooks(rules), ISOLATED);
     const tab = tabs.get(id);
     if (tab) void evalIn(tab, `if (window.__vbMocks) window.__vbMocks(${JSON.stringify(rules)}); return true;`, false).catch(() => {});
   }

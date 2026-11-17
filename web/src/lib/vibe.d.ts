@@ -26,6 +26,28 @@ export interface BrowserAgentEntry { seq: number; t: number; tool: string; summa
 export type BrowserStorageArea = 'local' | 'session' | 'cookies';
 export interface BrowserCookie { name: string; value: string; domain: string; path: string; expires?: number; httpOnly: boolean; secure: boolean; session: boolean; sameSite?: string }
 export interface BrowserStorageResult { origin: string; items?: [string, string][]; cookies?: BrowserCookie[]; changed?: number }
+/** One declaration of a rule; `over` when every property it sets is overridden. */
+export interface BrowserCssDecl { p: string; v: string; imp: boolean; over?: boolean; vars?: [string, string][] }
+/** A matched rule (or element.style): selector, source file, at-rule conditions, cascade layer, specificity. */
+export interface BrowserCssRule { sel: string; src?: string; at?: string; layer?: string; maybe?: boolean; state?: boolean; inline?: boolean; spec?: string; decls: BrowserCssDecl[] }
+export interface BrowserInspectNode { ref?: string; label?: string; kids?: number; text?: string; hidden?: boolean; shadow?: boolean }
+/** An ⌥+clicked element: everything the Elements pane shows for it. */
+export interface BrowserInspection {
+  ref: string; label: string; tag: string; url: string; frame?: boolean; crossOrigin?: boolean;
+  rect: { x: number; y: number; w: number; h: number }; size: { w: number; h: number };
+  attrs: [string, string][]; text?: string;
+  path: { ref: string; label: string }[]; children: BrowserInspectNode[]; childCount: number;
+  sibling: { index: number; total: number; prev?: string; next?: string };
+  box: { margin: number[]; border: number[]; padding: number[]; content: { w: number; h: number }; sizing: string };
+  rules: BrowserCssRule[];
+  inherited: { ref: string; label: string; groups: BrowserCssRule[] }[];
+  pseudos: { name: string; content?: string; groups: BrowserCssRule[] }[];
+  computed: [string, string][];
+  /** Longhand property → where its value comes from. */
+  sources: Record<string, string>;
+  unreadable?: string[];
+  info: { role?: string; name?: string; locator: string; selector: string; focusable?: boolean; hidden?: boolean; scroll?: boolean; contrast?: { ratio: number; large: boolean; background: string; imaged?: boolean }; parentLayout?: string };
+}
 export interface BrowserBridge {
   info: () => Promise<{ available: boolean; error: string; tabs: BrowserTab[]; active: number | null; console: BrowserConsoleEntry[]; net: BrowserNetEntry[]; agent: BrowserAgentEntry[]; flags: BrowserFlags; devices: BrowserDevicePreset[] } | null>;
   /** Where the page goes, in window coordinates; null hides it. */
@@ -59,6 +81,14 @@ export interface BrowserBridge {
   on(channel: 'storage-changed', cb: (e: { tab: number }) => void): () => void;
   on(channel: 'flags', cb: (f: BrowserFlags) => void): () => void;
   on(channel: 'picked', cb: (p: { text: string; image?: string; ref: string; tab: number }) => void): () => void;
+  /** An element was ⌥+clicked in the page. */
+  on(channel: 'inspected', cb: (p: { tab: number; data: BrowserInspection | null; error?: string }) => void): () => void;
+  /** Element inspector: re-inspect a ref of the active tab's main frame (tree navigation, refresh). */
+  inspect: (ref: string) => Promise<{ tab: number; data: BrowserInspection } | { error: string } | null>;
+  /** Outline a ref in the page while its row is hovered; null clears. */
+  inspectHighlight: (ref: string | null) => void;
+  /** Hand the element (with its applied CSS) to the main window's composer. */
+  inspectSend: (ref: string) => Promise<boolean>;
 }
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;

@@ -4,6 +4,7 @@ import Icon, { type IconName } from '../Icon';
 import { BROWSER_CHANNEL, type BrowserChannelMessage } from '../../lib/browserChannel';
 import { useEvent } from '../../lib/useEvent';
 import { useSkipOffscreen } from '../../lib/skipOffscreen';
+import ElementsView, { type Inspected } from './ElementsView';
 import type { BrowserAgentEntry, BrowserBridge, BrowserConsoleEntry, BrowserCookie, BrowserDevice, BrowserDevicePreset, BrowserFlags, BrowserNetBody, BrowserNetEntry, BrowserStorageArea, BrowserStorageResult, BrowserTab } from '../../lib/vibe';
 
 /**
@@ -14,7 +15,8 @@ import type { BrowserAgentEntry, BrowserBridge, BrowserConsoleEntry, BrowserCook
  */
 
 type Dock = 'right' | 'bottom' | 'left' | 'top' | 'hidden';
-type Pane = 'console' | 'network' | 'storage' | 'agent';
+type Pane = 'elements' | 'console' | 'network' | 'storage' | 'agent';
+const PANES: Pane[] = ['elements', 'console', 'network', 'storage', 'agent'];
 const LS_DOCK = 'vibe.browser.dock';
 const LS_SIZE = 'vibe.browser.dockSize';
 const LS_PANE = 'vibe.browser.pane';
@@ -49,12 +51,13 @@ export default function BrowserApp() {
   const [flags, setFlags] = useState<BrowserFlags>({ paused: false, picking: false, refs: false, mocks: [] });
   const [devices, setDevices] = useState<BrowserDevicePreset[]>([]);
   const [dock, setDock] = useState<Dock>(() => read(LS_DOCK, DOCKS, 'right'));
-  const [pane, setPane] = useState<Pane>(() => read(LS_PANE, ['console', 'network', 'storage', 'agent'] as const, 'console'));
+  const [pane, setPane] = useState<Pane>(() => read(LS_PANE, PANES, 'console'));
   const [size, setSize] = useState(() => { try { return Number(localStorage.getItem(LS_SIZE)) || 420; } catch { return 420; } });
   const [address, setAddress] = useState('');
   const [editing, setEditing] = useState(false);
   const [toast, setToast] = useState('');
   const [fullScreen, setFullScreen] = useState(false);
+  const [inspected, setInspected] = useState<Inspected | null>(null);
   const hole = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLDivElement>(null);
 
@@ -97,6 +100,13 @@ export default function BrowserApp() {
         // Hand the element to the main window's composer (same origin, so a BroadcastChannel reaches it).
         if (typeof BroadcastChannel !== 'undefined') { const ch = new BroadcastChannel(BROWSER_CHANNEL); ch.postMessage({ kind: 'pick', text: p.text, image: p.image } satisfies BrowserChannelMessage); ch.close(); }
         setToast(t('browser.picked'));
+      }),
+      // ⌥+click in the page: show it in the Elements pane, opening the debug card if it is hidden.
+      bridge.on('inspected', (p) => {
+        if (!p.data) { setToast(p.error ? `${t('browser.el.failed')}: ${p.error}` : t('browser.el.failed')); return; }
+        setInspected({ tab: p.tab, data: p.data });
+        setPane('elements');
+        setDock((d) => d === 'hidden' ? 'right' : d);
       }),
     ];
     return () => { offs.forEach((f) => f()); cancelAnimationFrame(raf); };
@@ -235,14 +245,15 @@ export default function BrowserApp() {
             </div>
             <div className="glass shrink-0 flex flex-col min-w-0 min-h-0 overflow-hidden" style={vertical ? { height: size } : { width: size }}>
               <div className="h-12 shrink-0 flex items-center gap-1 px-2.5 border-b border-white/10">
-                <PaneTabs pane={pane} setPane={setPane} badges={{ console: errors, network: failed, storage: 0, agent: 0 }} />
+                <PaneTabs pane={pane} setPane={setPane} badges={{ elements: 0, console: errors, network: failed, storage: 0, agent: 0 }} />
                 <div className="flex-1" />
-                {pane !== 'storage' && (
+                {pane !== 'storage' && pane !== 'elements' && (
                   <button title={t('browser.clear')} onClick={() => { const kind = pane === 'network' ? 'net' : pane === 'console' ? 'console' : 'agent'; bridge?.clear(kind); if (pane === 'console') setLogs([]); else if (pane === 'network') setNets([]); else setAgent([]); }}
                     className="w-7 h-7 rounded-full text-zinc-400 hover:text-white hover:bg-fill flex items-center justify-center"><Icon name="undo" size={13} /></button>
                 )}
               </div>
               <div className="flex-1 min-h-0">
+                {pane === 'elements' && bridge && <ElementsView bridge={bridge} tab={tab} inspected={inspected} setInspected={setInspected} toast={setToast} />}
                 {pane === 'console' && <ConsoleView rows={logs} tab={tab?.id ?? null} />}
                 {pane === 'network' && bridge && <NetworkView rows={nets} tab={tab?.id ?? null} bridge={bridge} flags={flags} />}
                 {pane === 'storage' && bridge && <StorageView bridge={bridge} tab={tab} />}
@@ -299,10 +310,10 @@ function TabCapsule({ tabs, active, onPick, onClose }: { tabs: BrowserTab[]; act
 
 function PaneTabs({ pane, setPane, badges }: { pane: Pane; setPane: (p: Pane) => void; badges: Record<Pane, number> }) {
   return (
-    <div className="glass-ctl flex items-center p-1 rounded-full text-[12px] font-medium">
-      {(['console', 'network', 'storage', 'agent'] as const).map((k) => (
-        <button key={k} onClick={() => setPane(k)} className={`h-7 px-3 rounded-full flex items-center gap-1.5 transition-colors ${pane === k ? 'bg-selected text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
-          {t(k === 'console' ? 'browser.console' : k === 'network' ? 'browser.network' : k === 'storage' ? 'browser.storage' : 'browser.agent')}
+    <div className="glass-ctl min-w-0 overflow-x-auto flex items-center p-1 rounded-full text-[12px] font-medium">
+      {PANES.map((k) => (
+        <button key={k} onClick={() => setPane(k)} className={`h-7 px-2.5 shrink-0 whitespace-nowrap rounded-full flex items-center gap-1.5 transition-colors ${pane === k ? 'bg-selected text-on-selected' : 'text-zinc-200 hover:text-white'}`}>
+          {t(`browser.${k}`)}
           {badges[k] > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-red-500/85 text-[10px] leading-4 text-white">{badges[k]}</span>}
         </button>
       ))}

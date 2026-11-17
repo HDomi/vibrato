@@ -321,6 +321,11 @@ if (!globalThis.__vb) {
     }
     return m;
   };
+  /** What the picker (and the element inspector's "send to agent") hands to the composer. */
+  const pickData = (el) => {
+    let html = el.outerHTML; if (secret(el)) html = html.replace(/value="[^"]*"/g, 'value="[hidden]"');
+    return { ref: refOf(el), rect: rectOf(el), locator: locator(el), selector: cssPath(el), role: roleOf(el), name: nameOf(el, roleOf(el)), text: clip(el.innerText || el.textContent, 300), html: html.length > 4000 ? html.slice(0, 4000) + '…' : html, measure: measure(el), url: location.href };
+  };
   /** Element picker: hover boxes and the picked element go out through the native bridge. */
   let picking = null;
   const pick = (on) => {
@@ -332,15 +337,343 @@ if (!globalThis.__vb) {
     const click = (e) => {
       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
       const el = e.target instanceof Element ? e.target : null; pick(false); if (!el) return;
-      let html = el.outerHTML; if (secret(el)) html = html.replace(/value="[^"]*"/g, 'value="[hidden]"');
-      post({ kind: 'pick', ref: refOf(el), rect: rectOf(el), locator: locator(el), selector: cssPath(el), role: roleOf(el), name: nameOf(el, roleOf(el)), text: clip(el.innerText || el.textContent, 300), html: html.length > 4000 ? html.slice(0, 4000) + '…' : html, measure: measure(el), url: location.href });
+      post({ kind: 'pick', ...pickData(el) });
     };
     const key = (e) => { if (e.key === 'Escape') { pick(false); post({ kind: 'pick-cancel' }); } };
     addEventListener('mousemove', move, true); addEventListener('click', click, true); addEventListener('keydown', key, true);
     picking = { move, click, key };
   };
   const rectsFor = (refs) => refs.map((r) => { const el = byRef.get(r)?.deref(); if (!el || !el.isConnected || hidden(el)) return null; const b = rectOf(el); return b.w && b.h ? { ref: r, ...b } : null; }).filter(Boolean);
-  globalThis.__vb = { snapshot, find, check, state, locator, measure, pick, refOf, rectOf, rectsFor, secret };
+  globalThis.__vb = { snapshot, find, check, state, locator, measure, pick, pickData, refOf, rectOf, rectsFor, secret, cssPath, hitName, clip, hidden };
+}
+`;
+
+/**
+ * Pure CSS helpers of the element inspector, kept apart so tests can run them: top-level list splitting that
+ * respects brackets and quotes, selector specificity (with :is/:not/:has taking their most specific argument,
+ * :where counting nothing and nth-child(… of S) adding S) and declaration parsing of a rule's cssText.
+ */
+export const INSPECT_CORE = String.raw`
+const splitTop = (s, sep = ',') => {
+  const out = []; let d = 0, q = '', st = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '\\') { i++; continue; }
+    if (q) { if (ch === q) q = ''; continue; }
+    if (ch === '"' || ch === "'") q = ch;
+    else if (ch === '(' || ch === '[') d++;
+    else if (ch === ')' || ch === ']') d--;
+    else if (ch === sep && !d) { out.push(s.slice(st, i).trim()); st = i + 1; }
+  }
+  out.push(s.slice(st).trim());
+  return out.filter(Boolean);
+};
+const cmpArr = (x, y) => { for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
+const LEGACY_PSEUDO = ['before', 'after', 'first-line', 'first-letter'];
+const specificity = (s) => {
+  let a = 0, b = 0, c = 0, i = 0;
+  const ident = () => { while (i < s.length && (/[\w-]/.test(s[i]) || s.charCodeAt(i) > 127 || s[i] === '\\')) { if (s[i] === '\\') i++; i++; } };
+  const args = () => {
+    let d = 0; const st = i + 1;
+    for (; i < s.length; i++) { const ch = s[i]; if (ch === '\\') { i++; continue; } if (ch === '(') d++; else if (ch === ')' && !--d) { i++; return s.slice(st, i - 1); } }
+    return s.slice(st);
+  };
+  const add = (list) => { let best = [0, 0, 0]; for (const p of splitTop(list)) { const x = specificity(p); if (cmpArr(x, best) > 0) best = x; } a += best[0]; b += best[1]; c += best[2]; };
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === '\\') { i += 2; continue; }
+    if (ch === '#') { a++; i++; ident(); continue; }
+    if (ch === '.') { b++; i++; ident(); continue; }
+    if (ch === '[') { b++; while (i < s.length && s[i] !== ']') { if (s[i] === '\\') i++; i++; } i++; continue; }
+    if (ch === ':') {
+      const isEl = s[i + 1] === ':'; i += isEl ? 2 : 1;
+      const st = i; ident(); const name = s.slice(st, i).toLowerCase();
+      const arg = s[i] === '(' ? args() : null;
+      if (isEl || LEGACY_PSEUDO.includes(name)) { c++; continue; }
+      if (name === 'where') continue;
+      if (['is', 'not', 'has', 'matches', '-webkit-any'].includes(name)) { add(arg || ''); continue; }
+      b++;
+      if ((name === 'nth-child' || name === 'nth-last-child') && arg && /\sof\s/i.test(arg)) add(arg.replace(/^[\s\S]*?\sof\s/i, ''));
+      continue;
+    }
+    if (/[A-Za-z_-]/.test(ch) || s.charCodeAt(i) > 127) { ident(); c++; continue; }
+    i++;
+  }
+  return [a, b, c];
+};
+const parseDecls = (text) => {
+  const out = [];
+  for (const part of splitTop(text || '', ';')) {
+    const k = part.indexOf(':'); if (k <= 0) continue;
+    let p = part.slice(0, k).trim(); let v = part.slice(k + 1).trim();
+    if (!p.startsWith('--')) p = p.toLowerCase();
+    const imp = /!\s*important\s*$/i.test(v); if (imp) v = v.replace(/\s*!\s*important\s*$/i, '');
+    out.push({ p, v, imp });
+  }
+  return out;
+};
+`;
+
+/**
+ * Element inspector (isolated world, every frame, from document start). With ⌥ held the element under the pointer
+ * gets a hover box; ⌥+click selects it without the page seeing the click (capture listeners registered before any
+ * page script, so they run first), and the inspection goes out through the native bridge. __vb.inspect(el) is also
+ * called by the browser window to walk the tree (parent, child, sibling) in the main frame.
+ *
+ * An inspection bundles what one usually opens several DevTools panes for: the element and its tree around it,
+ * box model, the matched rules in cascade order with overridden declarations and resolved var()s, inherited and
+ * ::before/::after rules, every computed value with the rule it came from, and accessibility / locator info.
+ */
+export const INSPECTOR = String.raw`
+if (globalThis.__vb && !globalThis.__vb.inspect) {
+  const V = globalThis.__vb;
+  ${INSPECT_CORE}
+  const post = (m) => { try { webkit.messageHandlers.vibrato.postMessage(m); } catch {} };
+  const INHERITED = new Set(['color', 'font-family', 'font-size', 'font-style', 'font-weight', 'font-stretch', 'font-width', 'font-variant', 'font-variant-caps', 'font-variant-ligatures', 'font-variant-numeric', 'font-variant-east-asian', 'font-variant-alternates', 'font-variant-position', 'font-feature-settings', 'font-variation-settings', 'font-kerning', 'font-optical-sizing', 'font-synthesis', 'font-synthesis-weight', 'font-synthesis-style', 'font-synthesis-small-caps', 'font-size-adjust', 'line-height', 'letter-spacing', 'word-spacing', 'text-align', 'text-align-last', 'text-indent', 'text-transform', 'text-shadow', 'text-rendering', 'text-wrap', 'text-wrap-mode', 'text-wrap-style', 'text-underline-position', 'text-underline-offset', 'white-space', 'white-space-collapse', 'word-break', 'overflow-wrap', 'word-wrap', 'line-break', 'hyphens', 'tab-size', 'direction', 'writing-mode', 'visibility', 'cursor', 'pointer-events', 'list-style-type', 'list-style-position', 'list-style-image', 'quotes', 'caret-color', 'accent-color', 'color-scheme', 'border-collapse', 'border-spacing', 'empty-cells', 'caption-side', 'orphans', 'widows', 'paint-order', 'image-rendering', '-webkit-font-smoothing', '-webkit-text-fill-color', '-webkit-text-stroke-color', '-webkit-text-stroke-width', '-webkit-line-clamp']);
+  const STATE_RE = /:(hover|focus|focus-visible|focus-within|active|visited|checked|target|open|placeholder-shown)\b/;
+  const PSEUDO_RE = /(::[\w-]+(\([^)]*\))?|:(before|after|first-line|first-letter))$/;
+  const SHOWN_PSEUDO = ['::before', '::after', '::marker', '::placeholder', '::first-line', '::first-letter', '::selection', '::backdrop'];
+  const short = (el) => {
+    let s = el.tagName.toLowerCase(); if (el.id) s += '#' + el.id;
+    const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(Boolean) : [];
+    if (cls.length) s += '.' + cls.slice(0, 2).join('.') + (cls.length > 2 ? '…' : '');
+    return s;
+  };
+  const parentOf = (el) => el.parentElement || (el.parentNode && el.parentNode.host) || null;
+  const lh = new Map();
+  const longhands = (p) => {
+    if (p.startsWith('--')) return [p];
+    let l = lh.get(p);
+    if (!l) { const s = document.createElement('div').style; s.setProperty(p, 'inherit'); l = Array.from(s); if (!l.length) l = [p]; lh.set(p, l); }
+    return l;
+  };
+  const sheetName = (s) => {
+    const n = s.ownerNode; const vid = n && n.getAttribute && n.getAttribute('data-vite-dev-id');
+    const src = vid || s.href;
+    if (!src) return n && n.tagName === 'STYLE' ? '<style>' : 'constructed';
+    return src.split(/[?#]/)[0].split('/').filter(Boolean).slice(-2).join('/');
+  };
+  /** Every style rule reachable from a document or shadow root, flattened with its conditions, layer and order. */
+  const rulesIn = (root) => {
+    const rules = [], layers = [], unreadable = []; let order = 0;
+    const layerIdx = (name) => { let i = layers.indexOf(name); if (i < 0) { layers.push(name); i = layers.length - 1; } return i; };
+    const nest = (sel, parent) => parent ? (sel.includes('&') ? sel.replace(/&/g, ':is(' + parent + ')') : ':is(' + parent + ') ' + sel) : sel;
+    const walk = (list, ctx) => {
+      for (const r of list) {
+        const k = r.constructor && r.constructor.name;
+        if (k === 'CSSStyleRule') {
+          const sel = nest(r.selectorText, ctx.parent);
+          rules.push({ sel, style: r.style, ctx, order: order++ });
+          if (r.cssRules && r.cssRules.length) walk(r.cssRules, { ...ctx, parent: sel });
+        } else if (k === 'CSSNestedDeclarations') { if (ctx.parent) rules.push({ sel: ctx.parent, style: r.style, ctx, order: order++ }); }
+        else if (k === 'CSSMediaRule') { const m = r.media.mediaText; let ok = true; try { ok = matchMedia(m).matches; } catch {} walk(r.cssRules, { ...ctx, at: ctx.at.concat('@media ' + m), ok: ctx.ok && ok }); }
+        else if (k === 'CSSSupportsRule') { let ok = true; try { ok = CSS.supports(r.conditionText); } catch {} walk(r.cssRules, { ...ctx, at: ctx.at.concat('@supports ' + r.conditionText), ok: ctx.ok && ok }); }
+        else if (k === 'CSSContainerRule') walk(r.cssRules, { ...ctx, at: ctx.at.concat('@container ' + r.conditionText), maybe: true });
+        else if (k === 'CSSLayerBlockRule') { const name = (ctx.layer ? ctx.layer + '.' : '') + (r.name || '(anonymous ' + order + ')'); layerIdx(name); walk(r.cssRules, { ...ctx, layer: name, layerIdx: layerIdx(name) }); }
+        else if (k === 'CSSLayerStatementRule') { for (const n of r.nameList) layerIdx((ctx.layer ? ctx.layer + '.' : '') + n); }
+        else if (k === 'CSSImportRule' && r.styleSheet) {
+          const m = r.media && r.media.mediaText; let ok = true; if (m) try { ok = matchMedia(m).matches; } catch {}
+          const layer = r.layerName == null ? ctx.layer : (ctx.layer ? ctx.layer + '.' : '') + (r.layerName || '(anonymous)');
+          sheet(r.styleSheet, { ...ctx, at: m ? ctx.at.concat('@media ' + m) : ctx.at, ok: ctx.ok && ok, layer, layerIdx: layer == null ? ctx.layerIdx : layerIdx(layer) });
+        }
+      }
+    };
+    const sheet = (s, ctx) => {
+      if (s.disabled) return;
+      let list; try { list = s.cssRules; } catch { unreadable.push(sheetName(s)); return; }
+      const m = s.media && s.media.mediaText; let ok = true; if (m) try { ok = matchMedia(m).matches; } catch {}
+      walk(list, { ...ctx, src: sheetName(s), at: m ? ctx.at.concat('@media ' + m) : ctx.at, ok: ctx.ok && ok });
+    };
+    const base = { src: '', at: [], ok: true, layer: null, layerIdx: null, parent: null, maybe: false };
+    for (const s of root.styleSheets || []) sheet(s, base);
+    for (const s of root.adoptedStyleSheets || []) sheet(s, base);
+    return { rules, unreadable };
+  };
+  const matches = (el, sel) => { try { return el.matches(sel); } catch { return false; } };
+  /** Rules matching el (best matching selector's specificity) and the pseudo-element rules hanging off it. */
+  const matched = (el, store) => {
+    const own = [], pseudo = new Map();
+    for (const r of store.rules) {
+      if (!r.ctx.ok) continue;
+      r.parts = r.parts || splitTop(r.sel);
+      r.pe = r.pe ?? r.parts.some((p) => PSEUDO_RE.test(p));
+      if (!r.pe && !matches(el, r.sel)) continue;
+      let best = null;
+      for (const p of r.parts) {
+        const m = r.pe ? PSEUDO_RE.exec(p) : null;
+        if (m) {
+          const name = m[0].startsWith('::') ? m[0].replace(/\(.*$/, '') : ':' + m[0];
+          if (!SHOWN_PSEUDO.includes(name) || !matches(el, p.slice(0, m.index) || '*')) continue;
+          const list = pseudo.get(name) || []; if (!list.some((x) => x.r === r)) list.push({ r, spec: specificity(p) }); pseudo.set(name, list);
+        } else if (r.parts.length === 1 || matches(el, p)) { const s = specificity(p); if (!best || cmpArr(s, best) > 0) best = s; }
+      }
+      if (best) own.push({ r, spec: best });
+    }
+    return { own, pseudo };
+  };
+  const group = (m) => ({ sel: m.r.sel, src: m.r.ctx.src, at: m.r.ctx.at.join(' '), layer: m.r.ctx.layer || undefined, layerIdx: m.r.ctx.layerIdx, maybe: m.r.ctx.maybe || undefined, state: STATE_RE.test(m.r.sel) || undefined, specArr: m.spec, spec: m.spec.join(','), order: m.r.order, decls: parseDecls(m.r.style.cssText) });
+  const inlineGroup = (el) => el.getAttribute('style') ? { sel: 'element.style', inline: true, specArr: [1, 0, 0, 0], order: 1e9, layerIdx: null, decls: parseDecls(el.style.cssText) } : null;
+  const rank = (g, imp) => [imp ? 1 : 0, g.inline ? 1 : 0, g.layerIdx == null ? (imp ? -1 : 1e6) : (imp ? 1e6 - g.layerIdx : g.layerIdx), ...g.specArr, g.order];
+  const winners = (groups, keep) => {
+    const win = new Map();
+    for (const g of groups) for (const d of g.decls) {
+      const k = rank(g, d.imp);
+      for (const l of longhands(d.p)) { if (keep && !keep(l)) continue; const w = win.get(l); if (!w || cmpArr(k, w.k) >= 0) win.set(l, { k, d, g }); }
+    }
+    return win;
+  };
+  const sortGroups = (gs) => gs.sort((x, y) => cmpArr(rank(y, false), rank(x, false)));
+  const groupsFor = (el, store) => { const m = matched(el, store); const gs = m.own.map(group); const inl = inlineGroup(el); if (inl) gs.push(inl); return { gs: sortGroups(gs), pseudo: m.pseudo }; };
+  const where = (g) => g.inline ? 'element.style' : g.sel + (g.src ? ' — ' + g.src : '');
+  const vars = (d, cs) => {
+    if (!d.v.includes('var(')) return;
+    const out = [];
+    for (const m of d.v.matchAll(/var\(\s*(--[\w-]+)/g)) { if (out.length >= 6) break; if (!out.some((x) => x[0] === m[1])) out.push([m[1], cs.getPropertyValue(m[1]).trim()]); }
+    if (out.length) d.vars = out;
+  };
+  const clean = (g) => { const { specArr, order, layerIdx, ...rest } = g; return rest; };
+  /** sRGB bytes of any CSS color (oklch included) by painting one pixel. */
+  let ctx2d = null;
+  const rgba = (color) => {
+    try {
+      ctx2d = ctx2d || Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+      ctx2d.clearRect(0, 0, 1, 1); ctx2d.fillStyle = '#000'; ctx2d.fillStyle = color; ctx2d.fillRect(0, 0, 1, 1);
+      const p = ctx2d.getImageData(0, 0, 1, 1).data; return [p[0], p[1], p[2], p[3] / 255];
+    } catch { return null; }
+  };
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  /** Text contrast against the solid colour behind the element (background images are ignored). */
+  const contrast = (el, cs) => {
+    if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) return;
+    const layers = []; let imaged = false;
+    for (let a = el; a; a = parentOf(a)) {
+      const s = getComputedStyle(a); if (s.backgroundImage !== 'none') imaged = true;
+      const c = rgba(s.backgroundColor); if (c && c[3] > 0) { layers.push(c); if (c[3] >= 1) break; }
+    }
+    let bg = [255, 255, 255];
+    for (const c of layers.reverse()) bg = bg.map((v, i) => c[i] * c[3] + v * (1 - c[3]));
+    const fg0 = rgba(cs.color); if (!fg0) return;
+    const fg = fg0.slice(0, 3).map((v, i) => v * fg0[3] + bg[i] * (1 - fg0[3]));
+    const [hi, lo] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+    const ratio = Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+    const size = parseFloat(cs.fontSize); const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
+    return { ratio, large, background: 'rgb(' + bg.map(Math.round).join(', ') + ')', imaged: imaged || undefined };
+  };
+  const px = (v) => Math.round(parseFloat(v) * 100) / 100 || 0;
+  const sides = (cs, k, suffix = '') => ['Top', 'Right', 'Bottom', 'Left'].map((s) => px(cs[k + s + suffix]));
+  const kidsOf = (list, shadow) => {
+    const out = [];
+    for (const n of list) {
+      if (out.length >= 150) break;
+      if (n.nodeType === 3) { const t = V.clip(n.textContent, 80); if (t) out.push({ text: t }); continue; }
+      if (n.nodeType !== 1) continue;
+      const kids = n.childElementCount;
+      out.push({ ref: V.refOf(n), label: short(n), kids, text: kids ? undefined : V.clip(n.textContent, 50) || undefined, hidden: V.hidden(n) || undefined, shadow: shadow || undefined });
+    }
+    return out;
+  };
+
+  const inspect = (el) => {
+    const cs = getComputedStyle(el);
+    const store = rulesIn(el.getRootNode());
+    const stores = new Map([[el.getRootNode(), store]]);
+    const storeOf = (a) => { const r = a.getRootNode(); let s = stores.get(r); if (!s) { s = rulesIn(r); stores.set(r, s); } return s; };
+    const sources = {};
+    const { gs, pseudo } = groupsFor(el, store);
+    const win = winners(gs);
+    for (const g of gs) for (const d of g.decls) { d.over = !longhands(d.p).some((l) => win.get(l).d === d) || undefined; vars(d, cs); }
+    for (const [l, w] of win) sources[l] = where(w.g);
+    // Inherited: declarations of inheritable properties on ancestors, nearest first; the nearest one wins.
+    const decided = new Set(win.keys());
+    const inherited = [];
+    for (let a = parentOf(el), n = 0; a && n < 20; a = parentOf(a), n++) {
+      const r = groupsFor(a, storeOf(a)).gs;
+      for (const g of r) g.decls = g.decls.filter((d) => !d.p.startsWith('--') && longhands(d.p).some((l) => INHERITED.has(l)));
+      const keep = r.filter((g) => g.decls.length);
+      if (!keep.length) continue;
+      const w = winners(keep, (l) => INHERITED.has(l));
+      const acs = getComputedStyle(a);
+      // The browser's own stylesheet (form controls' font, say) is invisible here: a value only counts as
+      // inherited when the element really ends up with the ancestor's value.
+      const reaches = (l) => cs.getPropertyValue(l) === acs.getPropertyValue(l);
+      for (const g of keep) for (const d of g.decls) {
+        const mine = longhands(d.p).filter((l) => INHERITED.has(l) && !decided.has(l) && w.get(l)?.d === d && reaches(l));
+        d.over = !mine.length || undefined;
+        for (const l of mine) sources[l] = '↑ ' + short(a) + ' · ' + where(g);
+        vars(d, acs);
+      }
+      for (const l of w.keys()) decided.add(l);
+      if (inherited.length < 12) inherited.push({ ref: V.refOf(a), label: short(a), groups: keep.map(clean) });
+    }
+    const pseudos = [];
+    for (const [name, list] of pseudo) {
+      const pgs = sortGroups(list.map(group));
+      const pw = winners(pgs);
+      let pcs = null; try { pcs = getComputedStyle(el, name); } catch {}
+      for (const g of pgs) for (const d of g.decls) { d.over = !longhands(d.p).some((l) => pw.get(l).d === d) || undefined; if (pcs) vars(d, pcs); }
+      const content = pcs && (name === '::before' || name === '::after' || name === '::marker') ? pcs.content : undefined;
+      pseudos.push({ name, content, groups: pgs.map(clean) });
+    }
+    const computed = [];
+    for (let i = 0; i < cs.length; i++) { const p = cs[i]; computed.push([p, cs.getPropertyValue(p)]); }
+    computed.sort((x, y) => x[0].localeCompare(y[0]));
+    const r = el.getBoundingClientRect();
+    const border = sides(cs, 'border', 'Width'), padding = sides(cs, 'padding');
+    const parent = el.parentElement;
+    const sibs = parent ? [...parent.children] : [el];
+    const idx = sibs.indexOf(el);
+    const path = []; for (let a = parentOf(el); a && path.length < 40; a = parentOf(a)) path.unshift({ ref: V.refOf(a), label: short(a) });
+    const st = V.state(el);
+    const isSecret = V.secret(el);
+    const scroller = (el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(cs.overflowY)) || (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(cs.overflowX));
+    let crossOrigin = false; try { void top.location.href; } catch { crossOrigin = true; }
+    return {
+      ref: V.refOf(el), label: short(el), tag: el.tagName.toLowerCase(), url: location.href, frame: window !== top || undefined, crossOrigin: crossOrigin || undefined,
+      rect: V.rectOf(el), size: { w: px(r.width), h: px(r.height) },
+      attrs: [...el.attributes].map((a) => [a.name, isSecret && a.name === 'value' ? '[hidden]' : a.value.length > 1500 ? a.value.slice(0, 1500) + '…' : a.value]),
+      text: V.clip(el.innerText || el.textContent, 300) || undefined,
+      path, children: [...(el.shadowRoot ? kidsOf(el.shadowRoot.childNodes, true) : []), ...kidsOf(el.childNodes, false)],
+      childCount: el.childElementCount + (el.shadowRoot ? el.shadowRoot.childElementCount : 0),
+      sibling: { index: idx, total: sibs.length, prev: idx > 0 ? V.refOf(sibs[idx - 1]) : undefined, next: idx >= 0 && idx < sibs.length - 1 ? V.refOf(sibs[idx + 1]) : undefined },
+      box: { margin: sides(cs, 'margin'), border, padding, content: { w: px(r.width - border[1] - border[3] - padding[1] - padding[3]), h: px(r.height - border[0] - border[2] - padding[0] - padding[2]) }, sizing: cs.boxSizing },
+      rules: gs.map(clean), inherited, pseudos, computed, sources,
+      unreadable: store.unreadable.length ? store.unreadable : undefined,
+      info: {
+        role: st.role, name: st.name, locator: V.locator(el), selector: V.cssPath(el),
+        focusable: (el.tabIndex >= 0 && !el.disabled) || undefined, hidden: V.hidden(el) || Number(cs.opacity) === 0 || !r.width || !r.height || undefined,
+        scroll: scroller || undefined, contrast: contrast(el, cs),
+        parentLayout: parent ? getComputedStyle(parent).display : undefined,
+      },
+    };
+  };
+  V.inspect = (target) => inspect(V.find(target));
+
+  // ⌥ + pointer: hover box while held, select on click. Nothing of it reaches the page.
+  let hoverEl = null, lastMove = 0, at = null;
+  const frameOk = (() => { try { void top.location.href; return true; } catch { return false; } })();
+  const targetOf = (e) => { const p = e.composedPath ? e.composedPath() : []; const el = p.find((n) => n && n.nodeType === 1) || e.target; return el && el.nodeType === 1 ? el : null; };
+  const hoverLabel = (el) => { const r = el.getBoundingClientRect(); return short(el) + '  ' + Math.round(r.width) + '×' + Math.round(r.height); };
+  const showHover = (el) => { if (!el || el === hoverEl) return; hoverEl = el; if (frameOk) post({ kind: 'inspect-hover', rect: V.rectOf(el), label: hoverLabel(el) }); };
+  const clearHover = () => { if (!hoverEl) return; hoverEl = null; post({ kind: 'inspect-hover', rect: null }); };
+  addEventListener('mousemove', (e) => {
+    at = { x: e.clientX, y: e.clientY };
+    if (!e.altKey) { clearHover(); return; }
+    const now = Date.now(); if (now - lastMove < 30) return; lastMove = now;
+    showHover(targetOf(e));
+  }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Alt' && at) showHover(document.elementFromPoint(at.x, at.y)); }, true);
+  addEventListener('keyup', (e) => { if (e.key === 'Alt') clearHover(); }, true);
+  addEventListener('blur', clearHover);
+  addEventListener('mouseout', (e) => { if (!e.relatedTarget) clearHover(); }, true);
+  const block = (e) => {
+    if (!e.altKey || e.button !== 0 || !e.isTrusted) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.type !== 'click') return;
+    const el = targetOf(e); if (!el) return;
+    clearHover();
+    try { post({ kind: 'inspected', data: inspect(el) }); } catch (err) { post({ kind: 'inspected', error: String(err && err.message || err) }); }
+  };
+  for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu']) addEventListener(t, block, true);
 }
 `;
 

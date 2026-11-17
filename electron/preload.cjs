@@ -51,11 +51,15 @@ contextBridge.exposeInMainWorld('vibe', {
     pause: (on) => ipcRenderer.send('browser:pause', on),
     pick: (on) => ipcRenderer.send('browser:pick', on),
     refs: (on) => ipcRenderer.send('browser:refs', on),
+    // Element inspector (⌥+click in the page): walk the tree by ref, outline a ref in the page, hand it to the composer.
+    inspect: (ref) => ipcRenderer.invoke('browser:inspect', ref),
+    inspectHighlight: (ref) => ipcRenderer.send('browser:inspect-highlight', ref),
+    inspectSend: (ref) => ipcRenderer.invoke('browser:inspect-send', ref),
     netDetail: (seq) => ipcRenderer.invoke('browser:net-detail', seq),
     mockRemove: (id) => ipcRenderer.invoke('browser:mock-remove', id),
     export: (format) => ipcRenderer.invoke('browser:export', format),
     on: (channel, cb) => {
-      if (!['tabs', 'console', 'net', 'agent', 'storage-changed', 'flags', 'picked'].includes(channel)) return () => {};
+      if (!['tabs', 'console', 'net', 'agent', 'storage-changed', 'flags', 'picked', 'inspected'].includes(channel)) return () => {};
       const h = (_e, payload) => cb(payload);
       ipcRenderer.on(`browser:${channel}`, h);
       return () => ipcRenderer.removeListener(`browser:${channel}`, h);
