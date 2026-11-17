@@ -450,10 +450,19 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
   const sheetName = (s) => {
     const n = s.ownerNode; const vid = n && n.getAttribute && n.getAttribute('data-vite-dev-id');
     const src = vid || s.href;
+    if (n && n.hasAttribute && n.hasAttribute('data-vibrato-inspector')) return 'vibrato';
     if (!src) return n && n.tagName === 'STYLE' ? '<style>' : 'constructed';
     return src.split(/[?#]/)[0].split('/').filter(Boolean).slice(-2).join('/');
   };
   /** Every style rule reachable from a document or shadow root, flattened with its conditions, layer and order. */
+  // Rules keep one id across inspections (the panel edits them by id); disabled declarations live here per rule.
+  const ruleIds = new WeakMap(), ruleById = new Map(); let ruleSeq = 0;
+  const idOf = (r) => { let id = ruleIds.get(r); if (!id) { id = 'r' + (++ruleSeq); ruleIds.set(r, id); ruleById.set(id, new WeakRef(r)); } return id; };
+  const disabled = new Map();
+  const withOff = (key, decls) => {
+    for (const e of [...(disabled.get(key) || [])].sort((x, y) => x.i - y.i)) decls.splice(Math.min(e.i, decls.length), 0, { p: e.p, v: e.v, imp: e.imp, off: true });
+    return decls;
+  };
   const rulesIn = (root) => {
     const rules = [], layers = [], unreadable = []; let order = 0;
     const layerIdx = (name) => { let i = layers.indexOf(name); if (i < 0) { layers.push(name); i = layers.length - 1; } return i; };
@@ -463,9 +472,9 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
         const k = r.constructor && r.constructor.name;
         if (k === 'CSSStyleRule') {
           const sel = nest(r.selectorText, ctx.parent);
-          rules.push({ sel, style: r.style, ctx, order: order++ });
+          rules.push({ id: idOf(r), sel, style: r.style, ctx, order: order++ });
           if (r.cssRules && r.cssRules.length) walk(r.cssRules, { ...ctx, parent: sel });
-        } else if (k === 'CSSNestedDeclarations') { if (ctx.parent) rules.push({ sel: ctx.parent, style: r.style, ctx, order: order++ }); }
+        } else if (k === 'CSSNestedDeclarations') { if (ctx.parent) rules.push({ id: idOf(r), sel: ctx.parent, style: r.style, ctx, order: order++ }); }
         else if (k === 'CSSMediaRule') { const m = r.media.mediaText; let ok = true; try { ok = matchMedia(m).matches; } catch {} walk(r.cssRules, { ...ctx, at: ctx.at.concat('@media ' + m), ok: ctx.ok && ok }); }
         else if (k === 'CSSSupportsRule') { let ok = true; try { ok = CSS.supports(r.conditionText); } catch {} walk(r.cssRules, { ...ctx, at: ctx.at.concat('@supports ' + r.conditionText), ok: ctx.ok && ok }); }
         else if (k === 'CSSContainerRule') walk(r.cssRules, { ...ctx, at: ctx.at.concat('@container ' + r.conditionText), maybe: true });
@@ -511,19 +520,21 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
     }
     return { own, pseudo };
   };
-  const group = (m) => ({ sel: m.r.sel, src: m.r.ctx.src, at: m.r.ctx.at.join(' '), layer: m.r.ctx.layer || undefined, layerIdx: m.r.ctx.layerIdx, maybe: m.r.ctx.maybe || undefined, state: STATE_RE.test(m.r.sel) || undefined, specArr: m.spec, spec: m.spec.join(','), order: m.r.order, decls: parseDecls(m.r.style.cssText) });
-  const inlineGroup = (el) => el.getAttribute('style') ? { sel: 'element.style', inline: true, specArr: [1, 0, 0, 0], order: 1e9, layerIdx: null, decls: parseDecls(el.style.cssText) } : null;
+  const group = (m) => ({ id: m.r.id, sel: m.r.sel, src: m.r.ctx.src, at: m.r.ctx.at.join(' '), layer: m.r.ctx.layer || undefined, layerIdx: m.r.ctx.layerIdx, maybe: m.r.ctx.maybe || undefined, state: STATE_RE.test(m.r.sel) || undefined, specArr: m.spec, spec: m.spec.join(','), order: m.r.order, decls: withOff(m.r.id, parseDecls(m.r.style.cssText)) });
+  // element.style is always there (empty too) so the panel can add to it.
+  const inlineGroup = (el) => ({ id: 'inline', sel: 'element.style', inline: true, specArr: [1, 0, 0, 0], order: 1e9, layerIdx: null, decls: withOff('inline:' + V.refOf(el), parseDecls(el.style.cssText)) });
   const rank = (g, imp) => [imp ? 1 : 0, g.inline ? 1 : 0, g.layerIdx == null ? (imp ? -1 : 1e6) : (imp ? 1e6 - g.layerIdx : g.layerIdx), ...g.specArr, g.order];
   const winners = (groups, keep) => {
     const win = new Map();
     for (const g of groups) for (const d of g.decls) {
+      if (d.off) continue;
       const k = rank(g, d.imp);
       for (const l of longhands(d.p)) { if (keep && !keep(l)) continue; const w = win.get(l); if (!w || cmpArr(k, w.k) >= 0) win.set(l, { k, d, g }); }
     }
     return win;
   };
   const sortGroups = (gs) => gs.sort((x, y) => cmpArr(rank(y, false), rank(x, false)));
-  const groupsFor = (el, store) => { const m = matched(el, store); const gs = m.own.map(group); const inl = inlineGroup(el); if (inl) gs.push(inl); return { gs: sortGroups(gs), pseudo: m.pseudo }; };
+  const groupsFor = (el, store) => { const m = matched(el, store); const gs = m.own.map(group); gs.push(inlineGroup(el)); return { gs: sortGroups(gs), pseudo: m.pseudo }; };
   const where = (g) => g.inline ? 'element.style' : g.sel + (g.src ? ' — ' + g.src : '');
   const vars = (d, cs) => {
     if (!d.v.includes('var(')) return;
@@ -567,10 +578,32 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
       if (out.length >= 150) break;
       if (n.nodeType === 3) { const t = V.clip(n.textContent, 80); if (t) out.push({ text: t }); continue; }
       if (n.nodeType !== 1) continue;
-      const kids = n.childElementCount;
-      out.push({ ref: V.refOf(n), label: short(n), kids, text: kids ? undefined : V.clip(n.textContent, 50) || undefined, hidden: V.hidden(n) || undefined, shadow: shadow || undefined });
+      out.push({ ...nodeLine(n, shadow), label: short(n) });
     }
     return out;
+  };
+
+  /** One line of the DOM tree: tag, the attributes that identify it, child count or its short text. */
+  const shortAttrs = (n) => {
+    const all = [...n.attributes]; const out = [];
+    for (const a of [...all.filter((x) => x.name === 'id' || x.name === 'class'), ...all.filter((x) => x.name !== 'id' && x.name !== 'class')]) {
+      if (out.length >= 4) break;
+      const max = a.name === 'class' ? 90 : 50;
+      out.push([a.name, V.secret(n) && a.name === 'value' ? '[hidden]' : a.value.length > max ? a.value.slice(0, max) + '…' : a.value]);
+    }
+    return all.length > out.length ? out.concat([['…', String(all.length - out.length)]]) : out;
+  };
+  const nodeLine = (n, shadow) => {
+    const kids = n.childElementCount + (n.shadowRoot ? n.shadowRoot.childElementCount : 0);
+    return { ref: V.refOf(n), tag: n.tagName.toLowerCase(), attrs: shortAttrs(n), kids, text: kids ? undefined : V.clip(n.textContent, 40) || undefined, hidden: V.hidden(n) || undefined, shadow: shadow || undefined };
+  };
+  /** Children of an ancestor around the chain child (40 at most, the chain child kept in the window). */
+  const levelKids = (a, next) => {
+    const nodes = [...(a.shadowRoot ? [...a.shadowRoot.children].map((n) => [n, true]) : []), ...[...a.children].map((n) => [n, false])];
+    const idx = nodes.findIndex(([n]) => n === next);
+    let start = 0, end = nodes.length;
+    if (nodes.length > 41) { start = Math.max(0, Math.min(idx - 20, nodes.length - 41)); end = start + 41; }
+    return { kidsList: nodes.slice(start, end).map(([n, sh]) => n === next ? { ref: V.refOf(n), chain: true } : nodeLine(n, sh)), before: start || undefined, after: nodes.length - end || undefined };
   };
 
   const inspect = (el) => {
@@ -581,7 +614,7 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
     const sources = {};
     const { gs, pseudo } = groupsFor(el, store);
     const win = winners(gs);
-    for (const g of gs) for (const d of g.decls) { d.over = !longhands(d.p).some((l) => win.get(l).d === d) || undefined; vars(d, cs); }
+    for (const g of gs) for (const d of g.decls) { if (!d.off) d.over = !longhands(d.p).some((l) => win.get(l).d === d) || undefined; vars(d, cs); }
     for (const [l, w] of win) sources[l] = where(w.g);
     // Inherited: declarations of inheritable properties on ancestors, nearest first; the nearest one wins.
     const decided = new Set(win.keys());
@@ -597,8 +630,8 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
       // inherited when the element really ends up with the ancestor's value.
       const reaches = (l) => cs.getPropertyValue(l) === acs.getPropertyValue(l);
       for (const g of keep) for (const d of g.decls) {
-        const mine = longhands(d.p).filter((l) => INHERITED.has(l) && !decided.has(l) && w.get(l)?.d === d && reaches(l));
-        d.over = !mine.length || undefined;
+        const mine = d.off ? [] : longhands(d.p).filter((l) => INHERITED.has(l) && !decided.has(l) && w.get(l)?.d === d && reaches(l));
+        if (!d.off) d.over = !mine.length || undefined;
         for (const l of mine) sources[l] = '↑ ' + short(a) + ' · ' + where(g);
         vars(d, acs);
       }
@@ -610,7 +643,7 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
       const pgs = sortGroups(list.map(group));
       const pw = winners(pgs);
       let pcs = null; try { pcs = getComputedStyle(el, name); } catch {}
-      for (const g of pgs) for (const d of g.decls) { d.over = !longhands(d.p).some((l) => pw.get(l).d === d) || undefined; if (pcs) vars(d, pcs); }
+      for (const g of pgs) for (const d of g.decls) { if (!d.off) d.over = !longhands(d.p).some((l) => pw.get(l).d === d) || undefined; if (pcs) vars(d, pcs); }
       const content = pcs && (name === '::before' || name === '::after' || name === '::marker') ? pcs.content : undefined;
       pseudos.push({ name, content, groups: pgs.map(clean) });
     }
@@ -620,9 +653,9 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
     const r = el.getBoundingClientRect();
     const border = sides(cs, 'border', 'Width'), padding = sides(cs, 'padding');
     const parent = el.parentElement;
-    const sibs = parent ? [...parent.children] : [el];
-    const idx = sibs.indexOf(el);
-    const path = []; for (let a = parentOf(el); a && path.length < 40; a = parentOf(a)) path.unshift({ ref: V.refOf(a), label: short(a) });
+    const chain = []; for (let a = parentOf(el); a && chain.length < 40; a = parentOf(a)) chain.unshift(a);
+    const path = chain.map((a) => ({ ref: V.refOf(a), label: short(a) }));
+    const tree = chain.map((a, i) => ({ ...nodeLine(a), ...levelKids(a, chain[i + 1] || el) }));
     const st = V.state(el);
     const isSecret = V.secret(el);
     const scroller = (el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(cs.overflowY)) || (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(cs.overflowX));
@@ -632,9 +665,8 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
       rect: V.rectOf(el), size: { w: px(r.width), h: px(r.height) },
       attrs: [...el.attributes].map((a) => [a.name, isSecret && a.name === 'value' ? '[hidden]' : a.value.length > 1500 ? a.value.slice(0, 1500) + '…' : a.value]),
       text: V.clip(el.innerText || el.textContent, 300) || undefined,
-      path, children: [...(el.shadowRoot ? kidsOf(el.shadowRoot.childNodes, true) : []), ...kidsOf(el.childNodes, false)],
+      path, tree, children: [...(el.shadowRoot ? kidsOf(el.shadowRoot.childNodes, true) : []), ...kidsOf(el.childNodes, false)],
       childCount: el.childElementCount + (el.shadowRoot ? el.shadowRoot.childElementCount : 0),
-      sibling: { index: idx, total: sibs.length, prev: idx > 0 ? V.refOf(sibs[idx - 1]) : undefined, next: idx >= 0 && idx < sibs.length - 1 ? V.refOf(sibs[idx + 1]) : undefined },
       box: { margin: sides(cs, 'margin'), border, padding, content: { w: px(r.width - border[1] - border[3] - padding[1] - padding[3]), h: px(r.height - border[0] - border[2] - padding[0] - padding[2]) }, sizing: cs.boxSizing },
       rules: gs.map(clean), inherited, pseudos, computed, sources,
       unreadable: store.unreadable.length ? store.unreadable : undefined,
@@ -647,6 +679,53 @@ if (globalThis.__vb && !globalThis.__vb.inspect) {
     };
   };
   V.inspect = (target) => inspect(V.find(target));
+
+  /**
+   * Live style edits from the panel, on the page's own CSSOM (like DevTools; a reload undoes them):
+   * set (value, or rename with old; an empty value removes), toggle (on/off, kept aside while off),
+   * addRule (an empty rule in a <style data-vibrato-inspector> of the element's document or shadow root).
+   */
+  const parseValue = (raw) => { let v = String(raw ?? '').trim().replace(/;+\s*$/, ''); const imp = /!\s*important\s*$/i.test(v); if (imp) v = v.replace(/\s*!\s*important\s*$/i, ''); return { v, imp }; };
+  V.cssEdit = (op) => {
+    // op.ref owns the edited style (an ancestor's element.style, say); op.inspect is the element to answer with.
+    const el = V.find(op.ref);
+    const shown = op.inspect ? V.find(op.inspect) : el;
+    if (op.action === 'addRule') {
+      const sel = String(op.sel || '').trim();
+      try { document.querySelector(sel); } catch { throw new Error('INVALID_SELECTOR: ' + sel); }
+      if (!sel || /[{}]/.test(sel)) throw new Error('INVALID_SELECTOR: ' + sel);
+      const root = el.getRootNode();
+      const host = root.nodeType === 11 ? root : (document.head || document.documentElement);
+      let node = host.querySelector(':scope > style[data-vibrato-inspector]');
+      if (!node) { node = document.createElement('style'); node.setAttribute('data-vibrato-inspector', ''); host.appendChild(node); }
+      const sheet = node.sheet; const i = sheet.insertRule(sel + ' {}', sheet.cssRules.length);
+      return { rule: idOf(sheet.cssRules[i]), matches: matches(el, sel), data: inspect(shown) };
+    }
+    let style, key;
+    if (op.rule === 'inline') { style = el.style; key = 'inline:' + V.refOf(el); }
+    else { const r = ruleById.get(op.rule)?.deref(); if (!r) throw new Error('STALE_RULE: the rule is gone; inspect the element again'); style = r.style; key = op.rule; }
+    const list = disabled.get(key) || [];
+    const p = String(op.p || '').trim();
+    if (!p) throw new Error('INVALID_ARGS: property name required');
+    const lower = p.startsWith('--') ? p : p.toLowerCase();
+    if (op.action === 'set') {
+      const { v, imp } = parseValue(op.v);
+      if (v && !lower.startsWith('--') && !CSS.supports(lower, v)) throw new Error('INVALID_VALUE: ' + lower + ': ' + v);
+      if (op.old && op.old !== lower) style.removeProperty(op.old);
+      const j = list.findIndex((e) => e.p === lower || e.p === op.old); if (j >= 0) list.splice(j, 1);
+      if (v) style.setProperty(lower, v, imp ? 'important' : ''); else style.removeProperty(lower);
+    } else if (op.action === 'toggle') {
+      if (!op.on) {
+        const i = parseDecls(style.cssText).findIndex((d) => d.p === lower);
+        if (i >= 0) { list.push({ p: lower, v: style.getPropertyValue(lower), imp: style.getPropertyPriority(lower) === 'important', i }); style.removeProperty(lower); }
+      } else {
+        const j = list.findIndex((e) => e.p === lower);
+        if (j >= 0) { const e = list.splice(j, 1)[0]; style.setProperty(e.p, e.v, e.imp ? 'important' : ''); }
+      }
+    } else throw new Error('INVALID_ARGS: unknown action ' + op.action);
+    if (list.length) disabled.set(key, list); else disabled.delete(key);
+    return { data: inspect(shown) };
+  };
 
   // ⌥ + pointer: hover box while held, select on click. Nothing of it reaches the page.
   let hoverEl = null, lastMove = 0, at = null;

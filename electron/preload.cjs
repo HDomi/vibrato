@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('vibe', {
     inspect: (ref) => ipcRenderer.invoke('browser:inspect', ref),
     inspectHighlight: (ref) => ipcRenderer.send('browser:inspect-highlight', ref),
     inspectSend: (ref) => ipcRenderer.invoke('browser:inspect-send', ref),
+    cssEdit: (op) => ipcRenderer.invoke('browser:css-edit', op),
     netDetail: (seq) => ipcRenderer.invoke('browser:net-detail', seq),
     mockRemove: (id) => ipcRenderer.invoke('browser:mock-remove', id),
     export: (format) => ipcRenderer.invoke('browser:export', format),

@@ -507,6 +507,13 @@ async function inspectHighlight(ref: string | null) {
   } catch { /* gone */ }
 }
 
+/** A live style edit from the Elements pane (__vb.cssEdit); answers with the element inspected afresh. */
+async function cssEdit(op: Record<string, unknown>) {
+  const tab = active ? tabs.get(active) : null;
+  if (!tab) throw new ToolError('NO_TAB', 'no tab');
+  return { tab: tab.id, ...(await evalIn(tab, `${INSPECTOR}\nreturn __vb.cssEdit(${JSON.stringify(op)});`) as Record<string, unknown>) };
+}
+
 /** The inspected element to the composer, like the picker, plus its own winning declarations. */
 async function inspectSend(ref: string) {
   const tab = active ? tabs.get(active) : null;
@@ -514,7 +521,8 @@ async function inspectSend(ref: string) {
   const b = await evalIn(tab, `${INSPECTOR}
     const el = __vb.find(${JSON.stringify(ref)});
     const d = __vb.pickData(el); const i = __vb.inspect(${JSON.stringify(ref)});
-    const css = i.rules.filter((g) => g.decls.some((x) => !x.over)).slice(0, 12).map((g) => '/* ' + (g.src || 'inline') + (g.at ? ' ' + g.at : '') + ' */\\n' + g.sel + ' { ' + g.decls.filter((x) => !x.over).map((x) => x.p + ': ' + x.v + (x.imp ? ' !important' : '')).join('; ') + ' }');
+    const live = (x) => !x.over && !x.off;
+    const css = i.rules.filter((g) => g.decls.some(live)).slice(0, 12).map((g) => '/* ' + (g.src || 'inline') + (g.at ? ' ' + g.at : '') + ' */\\n' + g.sel + ' { ' + g.decls.filter(live).map((x) => x.p + ': ' + x.v + (x.imp ? ' !important' : '')).join('; ') + ' }');
     return { ...d, css: css.join('\\n') };`) as Record<string, unknown>;
   await finishPick(tab, b);
   return true;
@@ -605,6 +613,14 @@ export function initBrowser(d: Deps) {
     const r = refArg(ref);
     if (!fromBrowserWindow(e) || !r) return null;
     try { return await inspectRef(r); } catch (err) { return { error: (err as Error).message }; }
+  });
+  ipcMain.handle('browser:css-edit', async (e, op: unknown) => {
+    if (!fromBrowserWindow(e) || !op || typeof op !== 'object') return null;
+    const o = op as Record<string, unknown>;
+    const str = (k: string, max = 4000) => typeof o[k] === 'string' ? (o[k] as string).slice(0, max) : undefined;
+    if (!refArg(o.ref) || !['set', 'toggle', 'addRule'].includes(o.action as string)) return null;
+    const clean = { ref: o.ref, inspect: refArg(o.inspect) ?? undefined, action: o.action, rule: str('rule', 40), p: str('p', 200), v: str('v'), old: str('old', 200), sel: str('sel', 1000), on: o.on === true };
+    try { return await cssEdit(clean); } catch (err) { return { error: (err as Error).message }; }
   });
   ipcMain.on('browser:inspect-highlight', (e, ref: unknown) => { if (fromBrowserWindow(e)) void inspectHighlight(refArg(ref)); });
   ipcMain.handle('browser:inspect-send', async (e, ref: unknown) => {

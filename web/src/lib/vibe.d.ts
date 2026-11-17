@@ -27,17 +27,21 @@ export type BrowserStorageArea = 'local' | 'session' | 'cookies';
 export interface BrowserCookie { name: string; value: string; domain: string; path: string; expires?: number; httpOnly: boolean; secure: boolean; session: boolean; sameSite?: string }
 export interface BrowserStorageResult { origin: string; items?: [string, string][]; cookies?: BrowserCookie[]; changed?: number }
 /** One declaration of a rule; `over` when every property it sets is overridden. */
-export interface BrowserCssDecl { p: string; v: string; imp: boolean; over?: boolean; vars?: [string, string][] }
+export interface BrowserCssDecl { p: string; v: string; imp: boolean; over?: boolean; off?: boolean; vars?: [string, string][] }
 /** A matched rule (or element.style): selector, source file, at-rule conditions, cascade layer, specificity. */
-export interface BrowserCssRule { sel: string; src?: string; at?: string; layer?: string; maybe?: boolean; state?: boolean; inline?: boolean; spec?: string; decls: BrowserCssDecl[] }
-export interface BrowserInspectNode { ref?: string; label?: string; kids?: number; text?: string; hidden?: boolean; shadow?: boolean }
+export interface BrowserCssRule { id?: string; sel: string; src?: string; at?: string; layer?: string; maybe?: boolean; state?: boolean; inline?: boolean; spec?: string; decls: BrowserCssDecl[] }
+export interface BrowserInspectNode { ref?: string; label?: string; tag?: string; attrs?: [string, string][]; kids?: number; text?: string; hidden?: boolean; shadow?: boolean }
+/** One line of the DOM tree; `chain` marks the child that leads to the inspected element. */
+export interface BrowserTreeNode { ref: string; tag?: string; attrs?: [string, string][]; kids?: number; text?: string; hidden?: boolean; shadow?: boolean; chain?: boolean }
+/** An ancestor of the inspected element (root first) with the children shown under it. */
+export interface BrowserTreeLevel extends BrowserTreeNode { kidsList: BrowserTreeNode[]; before?: number; after?: number }
+export interface BrowserCssEdit { ref: string; inspect?: string; action: 'set' | 'toggle' | 'addRule'; rule?: string; p?: string; v?: string; old?: string; sel?: string; on?: boolean }
 /** An ⌥+clicked element: everything the Elements pane shows for it. */
 export interface BrowserInspection {
   ref: string; label: string; tag: string; url: string; frame?: boolean; crossOrigin?: boolean;
   rect: { x: number; y: number; w: number; h: number }; size: { w: number; h: number };
   attrs: [string, string][]; text?: string;
-  path: { ref: string; label: string }[]; children: BrowserInspectNode[]; childCount: number;
-  sibling: { index: number; total: number; prev?: string; next?: string };
+  path: { ref: string; label: string }[]; tree: BrowserTreeLevel[]; children: BrowserInspectNode[]; childCount: number;
   box: { margin: number[]; border: number[]; padding: number[]; content: { w: number; h: number }; sizing: string };
   rules: BrowserCssRule[];
   inherited: { ref: string; label: string; groups: BrowserCssRule[] }[];
@@ -89,6 +93,8 @@ export interface BrowserBridge {
   inspectHighlight: (ref: string | null) => void;
   /** Hand the element (with its applied CSS) to the main window's composer. */
   inspectSend: (ref: string) => Promise<boolean>;
+  /** Live style edit in the page; answers with the element inspected again (and the new rule's id for addRule). */
+  cssEdit: (op: BrowserCssEdit) => Promise<{ tab: number; data: BrowserInspection; rule?: string; matches?: boolean } | { error: string } | null>;
 }
 export interface LockBridge {
   get: () => Promise<{ settings: LockSettings; hasPassword: boolean; hasPin: boolean; hasRecovery: boolean; displays: LockDisplay[] } | null>;
