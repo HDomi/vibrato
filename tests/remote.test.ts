@@ -235,9 +235,9 @@ test('notices: 연결성공 / 연결실패 for logins, 연결중단 when a clien
   await settle();
   (b.conn as unknown as { socket: import('node:tls').TLSSocket }).socket.destroy(); // the link drops
   await settle(); await settle();
-  const form = /^-{40}\n(🟢|🔴|⚪) \[Vibrato Remote\]\n\n접속대상: [^\n]+\nIP: [\d.:a-f]+\n시간: \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\n연결여부: (연결성공|연결실패|연결중단)$/;
+  const form = /^(🟢|🔴|⚪) \[Vibrato Remote\]\n\n접속대상: [^\n]+\nIP: [\d.:a-f]+\n시간: \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\n연결여부: (연결성공|연결실패|연결중단)\n-{40}$/;
   for (const m of sent) assert.match(m, form);
-  assert.deepEqual(sent.map((m) => `${m.split('\n')[1].split(' ')[0]} ${m.split('연결여부: ')[1]}`), ['🟢 연결성공', '⚪ 연결중단', '🔴 연결실패', '🟢 연결성공', '⚪ 연결중단']);
+  assert.deepEqual(sent.map((m) => `${m.split(' ')[0]} ${m.split('연결여부: ')[1].split('\n')[0]}`), ['🟢 연결성공', '⚪ 연결중단', '🔴 연결실패', '🟢 연결성공', '⚪ 연결중단']);
   host.sendNotice = async () => {};
 });
 
