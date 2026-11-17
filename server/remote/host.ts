@@ -211,7 +211,7 @@ export class RemoteHost {
   }
 
   /**
-   * MAC_LOGIN / MAC_LOGOUT to Discord. Successes always go out; failed logins at most once a minute per address
+   * Connection notices (연결성공 / 연결실패 / 연결중단) to Discord. Successes always go out; failed logins at most once a minute per address
    * and ten a minute in all, so a flood of guesses cannot flood the channel (or Discord's rate limit).
    */
   notice(kind: 'login' | 'logout', address: string, ok: boolean) {
@@ -224,7 +224,7 @@ export class RemoteHost {
       this.failNotices.push(now);
       if (this.failNoticeAt.size > 1000) this.failNoticeAt.clear();
     }
-    void loadConfig().then((cfg) => this.notify(cfg.remote?.discordWebhook, noticeMessage({ kind, address, at: now, ok }))).catch(() => {});
+    void loadConfig().then((cfg) => this.notify(cfg.remote?.discordWebhook, noticeMessage({ kind, host: os.hostname(), address, at: now, ok }))).catch(() => {});
   }
 
   /** Posts a notice; replaceable in tests. */

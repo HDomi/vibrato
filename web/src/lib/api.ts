@@ -90,6 +90,8 @@ export interface Schedule {
   permissionMode: string; model?: string; enabled: boolean; graceMinutes: number; power: SchedulePower; createdAt: number; cursor: number;
   /** CLI session the prompt continues (Claude session id / Codex thread id); absent for a fresh session each run. */
   resumeSessionId?: string; resumeTitle?: string;
+  /** Discord webhook notified when a run starts, finishes or stops. */
+  discordWebhook?: string;
   /** Next run time (server computed); null when disabled or never. */
   next: number | null;
 }

@@ -4,8 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { CONFIG_DIR, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import type { SessionRegistry } from './sessions.js';
-import { cleanSchedule, dueAction, earliestNext, nextOccurrence, promptText, ScheduleError, type Schedule, type ScheduleRun } from './schedule.js';
+import { cleanSchedule, discordMessage, dueAction, earliestNext, nextOccurrence, promptText, ScheduleError, type RunNotice, type Schedule, type ScheduleRun } from './schedule.js';
 import { SchedulePower, type PowerStatus } from './os/schedulePower.js';
+import { sendDiscord } from './remote/notify.js';
 
 const TICK_MS = 30 * 1000;
 /** Keep an awake Mac from idle-sleeping this long before a run. */
@@ -191,9 +192,18 @@ export class Scheduler {
     this.active.set(s.id, run.id);
     this.add(run);
     this.power.holdAwake(true);
+    // Start and end messages go out in order, each retried while the network comes back after a wake.
+    let notices = Promise.resolve();
+    const notify = (notice: RunNotice, at: number) => {
+      const url = s.discordWebhook;
+      if (url) notices = notices.then(() => postDiscord(url, discordMessage(s.name, notice, at)));
+    };
+    notify('start', run.startedAt);
     const finish = (status: 'done' | 'failed', p: Partial<ScheduleRun> = {}) => {
       if (run.status === 'done' || run.status === 'failed') return;
-      this.patch(run, { ...p, status, endedAt: Date.now() });
+      const endedAt = Date.now();
+      this.patch(run, { ...p, status, endedAt });
+      notify(status === 'done' ? 'done' : 'stop', endedAt);
     };
     try {
       await assertDir(s.cwd);
@@ -244,6 +254,24 @@ function safeNext(cron: string, now: number) {
 async function assertDir(dir: string) {
   const st = await fs.stat(dir).catch(() => null);
   if (!st?.isDirectory()) throw new ScheduleError(`Folder not found: ${dir}`);
+}
+
+const DISCORD_RETRY_MS = [5000, 15000, 30000];
+
+/** Post a run notice; retried while the network comes back after a wake, failures logged, never thrown. */
+async function postDiscord(url: string, content: string) {
+  for (let i = 0; ; i++) {
+    try { await sendDiscord(url, content); return; } catch (err) {
+      const delay = DISCORD_RETRY_MS[i];
+      // 4xx other than rate limiting will not get better by retrying (deleted webhook, bad token).
+      const final = /answered 4(?!29)\d\d/.test((err as Error).message);
+      if (final || delay === undefined) {
+        console.warn(`[vibrato] schedule: Discord notice failed: ${(err as Error).message}`);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, delay).unref());
+    }
+  }
 }
 
 /** Right after a wake Wi-Fi takes a few seconds to come back; a run started before that fails at once. */

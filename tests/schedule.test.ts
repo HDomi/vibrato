@@ -92,3 +92,21 @@ test('cron description: either day field may match, months, repeats, both langua
   assert.equal(d('@yearly', 'en'), 'January 1 at 00:00');
   assert.equal(d('59 23 3 11 *', 'ko'), '11월 3일 23:59');
 });
+
+test('schedule: discord webhook setting and message format', async () => {
+  const { discordMessage } = await import('../server/schedule');
+  const hook = 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123';
+
+  const input = { cwd: '/tmp/p', agent: 'claude', prompt: 'hi', cron: '0 9 * * *' };
+  assert.equal(cleanSchedule({ ...input, discordWebhook: ` ${hook} ` }, null, 1000, 'id').discordWebhook, hook);
+  assert.equal(cleanSchedule(input, null, 1000, 'id').discordWebhook, undefined);
+  assert.throws(() => cleanSchedule({ ...input, discordWebhook: 'https://example.com/hook' }, null, 1000, 'id'), ScheduleError);
+  // Clearing the field on update removes it.
+  const prev = cleanSchedule({ ...input, discordWebhook: hook }, null, 1000, 'id');
+  assert.equal(cleanSchedule({ discordWebhook: '' }, prev, 2000, 'id').discordWebhook, undefined);
+
+  const t = new Date(2026, 10, 7, 9, 5).getTime();
+  assert.equal(discordMessage('주간보고', 'start', t), '----------------------------------------\n[Vibrato Scheduler]\n\n작업이름: 주간보고\n작업 여부: 시작\n작업 시작 시간: 2026.11.07 09:05');
+  assert.equal(discordMessage('x', 'done', t).split('\n').slice(4).join('|'), '작업 여부: 완료|작업 완료 시간: 2026.11.07 09:05');
+  assert.equal(discordMessage('x', 'stop', t).split('\n').slice(4).join('|'), '작업 여부: 중지|작업 중지 시간: 2026.11.07 09:05');
+});

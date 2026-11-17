@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { AgentId, PermissionModeId } from './agents/types.js';
 // The parser is shared with the Tools > Cron page; it has no imports, so the server can compile it too.
 import { nextRuns, parseCron } from '../web/src/lib/toolbox/cron.js';
+import { NOTICE_RULE, stamp, validWebhook } from './remote/notify.js';
 
 /**
  * Scheduled agent runs: a skill and/or prompt sent to a fresh session in a project on a cron schedule.
@@ -32,6 +33,8 @@ export interface Schedule {
   /** A run found late (the Mac slept, the app was closed) still starts within this many minutes of its time. */
   graceMinutes: number;
   power: PowerMode;
+  /** Discord webhook that gets a message when a run starts, finishes or stops; empty for none. */
+  discordWebhook?: string;
   createdAt: number;
   /** Occurrences at or before this time have been handled (run, missed or skipped). */
   cursor: number;
@@ -140,11 +143,22 @@ export function cleanSchedule(body: unknown, prev: Schedule | null, now: number,
   const power = POWER.includes(b.power as PowerMode) ? b.power as PowerMode : 'awake';
   const enabled = b.enabled !== false;
   const model = str('model', 200).trim() || undefined;
+  const discordWebhook = str('discordWebhook', 500).trim() || undefined;
+  if (discordWebhook && !validWebhook(discordWebhook)) throw new ScheduleError('Enter a Discord webhook URL (https://discord.com/api/webhooks/...)');
   const name = str('name', 80).trim() || (skill ? `/${skill}` : prompt.trim().split('\n')[0].slice(0, 40));
   const rescheduled = !prev || prev.cron !== cron || (!prev.enabled && enabled);
   return {
-    id, name, cwd, agent, skill, prompt, cron, resumeSessionId, resumeTitle, permissionMode, model, enabled, graceMinutes, power,
+    id, name, cwd, agent, skill, prompt, cron, resumeSessionId, resumeTitle, permissionMode, model, enabled, graceMinutes, power, discordWebhook,
     createdAt: prev?.createdAt ?? now,
     cursor: rescheduled ? now : prev.cursor,
   };
+}
+
+export type RunNotice = 'start' | 'done' | 'stop';
+const NOTICE_LABEL: Record<RunNotice, string> = { start: '시작', done: '완료', stop: '중지' };
+
+/** The Discord message for a run event, with the time in the server's local zone. */
+export function discordMessage(name: string, notice: RunNotice, at: number): string {
+  const label = NOTICE_LABEL[notice];
+  return `${NOTICE_RULE}\n[Vibrato Scheduler]\n\n작업이름: ${name}\n작업 여부: ${label}\n작업 ${label} 시간: ${stamp(at)}`;
 }

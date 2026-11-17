@@ -19,13 +19,15 @@ const MODES = [
   { id: 'bypassPermissions', key: 'chat.mode.bypass' }, { id: 'auto', key: 'chat.mode.auto' },
 ];
 const GRACE = [0, 30, 60, 180, 720, 1440];
+/** Same pattern as server/remote/notify.ts validWebhook, which the server checks for real. */
+const DISCORD_WEBHOOK = /^https:\/\/(?:ptb\.|canary\.)?(?:discord\.com|discordapp\.com)\/api\/webhooks\/(\d{5,25})\/([\w-]{20,200})$/;
 const POWER: SchedulePower[] = ['none', 'awake', 'wake'];
 const input = 'w-full bg-black/20 rounded-md px-2.5 py-1.5 outline-none border border-white/5 focus:border-white/20';
 
-type Draft = Required<Pick<ScheduleInput, 'name' | 'cwd' | 'agent' | 'skill' | 'prompt' | 'cron' | 'permissionMode' | 'enabled' | 'graceMinutes' | 'power'>> & Pick<ScheduleInput, 'resumeSessionId' | 'resumeTitle'>;
+type Draft = Required<Pick<ScheduleInput, 'name' | 'cwd' | 'agent' | 'skill' | 'prompt' | 'cron' | 'permissionMode' | 'enabled' | 'graceMinutes' | 'power' | 'discordWebhook'>> & Pick<ScheduleInput, 'resumeSessionId' | 'resumeTitle'>;
 
-const blank = (cwd: string): Draft => ({ name: '', cwd, agent: 'claude', skill: '', prompt: '', cron: '0 9 * * 1-5', permissionMode: 'acceptEdits', enabled: true, graceMinutes: 720, power: 'awake' });
-const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent: s.agent, skill: s.skill, prompt: s.prompt, cron: s.cron, permissionMode: s.permissionMode, enabled: s.enabled, graceMinutes: s.graceMinutes, power: s.power, resumeSessionId: s.resumeSessionId, resumeTitle: s.resumeTitle });
+const blank = (cwd: string): Draft => ({ name: '', cwd, agent: 'claude', skill: '', prompt: '', cron: '0 9 * * 1-5', permissionMode: 'acceptEdits', enabled: true, graceMinutes: 720, power: 'awake', discordWebhook: '' });
+const fromSchedule = (s: Schedule): Draft => ({ name: s.name, cwd: s.cwd, agent: s.agent, skill: s.skill, prompt: s.prompt, cron: s.cron, permissionMode: s.permissionMode, enabled: s.enabled, graceMinutes: s.graceMinutes, power: s.power, discordWebhook: s.discordWebhook ?? '', resumeSessionId: s.resumeSessionId, resumeTitle: s.resumeTitle });
 
 function describeCron(expr: string): string {
   try { return describe(parseCron(expr), getLang() === 'ko' ? 'ko' : 'en'); } catch { return ''; }
@@ -330,6 +332,12 @@ export default function ScheduleView({ defaultCwd, projects, onOpenRun }: {
                 <select className="bg-black/20 border border-line rounded-md px-2 py-1 outline-none" value={draft.graceMinutes} onChange={(e) => set('graceMinutes', Number(e.target.value))}>
                   {[...new Set([...GRACE, draft.graceMinutes])].sort((a, b) => a - b).map((m) => <option key={m} value={m}>{m === 0 ? t('sched.grace.onTime') : m < 60 ? t('sched.grace.min', { n: m }) : t('sched.grace.hour', { n: Math.round(m / 6) / 10 })}</option>)}
                 </select>
+              </Field>
+
+              <Field label={t('sched.discord')} hint={t('sched.discordHint')}>
+                <input className="w-full bg-black/20 border border-line rounded-md px-2 py-1 outline-none font-mono text-[12px]" spellCheck={false} placeholder="https://discord.com/api/webhooks/..."
+                  value={draft.discordWebhook} onChange={(e) => set('discordWebhook', e.target.value)} />
+                {draft.discordWebhook.trim() && !DISCORD_WEBHOOK.test(draft.discordWebhook.trim()) && <div className="mt-1.5 text-[11px] text-amber-300/80">{t('sched.discordInvalid')}</div>}
               </Field>
             </div>
             <div className="flex-1 min-h-[220px] flex flex-col border-t border-line">

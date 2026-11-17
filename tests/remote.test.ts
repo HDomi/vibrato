@@ -208,10 +208,10 @@ test('discord notices: only discord webhook URLs, masked, no mentions, and locko
   for (const bad of ['http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz', 'https://evil.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz', 'https://discord.com.evil.com/api/webhooks/1/x']) assert.equal(validWebhook(bad), false, bad);
   assert.equal(maskWebhook(url), 'discord.com/api/webhooks/1234…/abcd••••');
   let sent: { url: string; body: { content: string; allowed_mentions: unknown } } | null = null;
-  await sendDiscord(url, noticeMessage({ kind: 'login', address: '203.0.113.7 @everyone', at: 0, ok: true }), async (u, init) => { sent = { url: u, body: JSON.parse(init.body) }; return { ok: true, status: 204 }; });
+  await sendDiscord(url, noticeMessage({ kind: 'login', host: 'Studio @here.local', address: '203.0.113.7 @everyone', at: 0, ok: true }), async (u, init) => { sent = { url: u, body: JSON.parse(init.body) }; return { ok: true, status: 204 }; });
   assert.equal(sent!.url, url);
   assert.deepEqual(sent!.body.allowed_mentions, { parse: [] });
-  assert.ok(!sent!.body.content.includes('@everyone') && sent!.body.content.startsWith('MAC_LOGIN\n\nIP: 203.0.113.7'));
+  assert.ok(!/@everyone|@here/.test(sent!.body.content) && sent!.body.content.includes('\n접속대상: Studio here\nIP: 203.0.113.7'));
   await assert.rejects(sendDiscord(url, 'x', async () => ({ ok: false, status: 404 })), /404/);
   // The limiter says when a failure locked an address, so the host can report it.
   const l = new AuthLimiter();
@@ -220,7 +220,7 @@ test('discord notices: only discord webhook URLs, masked, no mentions, and locko
   assert.equal(verdict.lockedMs, 30_000);
 });
 
-test('notices: MAC_LOGIN for successes and failures, MAC_LOGOUT clean or dropped, in the agreed format', async () => {
+test('notices: 연결성공 / 연결실패 for logins, 연결중단 when a client leaves, in the agreed format', async () => {
   const sent: string[] = [];
   host.sendNotice = async (_u, content) => { sent.push(content); };
   await host.setWebhook('https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEF-123');
@@ -235,9 +235,9 @@ test('notices: MAC_LOGIN for successes and failures, MAC_LOGOUT clean or dropped
   await settle();
   (b.conn as unknown as { socket: import('node:tls').TLSSocket }).socket.destroy(); // the link drops
   await settle(); await settle();
-  const form = /^MAC_(LOGIN|LOGOUT)\n\nIP: [\d.:a-f]+\n시간: \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\n성공여부: (성공|실패)$/;
+  const form = /^-{40}\n\[Vibrato Remote\]\n\n접속대상: [^\n]+\nIP: [\d.:a-f]+\n시간: \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}\n연결여부: (연결성공|연결실패|연결중단)$/;
   for (const m of sent) assert.match(m, form);
-  assert.deepEqual(sent.map((m) => `${m.split('\n')[0]} ${m.split('성공여부: ')[1]}`), ['MAC_LOGIN 성공', 'MAC_LOGOUT 성공', 'MAC_LOGIN 실패', 'MAC_LOGIN 성공', 'MAC_LOGOUT 실패']);
+  assert.deepEqual(sent.map((m) => m.split('연결여부: ')[1]), ['연결성공', '연결중단', '연결실패', '연결성공', '연결중단']);
   host.sendNotice = async () => {};
 });
 
