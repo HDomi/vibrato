@@ -54,11 +54,11 @@ const plain = (s: string) => s.replace(/[`*_~|>@#[\]()\\]/g, '').slice(0, 100);
 export function noticeMessage(o: { kind: 'login' | 'logout'; host: string; address: string; at: number; ok: boolean }): string {
   const state = o.kind === 'logout' ? '연결중단' : o.ok ? '연결성공' : '연결실패';
   const icon = o.kind === 'logout' ? '⚪' : o.ok ? '🟢' : '🔴';
-  return `${icon} [Vibrato Remote]\n\n접속대상: ${hostLabel(o.host)}\nIP: ${plain(o.address) || '-'}\n시간: ${stamp(o.at)}\n연결여부: ${state}\n${NOTICE_RULE}`;
+  return `🖥️ [Vibrato Remote]\n\n접속대상: ${hostLabel(o.host)}\nIP: ${plain(o.address) || '-'}\n시간: ${stamp(o.at)}\n연결여부: ${icon} ${state}\n${NOTICE_RULE}`;
 }
 
 export function testMessage(host: string): string {
-  return `[Vibrato Remote]\n\n접속대상: ${hostLabel(host)}\n시간: ${stamp(Date.now())}\n연결성공 · 연결실패 · 연결중단을 이 채널로 보냅니다.\n${NOTICE_RULE}`;
+  return `🖥️ [Vibrato Remote]\n\n접속대상: ${hostLabel(host)}\n시간: ${stamp(Date.now())}\n연결성공 · 연결실패 · 연결중단을 이 채널로 보냅니다.\n${NOTICE_RULE}`;
 }
 
 /** "Studio-Mac.local" -> "Studio-Mac". */

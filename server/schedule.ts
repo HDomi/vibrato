@@ -161,5 +161,5 @@ const NOTICE_ICON: Record<RunNotice, string> = { start: '🟢', done: '✅', sto
 /** The Discord message for a run event, with the time in the server's local zone. */
 export function discordMessage(name: string, notice: RunNotice, at: number): string {
   const label = NOTICE_LABEL[notice];
-  return `${NOTICE_ICON[notice]} [Vibrato Scheduler]\n\n작업이름: ${name}\n작업 여부: ${label}\n작업 ${label} 시간: ${stamp(at)}\n${NOTICE_RULE}`;
+  return `⏰ [Vibrato Scheduler]\n\n작업이름: ${name}\n작업 여부: ${NOTICE_ICON[notice]} ${label}\n작업 ${label} 시간: ${stamp(at)}\n${NOTICE_RULE}`;
 }
