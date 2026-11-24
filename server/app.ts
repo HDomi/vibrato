@@ -10,7 +10,7 @@ import { detectTools, INSTALL_COMMANDS, UPDATE_COMMANDS, type InstallMethod, typ
 import { forgetCommandPaths, streamShell } from './shell.js';
 import { getUsage } from './usage.js';
 import { saveAttachment } from './attachments.js';
-import { listSessions, getSessionMessages, renameSession, deleteSession } from '@anthropic-ai/claude-agent-sdk';
+import { listSessions, getSessionMessages, getSubagentMessages, renameSession, deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionRegistry } from './sessions.js';
 import { previewKind } from './mime.js';
 import { codexThreadOp, listCodexModels } from './agents/codex.js';
@@ -433,6 +433,11 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return c.json(await grepFiles(c.req.query('cwd') ?? '~', q, opts));
   });
   app.get('/api/fs/search', async (c) => c.json(await searchFiles(c.req.query('cwd') ?? '~', c.req.query('q') ?? '', Math.max(1, Math.min(500, Number(c.req.query('limit')) || 200)))));
+  // One subagent's own conversation (Claude), for the transcript drawer in the chat and plan views.
+  app.get('/api/subagent/:sessionId/:agentId', async (c) => {
+    const dir = resolvePath(c.req.query('cwd') ?? '~');
+    return c.json(await getSubagentMessages(c.req.param('sessionId'), c.req.param('agentId'), { dir }).catch(() => []));
+  });
   app.get('/api/history/:id', async (c) => {
     const dir = resolvePath(c.req.query('cwd') ?? '~');
     const messages = await getSessionMessages(c.req.param('id'), { dir });

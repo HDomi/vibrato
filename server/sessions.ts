@@ -490,6 +490,12 @@ async function handle(cmd: ClientCommand, ws: WebSocket, registry: SessionRegist
     case 'session.interrupt':
       await must(registry, cmd.sessionId).interrupt();
       return;
+    case 'session.backgroundTask': {
+      const s = must(registry, cmd.sessionId);
+      if (!s.backgroundTask) throw new Error('This agent cannot move tasks to the background.');
+      await s.backgroundTask(cmd.toolUseId);
+      return;
+    }
     case 'session.stopTask': {
       const s = must(registry, cmd.sessionId);
       if (!s.stopTask) throw new Error('This agent cannot stop tasks.');

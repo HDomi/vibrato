@@ -70,6 +70,8 @@ export interface TaskInfo {
   lastTool?: string;
   summary?: string;
   error?: string;
+  /** Web only: rebuilt from saved history (web/src/lib/subagents.ts), not reported by the running CLI. */
+  restored?: boolean;
 }
 
 export interface RewindResult { canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }
@@ -104,6 +106,7 @@ export type ClientCommand =
   | { type: 'session.interrupt'; sessionId: string }
   /** Stop one subagent / background task without interrupting the turn (Claude only). */
   | { type: 'session.stopTask'; sessionId: string; taskId: string }
+  | { type: 'session.backgroundTask'; sessionId: string; toolUseId: string }
   | { type: 'session.mode'; sessionId: string; mode: PermissionModeId }
   | { type: 'session.model'; sessionId: string; model: string | null }
   | { type: 'session.close'; sessionId: string }

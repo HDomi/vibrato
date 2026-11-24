@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { saveToolImage } from '../attachments.js';
-import type { AgentEvent, AgentSession, Attachment, PermissionModeId, Question } from './types.js';
+import type { AgentEvent, AgentSession, Attachment, PermissionModeId, Question, TaskInfo } from './types.js';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { startable } from '../shell.js';
@@ -127,6 +127,8 @@ export class CodexSession implements AgentSession {
   private model: string | null;
   private pending = new Map<string, PendingReq>();
   /** Changes of file edits in flight, for their approval cards; dropped when the item completes or the turn ends. */
+  /** Start times of the collab agent calls in flight, for their task records. */
+  private subagentStarts = new Map<string, number>();
   private fileChanges = new Map<string, unknown>();
   private lastAgentText = '';
   private closed = false;
@@ -233,7 +235,15 @@ export class CodexSession implements AgentSession {
   private itemStarted(item: ThreadItem, replay = false) {
     if (item.type === 'fileChange' && !replay) this.fileChanges.set(item.id, item.changes);
     const tool = this.toolOf(item);
-    if (tool) { this.emit({ kind: 'tool.start', toolUseId: item.id, name: tool.name, input: tool.input, parent: null }); return; }
+    if (tool) {
+      this.emit({ kind: 'tool.start', toolUseId: item.id, name: tool.name, input: tool.input, parent: null });
+      // A Codex subagent is a task too, so the composer chip, the relation graph and the plan view show it like Claude's.
+      if (item.type === 'collabAgentToolCall' && !replay) {
+        this.subagentStarts.set(item.id, Date.now());
+        this.emit({ kind: 'task', task: codexSubagentTask(item, 'running', Date.now()) });
+      }
+      return;
+    }
     if (item.type === 'contextCompaction' && !replay) this.emit({ kind: 'status', status: 'compacting' });
   }
 
@@ -284,7 +294,12 @@ export class CodexSession implements AgentSession {
         return;
       }
       case 'dynamicToolCall': case 'webSearch': case 'collabAgentToolCall': case 'subAgentActivity':
-        this.emit({ kind: 'tool.result', toolUseId: item.id, content: JSON.stringify(item.contentItems ?? item.status ?? '', null, 1).slice(0, 4000), isError: item.success === false, parent: null });
+        // The card folds long output itself (20000 characters, as for every tool), so a subagent's answer is kept whole up to there.
+        this.emit({ kind: 'tool.result', toolUseId: item.id, content: JSON.stringify(item.contentItems ?? item.status ?? '', null, 1).slice(0, 20000), isError: item.success === false, parent: null });
+        if (item.type === 'collabAgentToolCall' && this.subagentStarts.has(item.id)) {
+          this.emit({ kind: 'task', task: codexSubagentTask(item, item.success === false || item.status === 'failed' ? 'failed' : 'completed', this.subagentStarts.get(item.id)!, Date.now()) });
+          this.subagentStarts.delete(item.id);
+        }
         return;
       case 'contextCompaction':
         this.emit({ kind: 'status', status: 'running' });
@@ -559,4 +574,14 @@ export async function codexThreadOp(codexPath: string, op: 'rename' | 'delete', 
   } finally {
     c.kill();
   }
+}
+
+/** A Codex collab agent call as a task (server/agents/types.ts TaskInfo). Its id is the item id, which is also its card. */
+export function codexSubagentTask(item: { id: string; tool?: unknown; prompt?: unknown }, status: TaskInfo['status'], startedAt: number, endedAt?: number): TaskInfo {
+  const prompt = typeof item.prompt === 'string' ? item.prompt : '';
+  return {
+    id: item.id, type: 'local_agent', subagentType: typeof item.tool === 'string' && item.tool ? item.tool : 'subagent',
+    description: prompt.split('\n')[0].slice(0, 200), toolUseId: item.id, status, startedAt,
+    ...(endedAt !== undefined ? { endedAt } : {}),
+  };
 }

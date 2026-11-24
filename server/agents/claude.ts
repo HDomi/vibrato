@@ -144,6 +144,8 @@ export class ClaudeSession implements AgentSession {
       includePartialMessages: true,
       // Stream subagent text/thinking too, so the UI can show what a subagent is doing.
       forwardSubagentText: true,
+      // A one-line "what it is doing" for running subagents every ~30s (task_progress.summary), off the subagent's own cache.
+      agentProgressSummaries: true,
       abortController: this.abort,
       env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'vibrato/0.1.0' },
       stderr: (data) => this.emit({ kind: 'log', text: data }),
@@ -508,6 +510,13 @@ export class ClaudeSession implements AgentSession {
 
   async interrupt() {
     try { await this.q?.interrupt(); } catch (err) { this.emit({ kind: 'log', text: `interrupt failed: ${(err as Error).message}` }); }
+  }
+
+  /** Stop waiting for the foreground subagent / command this tool call started: it carries on in the background. */
+  async backgroundTask(toolUseId: string) {
+    await this.relaunching;
+    if (!this.q || this.closed) throw new Error('Session closed');
+    if (!(await this.q.backgroundTasks(toolUseId))) throw new Error('That task is not running in the foreground.');
   }
 
   async stopTask(taskId: string) {

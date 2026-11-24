@@ -99,6 +99,8 @@ export type ClientCommand =
   | { type: 'session.interrupt'; sessionId: string }
   /** Stop one subagent / background task without interrupting the turn (Claude only). */
   | { type: 'session.stopTask'; sessionId: string; taskId: string }
+  /** Claude only: stop waiting for a foreground subagent; it keeps running in the background and reports when done. */
+  | { type: 'session.backgroundTask'; sessionId: string; toolUseId: string }
   | { type: 'session.mode'; sessionId: string; mode: PermissionModeId }
   | { type: 'session.model'; sessionId: string; model: string | null }
   | { type: 'session.close'; sessionId: string }
@@ -140,6 +142,8 @@ export interface AgentSession {
   interrupt(): Promise<void>;
   /** Claude only: stop one subagent / background task; the CLI then emits a task_notification with status 'stopped'. */
   stopTask?(taskId: string): Promise<void>;
+  /** Claude only: move the foreground subagent / command started by this tool call to the background. */
+  backgroundTask?(toolUseId: string): Promise<void>;
   setPermissionMode(mode: PermissionModeId): Promise<void>;
   setModel(model: string | null): Promise<void>;
   close(): Promise<void>;
