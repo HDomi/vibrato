@@ -261,7 +261,7 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
       </form>}
       {note && <div className="px-3 py-1 text-[11px] text-amber-200 border-b border-white/5 truncate" title={note}>{note}</div>}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="max-h-[45%] overflow-y-auto border-b border-white/10">
+        <div className="max-h-[45%] overflow-y-auto border-b border-white/10 bg-panel-bar">
           <section>
           <SectionHeader color="bg-emerald-400" title={t('git.stagedTitle')} count={staged.length}>
             {staged.length > 0 && <button className="hover:text-white" onClick={() => stage(staged, 'reset')}>{t('git.unstageAll')}</button>}
@@ -279,7 +279,7 @@ export default memo(function GitPanel({ cwd, visible }: Props) {
           </section>
         </div>
         <div className="relative flex-1 min-h-0">
-        <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-black/20">
+        <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-panel-bar">
           {sel ? (
             <>
               <SectionHeader color="bg-blue-400" title={sel.path}>

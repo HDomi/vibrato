@@ -642,7 +642,9 @@ function AppInner() {
                   )}
                   <button className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-fill-2 text-zinc-400 hover:text-white" onClick={() => setRightCollapsed(true)} title={t('app.collapsePanel')}><Icon name="chevronsRight" /></button>
                 </div>
-                <div className="flex-1 min-h-0 relative">
+                {/* 1px in from the sides and bottom: the card's outline is an inset ring (.glass), which opaque tab content
+                    (the git panel's solid lists) would otherwise paint over. */}
+                <div className="flex-1 min-h-0 relative mx-px mb-px rounded-b-[calc(var(--radius-card)-1px)] overflow-hidden">
                   <div className={`absolute inset-0 ${rightTab === 'files' ? '' : 'invisible'}`}>
                     <FileList listing={listing} error={error} isFavorite={isFavorite}
                       onNavigate={navigate} onPreview={filePreview} onToggleFavorite={fileToggleFavorite}
