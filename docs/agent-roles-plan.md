@@ -265,3 +265,100 @@ plan_step({ "id": "s2", "note": "..." })   // 번호(step)도 계속 받는다
 - 역할 근거 규칙은 도구 이름에 기대고 있다. 사용자가 붙인 MCP 이름이 다르면 B · C 가 A 로 보인다. 선언(role)이 우선이므로 표시는 맞지만 근거 줄이 비어 보일 수 있다.
 - 검증 강제는 문서만 고친 턴에도 E 단계나 이유를 요구한다. 되돌림은 한 번뿐이지만, 너무 잦으면 "문서 파일만 바꾼 턴은 제외" 규칙을 더한다.
 - 글 계획 대조는 추정이다. `plan_set` 을 쓰는 한 표시에는 쓰이지 않는다.
+
+## 10. 하위 에이전트 조작 · 표시 고도화
+
+분업은 하지 않지만(§0), 메인은 필요할 때 스스로 하위 에이전트(Explore, general-purpose 등)를 부른다. 그 하위 에이전트를 보고 다루는 기능을 고도화한다.
+
+### 10.1 지금 상태 (2026-11-24 코드 기준)
+
+| 항목 | 지금 | 근거 |
+|------|------|------|
+| 중지 | 그래프 팝오버에서만 된다. 채팅 카드 · 계획 탭에는 버튼이 없다 | `TaskChips.tsx`, `ChatItems.tsx` `ToolItem`, `PlanView` 에 `onStopTask` 없음 |
+| 진행 요약 | `summary` 필드는 있지만 `agentProgressSummaries` 를 켜지 않아 하위 에이전트에서는 비어 있다 | `server/agents/claude.ts` options |
+| 기다림 해제 | 메인이 기다리는 하위 에이전트를 백그라운드로 돌리는 SDK `backgroundTasks(toolUseId)` 를 쓰지 않는다 | - |
+| 기록 보기 | 부모 카드 안에 중첩 목록으로만 보인다. SDK `getSubagentMessages` · `listSubagents` 를 쓰지 않는다 | - |
+| 계획 탭 | 돌고 있는 것만, 4개까지 보인다(나머지는 "+n" 글자). 스피너 · 종류 · 설명 · 경과 시간만 있다 | `PlanView.tsx` `TaskLines` |
+| 끝난 작업 | 그래프에서 숨겨진다. 모두 끝나면 칩이 사라져 그래프를 열 수 없다 | `taskGraph.ts` `visibleTasks`, `TaskChips.tsx` |
+| 토큰 · 도구 수 | 그래프 상세에만 보인다. 작업별 USD 는 데이터가 없다 | `TaskInfo.usage` |
+| 기록 다시 불러오기 | `tasks` 가 다시 만들어지지 않는다(대화 항목만 복원) | `itemsFromHistory` |
+| Codex | `SubAgent` 도구 항목만 있고 `TaskInfo` 가 없다. 칩 · 그래프 · 중지가 없고, 결과는 4000자로 잘린다 | `server/agents/codex.ts` |
+| 테스트 | `handleTask` · `stopTask` · Codex 매핑 · `TaskChips` 를 직접 다루는 테스트가 없다 | `tests/` |
+
+### 10.2 조작
+
+| # | 기능 | 방법 |
+|---|------|------|
+| S1 | **어디서나 중지** | 채팅 카드 머리, 계획 탭 하위 에이전트 줄, 그래프 상세에 같은 중지 버튼을 둔다. 확인은 한 번만 받는다. `session.stopTask` 를 그대로 쓴다 |
+| S2 | **기다리지 않고 계속** | 메인이 결과를 기다리는(foreground) 하위 에이전트에 버튼을 둔다. 누르면 `q.backgroundTasks(toolUseId)` 를 부른다. 메인은 다음 일을 하고, 결과는 끝날 때 알림으로 들어온다. 새 명령 `session.backgroundTask { toolUseId }` 를 만든다(Claude 만) |
+| S3 | **진행 요약** | `agentProgressSummaries: true`. 약 30초마다 "인증 모듈 분석 중" 같은 한 줄이 `task_progress.summary` 로 온다. 하위 에이전트의 프롬프트 캐시를 쓰므로 비용이 작다(SDK 설명). 실측(CO-3)에서 비용이 2% 를 넘으면 설정으로 끌 수 있게 한다 |
+| S4 | **기록 보기** | 서버 `GET /api/subagent/:sessionId/:agentId` 가 `getSubagentMessages` 를 돌려준다. 웹은 오른쪽 서랍(drawer)에 하위 에이전트 대화를 메인 채팅과 같은 카드로 보여 준다. 돌고 있는 동안에는 지금처럼 실시간 중첩 항목을 쓴다 |
+| S5 | **기록 복원** | 기록을 다시 불러올 때 `listSubagents` 와 Agent 도구 항목으로 끝난 작업을 `TaskInfo`(status, 종류, 설명, 토큰, 도구 수)로 다시 만든다 |
+
+- task id 와 agent id 가 같은지는 P7 첫 작업에서 실제 세션으로 확인한다. 다르면 `SubagentStart` 훅 입력(`agent_id`)과 `task_started.tool_use_id` 로 짝을 맞춘다.
+
+### 10.3 화면
+
+**V1 계획 탭 하위 에이전트 줄**: 하위 에이전트를 부른 단계 아래에 하위 에이전트마다 한 줄씩 보인다.
+
+```
+2. [A] 원인 찾기                                              진행 중
+   ◐ Explore  로그인 토큰 검사 위치 찾기                1:12 · 18k 토큰 · 도구 9
+     "auth/middleware.ts 의 만료 비교 확인 중"                  ← 진행 요약(S3)
+     [중지] [기다리지 않고 계속] [기록 보기] [채팅에서 보기]
+   ✓ general-purpose  테스트 실패 원인 정리             0:41 · 32k 토큰 · 결과 첫 줄 …
+```
+
+- 끝난 것도 남긴다. 상태 아이콘(진행 · 완료 · 실패 · 중지)과 결과 첫 줄을 보인다.
+- 4개 제한을 없애고, 5개 이상이면 "끝난 n개 더 보기"로 접는다.
+- 백그라운드로 돌고 있는 것은 "백그라운드" 표시를 단다. 턴이 끝난 뒤에도 그 단계 아래에서 계속 진행이 보인다.
+
+**V2 채팅 카드 머리**: 보라색 하위 에이전트 카드 머리에 진행 요약 한 줄, 토큰 · 도구 수, 버튼(중지 · 기다리지 않고 계속 · 기록 보기)을 둔다.
+
+**V3 끝난 작업 보기**: 그래프 팝오버에 "끝난 작업도 보기" 토글을 둔다. 돌고 있는 작업이 없어도 계획 탭 턴 머리의 "하위 에이전트 n" 칩으로 그래프를 연다.
+
+**V4 근거 줄 연동(§6)**: 단계 근거 줄에 "하위 에이전트 2(Explore 1 · general-purpose 1) · 50k 토큰"을 더한다. 하위 에이전트 안의 도구 호출은 역할 근거(§2)에 넣지 않는다(지금 규칙 유지).
+
+**V5 Codex 동일화**: `collabAgentToolCall` 의 시작 · 끝을 `TaskInfo` 로 만들고, `subAgentActivity` 를 그 작업의 `lastTool` · 진행으로 반영한다. 그러면 칩 · 그래프 · 계획 탭 줄이 Claude 와 같게 나온다. 중지 · 기다림 해제는 Codex app-server 에 해당 요청이 있을 때만 붙이고, 없으면 버튼을 숨긴다. 결과 4000자 자르기는 "결과 전체 보기"로 펼칠 수 있게 한다.
+
+**문구**: en / ko 모두 넣는다. 버튼 단축키를 둔다면 `keyLabel()` 을 거친다.
+
+### 10.4 구현 단계 (P1~P6 다음)
+
+| 단계 | 내용 | 주요 파일 | 완료 조건 |
+|------|------|----------|----------|
+| P7 서버 조작 | task id ↔ agent id 확인, `agentProgressSummaries`, `session.backgroundTask`, `/api/subagent/...`, 기록 복원용 `listSubagents` | `server/agents/claude.ts`, `server/agents/types.ts`, `server/sessions.ts`, `server/app.ts` | TC-SA 서버 항목 |
+| P8 계획 탭 · 카드 | V1 · V2 · V4, 공통 버튼 컴포넌트, 서랍(S4) | `web/src/components/PlanView.tsx`, `ChatItems.tsx`, `TaskChips.tsx`, 새 `SubagentDrawer.tsx`, `web/src/lib/planView.ts`, `i18n.ts` | TC-SA 화면 항목, `npm run test:ui` |
+| P9 끝난 작업 · 복원 | V3, S5 | `web/src/lib/taskGraph.ts`, `chatStore.ts`, `useSessions.ts` | TC-SA 복원 항목 |
+| P10 Codex | V5 | `server/agents/codex.ts` | TC-SA Codex 항목 |
+
+### 10.5 TC-SA 하위 에이전트
+
+| ID | 상황 | 기대 결과 | 위치 |
+|----|------|----------|------|
+| SA-1 | `task_started` → `task_progress`(summary) → `task_notification` | `TaskInfo` 의 summary · usage · status · endedAt 이 순서대로 갱신 | 새 `tests/claude-tasks.test.ts` (`handleTask` 직접 호출) |
+| SA-2 | `background_tasks_changed` 에서 빠진 백그라운드 작업 | completed 처리 | 같음 |
+| SA-3 | `session.stopTask` | `q.stopTask` 호출, 이후 status stopped | 같음 (가짜 query) |
+| SA-4 | `session.backgroundTask` 에 foreground 작업의 toolUseId | `q.backgroundTasks(toolUseId)` 호출, 작업 background=true | 같음 |
+| SA-5 | 같은 명령, 없는 toolUseId | 오류 응답, 상태 변화 없음 | 같음 |
+| SA-6 | Codex 세션의 `session.backgroundTask` | 지원 안 함 오류, 버튼 숨김 | 같음 |
+| SA-7 | `agentProgressSummaries` 옵션 | 세션 시작 옵션에 true | 같음 |
+| SA-8 | `/api/subagent/:sid/:aid` | `getSubagentMessages` 결과를 메시지 배열로, 없으면 빈 배열 | `tests/` 서버 라우트 테스트 |
+| SA-9 | 하위 에이전트 6개를 부른 단계 | 계획 탭에 돌고 있는 것 전부 + "끝난 n개 더 보기" | `tests/plan-view.test.ts` |
+| SA-10 | 끝난 하위 에이전트 | 계획 탭 줄에 완료 아이콘과 결과 첫 줄 | 같음 |
+| SA-11 | 턴이 끝난 뒤에도 도는 백그라운드 작업 | 원래 단계 아래에 "백그라운드 · 진행 중" | 같음 |
+| SA-12 | 모든 작업이 끝난 세션 | 턴 머리 칩으로 그래프를 열 수 있고, "끝난 작업도 보기"로 전부 보임 | `tests/task-graph.test.ts` |
+| SA-13 | 기록 다시 불러오기 | `listSubagents` · Agent 항목으로 끝난 작업이 다시 생김(종류 · 설명 · 토큰) | 새 테스트 |
+| SA-14 | 단계 근거 줄 | "하위 에이전트 n · 토큰" 이 실제 작업과 일치, 역할 근거에는 하위 에이전트 내부 호출이 안 들어감 | `tests/roles.test.ts` |
+| SA-15 | Codex `collabAgentToolCall` 시작 · 끝 | `task` 이벤트 2회(running → completed), 칩 · 그래프에 보임 | 새 `tests/codex-tasks.test.ts` |
+| SA-16 | Codex 결과 4000자 초과 | 잘린 표시 + "결과 전체 보기"로 원문 | 같음 |
+| SA-17 | 버튼 세 곳(카드 · 계획 탭 · 그래프)의 중지 | 같은 확인 대화, 같은 명령 | `tests/smoke-ui.cjs` |
+| SA-18 | 기록 서랍 | 하위 에이전트 대화를 카드로, 닫으면 원래 스크롤 유지 | 같음 |
+| SA-19 | ko / en, windows 대상 | 새 문구 번역, `typecheck:win` 통과 | - |
+| SA-20 | 실제 세션: Explore 를 부르는 질문 | 진행 요약이 30초 안팎에 한 번 이상 보이고, 중지 · 기다리지 않고 계속이 동작 | P6 실측 |
+
+비용 TC 추가:
+
+| ID | 비교 | 기준 |
+|----|------|------|
+| CO-3 | 하위 에이전트를 부르는 같은 요청, 진행 요약 켬 / 끔 각 2회 | 턴 비용 차이 2% 이하. 넘으면 설정으로 끌 수 있게 한다 |
