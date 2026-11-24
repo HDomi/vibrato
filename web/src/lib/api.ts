@@ -295,6 +295,7 @@ export const api = {
   saveProjectVerify: (cwd: string, command: string, auto: boolean) =>
     req<{ command: string; auto: boolean }>('/api/project/verify', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cwd, command, auto }) }),
   // Bounded: a request that never settles would leave a remembered session blank until the next reload.
+  subagentMessages: (cwd: string, sessionId: string, agentId: string) => req<HistoryMessage[]>(`/api/subagent/${q(sessionId)}/${q(agentId)}?cwd=${q(cwd)}`, { signal: AbortSignal.timeout(30000) }),
   historyMessages: (cwd: string, id: string) => req<HistoryMessage[]>(`/api/history/${q(id)}?cwd=${q(cwd)}`, { signal: AbortSignal.timeout(30000) }),
 };
 

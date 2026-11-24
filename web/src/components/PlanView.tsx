@@ -6,6 +6,9 @@ import { t, useLang } from '../lib/i18n';
 import { buildPlan, liveTasksByTurn, roleChips, sharePlan, noteLine, usesRoles, type PlanRevision, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
 import type { Role } from '../lib/planSet';
 import { RoleBar, RoleTag, StepFlow, TurnRevisions } from './RoleBar';
+import { SubagentLines } from './Subagents';
+import { subagentsIn } from '../lib/subagents';
+import { shortTokens } from '../lib/taskGraph';
 import { taskKind } from '../lib/taskGraph';
 import { resolveLocal } from '../lib/localPath';
 import { ApprovalItem, QuestionItem, STREAM_RENDER_MS } from './ChatItems';
@@ -57,7 +60,7 @@ function StatusIcon({ status, live, skipped }: { status: PlanStep['status']; liv
 }
 
 /** What a step took: commands, files, reads, agents, trouble (red) and time. */
-function StepStatsLine({ step, now, running }: { step: PlanStep; now: number; running: boolean }) {
+function StepStatsLine({ step, now, running, agentTokens = 0 }: { step: PlanStep; now: number; running: boolean; agentTokens?: number }) {
   const s = step.stats;
   const end = running ? Math.max(now, step.endedAt ?? 0) : step.endedAt;
   const ms = step.startedAt && end ? end - step.startedAt : 0;
@@ -74,6 +77,7 @@ function StepStatsLine({ step, now, running }: { step: PlanStep; now: number; ru
   if (e?.checks) parts.push({ text: t('plan.stat.checks', { n: e.checks }), bad: e.lastCheckFailed });
   if (s.reads) parts.push({ text: t('plan.stat.reads', { n: s.reads }) });
   if (s.subagents) parts.push({ text: t('plan.stat.agents', { n: s.subagents }) });
+  if (agentTokens) parts.push({ text: t('plan.stat.agentTokens', { n: shortTokens(agentTokens) }) });
   if (ms >= 1000) parts.push({ text: duration(ms) });
   if (!parts.length) return null;
   return (
@@ -154,7 +158,11 @@ function StepEntries({ step, note }: { step: PlanStep; note: string | null }) {
 }
 
 /** One plan step: number and text, its accounts (a., b., …) or why it was skipped, what it took, and live, what is happening now. */
-function StepRow({ step, index, current, live, activity, now, tasks, onJump, revisions, focus }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; tasks?: TaskInfo[]; onJump: (id: string) => void; revisions: PlanRevision[]; focus: Role | null }) {
+function StepRow({ step, index, current, live, activity, now, tasks, allTasks, onJump, revisions, focus }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; tasks?: TaskInfo[]; allTasks?: Record<string, TaskInfo>; onJump: (id: string) => void; revisions: PlanRevision[]; focus: Role | null }) {
+  // Subagents this step started, running and finished (Subagents.tsx); other background work stays in TaskLines.
+  const subagents = useMemo(() => subagentsIn(step.items, allTasks), [step.items, allTasks]);
+  const agentTokens = subagents.reduce((n, sa) => n + (sa.totalTokens ?? 0), 0);
+  const otherTasks = tasks?.filter((x) => !subagents.some((sa) => sa.toolUseId === x.toolUseId));
   useLang();
   const done = step.status === 'completed';
   const title = current && step.activeForm ? step.activeForm : step.content;
@@ -173,10 +181,11 @@ function StepRow({ step, index, current, live, activity, now, tasks, onJump, rev
           {step.entries.length > 1 && <span className="ml-2 rounded-full bg-fill-2 px-1.5 py-px text-[10.5px] tabular-nums text-zinc-400">×{step.entries.length}</span>}
         </div>
         <StepEntries step={step} note={note} />
-        {(done || current) && <StepStatsLine step={step} now={now} running={working} />}
+        {(done || current) && <StepStatsLine step={step} now={now} running={working} agentTokens={agentTokens} />}
         {working && activity && <ActivityLine text={activity} />}
         <StepFlow step={step} revisions={revisions} />
-        {!!tasks?.length && <TaskLines tasks={tasks} onJump={onJump} />}
+        <SubagentLines list={subagents} />
+        {!!otherTasks?.length && <TaskLines tasks={otherTasks} onJump={onJump} />}
       </div>
       {target && <span className="shrink-0 mt-0.5 text-[11px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">{t('plan.jumpChat')} →</span>}
     </div>
@@ -309,7 +318,7 @@ function useCreatedFiles(turn: PlanTurn, cwd: string): string[] {
   return checked ?? uniqueFiles(turn.created);
 }
 
-const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks } & Pick<Props, 'cwd' | 'activity' | 'onJump' | 'onApprove' | 'onAnswer'> & { now: number }) {
+const TurnCard = memo(function TurnCard({ turn, live, tasks, allTasks, cwd, activity, now, onJump, onApprove, onAnswer }: { turn: PlanTurn; live: boolean; tasks?: TurnTasks; allTasks?: Record<string, TaskInfo> } & Pick<Props, 'cwd' | 'activity' | 'onJump' | 'onApprove' | 'onAnswer'> & { now: number }) {
   useLang();
   const created = useCreatedFiles(turn, cwd);
   // In the Remote tab every request came from afar: the chip only means something on the host.
@@ -376,7 +385,7 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
             </div>
             <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{done}/{total}</span>
           </div>
-          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} onJump={onJump} revisions={turn.revisions} focus={focus} />)}</div>
+          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} allTasks={allTasks} onJump={onJump} revisions={turn.revisions} focus={focus} />)}</div>
           <TurnRevisions revisions={turn.revisions} removed={turn.removed} />
           {wrapping && !writing && (
             <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-300" data-plan-wrapping="">
@@ -517,7 +526,9 @@ function PlanView({ items, cwd, running, tasks, activity, onJump, onApprove, onA
             if (!turn.user) return null;
             const live = running && i === turns.length - 1;
             // Only the live turn shows the clock and the status line; the rest keep equal props and skip re-rendering.
-            return <TurnCard key={turn.id} turn={turn} cwd={cwd} live={live} tasks={turnTasks.get(turn.id)} activity={live ? activity : null} now={live ? now : 0} {...stable} />;
+            // The session's task list changes many times a second while subagents work: only turns with something running get it.
+            const own = turnTasks.get(turn.id);
+            return <TurnCard key={turn.id} turn={turn} cwd={cwd} live={live} tasks={own} allTasks={live || own ? tasks : undefined} activity={live ? activity : null} now={live ? now : 0} {...stable} />;
           })}
         </div>
       </div>

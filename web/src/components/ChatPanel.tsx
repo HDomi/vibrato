@@ -31,6 +31,8 @@ import { revealSkipped, useSkipOffscreen } from '../lib/skipOffscreen';
 import { useClock } from '../lib/clock';
 import { isAbsPath, isInside, joinPath, lastSegment, relativeTo, segments } from '../lib/paths';
 import { keyLabel } from '../platform/strings';
+import { SubagentProvider, type SubagentControls } from './Subagents';
+import { useEvent } from '../lib/useEvent';
 
 /** Same prompt to Claude and Codex, each in its own worktree, to compare and keep the better result. */
 export interface PairOptions { prompt: string; branch?: string; permissionMode: PermissionModeId; models: { claude: string | null; codex: string | null } }
@@ -54,6 +56,8 @@ interface Props {
   onInterrupt: () => void;
   /** Stop one subagent / background task (Claude). */
   onStopTask?: (taskId: string) => void;
+  /** Stop waiting for a foreground subagent (Claude): it carries on in the background. */
+  onBackgroundTask?: (toolUseId: string) => void;
   onMode: (m: PermissionModeId) => void;
   onModel: (m: string | null) => void;
   onClose: () => void;
@@ -477,7 +481,7 @@ function StartScreen({ cwd, scope = 'folder', onStart, onStartPair, backlog, onB
   );
 }
 
-export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onStartPair, backlog, onBacklogChange, onOpenBacklogSession, onSend, onApprove, onAnswer, onInterrupt, onStopTask, onMode, onModel, onClose, pendingAttachments, onConsumeAttachments, background, onFocusSession, onRewind, onVerify, onCrossReview, partner, onFocusPartner, onClosePartner, onHandoff, worktreeUsers = 0, openWorktrees, onOpenWorktree }: Props) {
+export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onStartPair, backlog, onBacklogChange, onOpenBacklogSession, onSend, onApprove, onAnswer, onInterrupt, onStopTask, onBackgroundTask, onMode, onModel, onClose, pendingAttachments, onConsumeAttachments, background, onFocusSession, onRewind, onVerify, onCrossReview, partner, onFocusPartner, onClosePartner, onHandoff, worktreeUsers = 0, openWorktrees, onOpenWorktree }: Props) {
   useLang();
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -685,6 +689,16 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     el.classList.add('ring-2', 'ring-violet-400/60');
     setTimeout(() => el.classList.remove('ring-2', 'ring-violet-400/60'), 1800);
   };
+  // A subagent's card from anywhere (the plan view switches to the chat first).
+  const showCardAnywhere = useEvent((toolUseId: string) => {
+    if (view === 'plan') { switchView('chat'); requestAnimationFrame(() => requestAnimationFrame(() => showToolCard(toolUseId))); }
+    else showToolCard(toolUseId);
+  });
+  const claude = session.agent === 'claude';
+  const subagentCtl = useMemo<SubagentControls>(() => ({
+    tasks: session.tasks, cwd: session.cwd, agentSessionId: claude ? session.agentSessionId : undefined,
+    stop: claude ? onStopTask : undefined, background: claude ? onBackgroundTask : undefined, showCard: showCardAnywhere,
+  }), [session.tasks, session.cwd, session.agentSessionId, claude, onStopTask, onBackgroundTask, showCardAnywhere]);
   const onScroll = () => {
     if (programmatic.current) return;
     const el = scroller.current; if (!el) return;
@@ -762,7 +776,7 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
         </div>
       )}
       <div className="flex-1 min-h-0 relative">
-        {view === 'plan' && <PlanView items={session.items} cwd={session.cwd} activity={activity} running={running} tasks={session.tasks} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} />}
+        {view === 'plan' && <SubagentProvider value={subagentCtl}><PlanView items={session.items} cwd={session.cwd} activity={activity} running={running} tasks={session.tasks} focusTurn={focusTurn} onJump={showInChat} onApprove={onApprove} onAnswer={onAnswer} /></SubagentProvider>}
         {searching && view === 'chat' && <ChatSearch content={content} scroller={scroller} version={session.items} onClose={() => setSearching(false)}
           onJump={() => { stick.current = false; setAtBottom(false); }} />}
         {/* Kept mounted under the plan view so switching back keeps its place. */}
@@ -770,8 +784,10 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
           <div ref={content} className="px-5 py-4 space-y-3">
             {session.resumed && <ResumeBrief session={session} />}
             {top.length === 0 && <div className="text-center text-zinc-600 text-sm py-10">{session.restoring ? t('chat.restoring') : session.status === 'starting' ? t('chat.starting') : t('chat.firstMessage')}</div>}
-            <ChatList top={top} childrenOf={childrenOf} picked={picked} live={live} taskTitles={titles} cwd={session.cwd} latestVerify={latestVerify}
-              otherAgent={session.agent === 'claude' ? 'Codex' : 'Claude'} canShowPlan={!picked} canRewind={canRewind} canVerify={!running && !!onVerify} canReview={!!onCrossReview} />
+            <SubagentProvider value={subagentCtl}>
+              <ChatList top={top} childrenOf={childrenOf} picked={picked} live={live} taskTitles={titles} cwd={session.cwd} latestVerify={latestVerify}
+                otherAgent={session.agent === 'claude' ? 'Codex' : 'Claude'} canShowPlan={!picked} canRewind={canRewind} canVerify={!running && !!onVerify} canReview={!!onCrossReview} />
+            </SubagentProvider>
           </div>
         </div>
         {!atBottom && view === 'chat' && (

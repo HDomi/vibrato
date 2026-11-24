@@ -44,29 +44,40 @@ function elapsedLabel(ms: number): string {
 export default function TaskChips({ tasks, rootLabel, rootSub, onShowCard, onStopTask }: Props) {
   useLang();
   const live = useMemo(() => liveTasks({ tasks }), [tasks]);
+  // Finished ones keep the graph reachable after everything is done (a quiet chip instead of the purple one).
+  const finished = useMemo(() => Object.values(tasks ?? {}).filter((x) => !x.ambient && x.status !== 'running').length, [tasks]);
   const [open, setOpen] = useState<string | null>(null); // selected node id while the graph is open
-  if (!live.length) return null;
+  if (!live.length && !finished) return null;
   return (
     // Not positioned on purpose: the popover's containing block is the composer box, so it pops
     // out above the whole composer instead of being clipped to the chip.
     <div className="flex items-center min-w-0 shrink" data-task-chips="">
-      <button type="button" onClick={() => setOpen((cur) => (cur ? null : ROOT_ID))} data-task-chip=""
-        title={t('tasks.chipTitle', { n: live.length })}
-        className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] min-w-0 shrink hover:bg-violet-500/25 ${open ? 'bg-violet-500/30 text-violet-100' : 'bg-violet-500/15 text-violet-200'}`}>
-        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-violet-400 animate-pulse" />
-        <span className="truncate">{t('tasks.chip')}</span>
-        <span className="shrink-0 text-violet-300/80 tabular-nums">{live.length}</span>
-      </button>
-      {open && <TaskGraphPopover tasks={tasks ?? {}} selected={open} onSelect={setOpen} onClose={() => setOpen(null)} rootLabel={rootLabel} rootSub={rootSub} onShowCard={onShowCard} onStopTask={onStopTask} />}
+      {live.length > 0 ? (
+        <button type="button" onClick={() => setOpen((cur) => (cur ? null : ROOT_ID))} data-task-chip=""
+          title={t('tasks.chipTitle', { n: live.length })}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] min-w-0 shrink hover:bg-violet-500/25 ${open ? 'bg-violet-500/30 text-violet-100' : 'bg-violet-500/15 text-violet-200'}`}>
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-violet-400 animate-pulse" />
+          <span className="truncate">{t('tasks.chip')}</span>
+          <span className="shrink-0 text-violet-300/80 tabular-nums">{live.length}</span>
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen((cur) => (cur ? null : ROOT_ID))} data-task-chip="done" title={t('tasks.title')}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] min-w-0 shrink text-zinc-400 hover:bg-fill-2 ${open ? 'bg-fill-2 text-zinc-200' : 'bg-fill'}`}>
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-zinc-500" />
+          <span className="truncate">{t('tasks.chipDone', { n: finished })}</span>
+        </button>
+      )}
+      {open && <TaskGraphPopover tasks={tasks ?? {}} selected={open} onSelect={setOpen} onClose={() => setOpen(null)} rootLabel={rootLabel} rootSub={rootSub} onShowCard={onShowCard} onStopTask={onStopTask} startWithDone={!live.length} />}
     </div>
   );
 }
 
-function TaskGraphPopover({ tasks, selected, onSelect, onClose, rootLabel, rootSub, onShowCard, onStopTask }: { tasks: Record<string, TaskInfo>; selected: string; onSelect: (id: string) => void; onClose: () => void; rootLabel: string; rootSub?: string; onShowCard?: (id: string) => void; onStopTask?: (id: string) => void }) {
+function TaskGraphPopover({ tasks, selected, onSelect, onClose, rootLabel, rootSub, onShowCard, onStopTask, startWithDone = false }: { tasks: Record<string, TaskInfo>; selected: string; onSelect: (id: string) => void; onClose: () => void; rootLabel: string; rootSub?: string; onShowCard?: (id: string) => void; onStopTask?: (id: string) => void; startWithDone?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const all = useMemo(() => Object.values(tasks).filter((x) => !x.ambient), [tasks]);
-  // Completed tasks leave the graph (a parent stays while a child is still shown); failed / stopped stay.
-  const list = useMemo(() => visibleTasks(all), [all]);
+  // Completed tasks leave the graph (a parent stays while a child is still shown) unless finished ones are asked for.
+  const [showDone, setShowDone] = useState(startWithDone);
+  const list = useMemo(() => (showDone ? all : visibleTasks(all)), [all, showDone]);
   // Progress events (token counts, last tool) arrive many times a second while subagents work; the
   // boxes only change with the tree's shape, a status or a label, so the layout is keyed on those.
   const shape = list.map((x) => `${x.id}\u0001${x.parentId ?? ''}\u0001${x.status}\u0001${x.startedAt}\u0001${x.description.split('\n')[0]}`).join('\u0002');
@@ -106,6 +117,11 @@ function TaskGraphPopover({ tasks, selected, onSelect, onClose, rootLabel, rootS
         <span className="font-medium text-zinc-200">{t('tasks.title')}</span>
         <span className="text-zinc-500">{t('tasks.summaryLive', { running, total: all.length })}{hidden > 0 && ` · ${t('tasks.hiddenDone', { n: hidden })}`}</span>
         <div className="flex-1" />
+        {(hidden > 0 || showDone) && (
+          <label className="flex items-center gap-1 text-[11px] text-zinc-400 cursor-pointer select-none">
+            <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />{t('tasks.showDone')}
+          </label>
+        )}
         {onStopTask && running > 1 && (
           <button className="rounded-md px-2 py-0.5 text-[11px] bg-red-500/15 text-red-200 hover:bg-red-500/25 disabled:opacity-40" disabled={runningList.every((x) => stopping.has(x.id))} onClick={stopAll}>{t('tasks.stopAll', { n: running })}</button>
         )}

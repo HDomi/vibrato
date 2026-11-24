@@ -287,9 +287,12 @@ function applyToSession(s: ChatSession, e: AgentEvent, seq: number, ts: number):
     case 'task':
       next.tasks = { ...s.tasks, [e.task.id]: e.task };
       return next;
-    case 'task.reset':
-      next.tasks = undefined;
+    case 'task.reset': {
+      // The CLI process restarted: its tasks are gone. Subagents rebuilt from saved history (subagents.ts) stay.
+      const kept = Object.values(s.tasks ?? {}).filter((x) => x.restored);
+      next.tasks = kept.length ? Object.fromEntries(kept.map((x) => [x.id, x])) : undefined;
       return next;
+    }
     case 'tool.start':
       if (e.name === 'TodoWrite') { const todos = todosFromInput(e.input); if (todos) next.todos = todos; }
       items.push({ kind: 'tool', id: e.toolUseId, name: e.name, input: e.input, output: null, isError: false, parent: e.parent, elapsed: 0, done: false, at: ts });

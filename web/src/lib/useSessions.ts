@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { agentClient, type AgentId, type Attachment, type PermissionModeId, type RewindResult, type ServerMessage } from './agent';
 import { ACTIVITY_EVENTS, displayTitle, itemsFromHistory, reduceEvent, type ChatItem, type ChatSession } from './chatStore';
 import { api, type WorktreeInfo } from './api';
+import { tasksFromHistory } from './subagents';
 import { t } from './i18n';
 import { agentDefaults } from './agentDefaults';
 import { lastSegment } from './paths';
@@ -128,7 +129,7 @@ export function useSessions() {
           if (m.requestId) pendingStart.current.delete(m.requestId);
           const fresh: ChatSession = {
             id: m.sessionId, agent: m.agent ?? 'claude', cwd: m.requestCwd, permissionMode: 'default', status: 'starting',
-            items: p?.preload ?? [], historyLen: p?.historyLen, title: p?.title, worktree: p?.worktree, pairKey: p?.pairKey, resumed: p?.resumed, agentSessionId: p?.resume, totalCostUsd: 0, lastSeq: 0, lastActivity: Date.now(),
+            items: p?.preload ?? [], ...(p?.preload?.length ? { tasks: tasksFromHistory(p.preload) } : {}), historyLen: p?.historyLen, title: p?.title, worktree: p?.worktree, pairKey: p?.pairKey, resumed: p?.resumed, agentSessionId: p?.resume, totalCostUsd: 0, lastSeq: 0, lastActivity: Date.now(),
           };
           const old = p?.replaces;
           setSessions((prev) => {
@@ -228,7 +229,8 @@ export function useSessions() {
         // Entries saved before historyLen existed: show the full history and skip the replay it already contains.
         const items = itemsFromHistory(p.historyLen === undefined ? all : all.slice(0, p.historyLen));
         if (p.historyLen === undefined) { after = Number.MAX_SAFE_INTEGER; skipReplay.current.add(p.id); }
-        setSessions((prev) => prev[p.id] ? { ...prev, [p.id]: { ...prev[p.id], items: [...items, ...prev[p.id].items], historyLen: p.historyLen ?? all.length } } : prev);
+        // Finished subagents of the saved part come back as tasks too (the live ones arrive with the replay).
+        setSessions((prev) => prev[p.id] ? { ...prev, [p.id]: { ...prev[p.id], items: [...items, ...prev[p.id].items], tasks: { ...tasksFromHistory(items), ...prev[p.id].tasks }, historyLen: p.historyLen ?? all.length } } : prev);
       } catch (err) {
         // History is optional; the attach below still revives the session. Logged so a blank tab can be traced.
         console.warn(`[vibe] history for remembered session ${p.id} failed:`, (err as Error).message);
@@ -317,6 +319,7 @@ export function useSessions() {
   const interrupt = useCallback((sessionId: string) => agentClient.send({ type: 'session.interrupt', sessionId }), []);
   /** Stop one subagent / background task; the turn keeps going. Claude sessions only. */
   const stopTask = useCallback((sessionId: string, taskId: string) => agentClient.send({ type: 'session.stopTask', sessionId, taskId }), []);
+  const backgroundTask = useCallback((sessionId: string, toolUseId: string) => agentClient.send({ type: 'session.backgroundTask', sessionId, toolUseId }), []);
   const setMode = useCallback((sessionId: string, mode: PermissionModeId) => agentClient.send({ type: 'session.mode', sessionId, mode }), []);
   const setModel = useCallback((sessionId: string, model: string | null) => agentClient.send({ type: 'session.model', sessionId, model }), []);
   /** Preview (dryRun) or undo the file changes made since a user message. Claude sessions only. */
@@ -398,5 +401,5 @@ export function useSessions() {
     setSessions((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
   }, []);
 
-  return { sessions, replaced, start, adopt, send, approve, answer, interrupt, stopTask, setMode, setModel, setPinned, rename, rewind, verify, close };
+  return { sessions, replaced, start, adopt, send, approve, answer, interrupt, stopTask, backgroundTask, setMode, setModel, setPinned, rename, rewind, verify, close };
 }

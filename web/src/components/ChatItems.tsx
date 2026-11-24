@@ -12,6 +12,7 @@ import { useContextMenu } from './ContextMenu';
 import { setDragTransfer, transferMenu, type Transfer } from '../lib/transfer';
 import type { Attachment } from '../lib/agent';
 import { isAbsPath, lastSegment } from '../lib/paths';
+import { SubagentCardHeader } from './Subagents';
 
 /** Text selected inside `el`, if any: right-clicking a selection sends only that part. */
 function selectionIn(el: HTMLElement | null): string {
@@ -240,6 +241,7 @@ export function ToolItem({ item, children }: { item: Extract<ChatItem, { kind: '
         {!item.done && item.elapsed > 0 && <span className="text-zinc-500 text-[11px]">{Math.round(item.elapsed)}s</span>}
         <span className="text-zinc-600">{open ? '▾' : '▸'}</span>
       </button>
+      {isSubagent && !item.parent && item.name !== 'SubAgentActivity' && <SubagentCardHeader item={item} />}
       {open && (
         <div className="border-t border-white/10 px-3 py-2 space-y-2">
           <pre className="text-[12px] text-zinc-400 whitespace-pre-wrap break-all max-h-48 overflow-auto">{JSON.stringify(item.input, null, 2)}</pre>
