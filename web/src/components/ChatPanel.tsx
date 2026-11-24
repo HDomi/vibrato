@@ -585,6 +585,28 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
     stick.current = true; setAtBottom(true); requestAnimationFrame(scrollToBottom);
   }, [asked, session?.id]);
 
+  // Hooks below stay above the early return: a tab going from no session to a session must not change the hook count.
+  // Bring the tool card that started a subagent into view (from the task relation graph).
+  const showToolCard = (toolUseId: string) => {
+    const el = content.current?.querySelector<HTMLElement>(`[data-tool-use="${CSS.escape(toolUseId)}"]`);
+    if (!el) return;
+    revealSkipped(el);
+    stick.current = false; setAtBottom(false);
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('ring-2', 'ring-violet-400/60');
+    setTimeout(() => el.classList.remove('ring-2', 'ring-violet-400/60'), 1800);
+  };
+  // A subagent's card from anywhere (the plan view switches to the chat first).
+  const showCardAnywhere = useEvent((toolUseId: string) => {
+    if (view === 'plan') { switchView('chat'); requestAnimationFrame(() => requestAnimationFrame(() => showToolCard(toolUseId))); }
+    else showToolCard(toolUseId);
+  });
+  const claude = session?.agent === 'claude';
+  const subagentCtl = useMemo<SubagentControls>(() => ({
+    tasks: session?.tasks, cwd: session?.cwd ?? cwd ?? '', agentSessionId: claude ? session?.agentSessionId : undefined,
+    stop: claude ? onStopTask : undefined, background: claude ? onBackgroundTask : undefined, showCard: showCardAnywhere,
+  }), [session?.tasks, session?.cwd, cwd, session?.agentSessionId, claude, onStopTask, onBackgroundTask, showCardAnywhere]);
+
   if (!session) return <StartScreen cwd={cwd} scope={scope} onStart={onStart} onStartPair={onStartPair} backlog={backlog} onBacklogChange={onBacklogChange} onOpenBacklogSession={onOpenBacklogSession} openWorktrees={openWorktrees} onOpenWorktree={onOpenWorktree} />;
 
   const running = session.status === 'running' || session.status === 'compacting';
@@ -679,26 +701,6 @@ export default function ChatPanel({ cwd, scope = 'folder', session, onStart, onS
       setExporting(false);
     }
   };
-  // Bring the tool card that started a subagent into view (from the task relation graph).
-  const showToolCard = (toolUseId: string) => {
-    const el = content.current?.querySelector<HTMLElement>(`[data-tool-use="${CSS.escape(toolUseId)}"]`);
-    if (!el) return;
-    revealSkipped(el);
-    stick.current = false; setAtBottom(false);
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    el.classList.add('ring-2', 'ring-violet-400/60');
-    setTimeout(() => el.classList.remove('ring-2', 'ring-violet-400/60'), 1800);
-  };
-  // A subagent's card from anywhere (the plan view switches to the chat first).
-  const showCardAnywhere = useEvent((toolUseId: string) => {
-    if (view === 'plan') { switchView('chat'); requestAnimationFrame(() => requestAnimationFrame(() => showToolCard(toolUseId))); }
-    else showToolCard(toolUseId);
-  });
-  const claude = session.agent === 'claude';
-  const subagentCtl = useMemo<SubagentControls>(() => ({
-    tasks: session.tasks, cwd: session.cwd, agentSessionId: claude ? session.agentSessionId : undefined,
-    stop: claude ? onStopTask : undefined, background: claude ? onBackgroundTask : undefined, showCard: showCardAnywhere,
-  }), [session.tasks, session.cwd, session.agentSessionId, claude, onStopTask, onBackgroundTask, showCardAnywhere]);
   const onScroll = () => {
     if (programmatic.current) return;
     const el = scroller.current; if (!el) return;
