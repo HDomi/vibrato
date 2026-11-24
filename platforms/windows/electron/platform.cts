@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 /*
- * The Windows side of the Electron shell (main.cts): a standard window frame, no lock screen and no in-app browser
+ * The Windows side of the Electron shell (main.cts): no OS title bar (window buttons over the page), no lock screen and no in-app browser
  * (links open in the default browser), and updates installed by running the release's NSIS installer silently.
  */
 
@@ -22,9 +22,13 @@ export const PRELOAD_FLAGS: string[] = ['--vibrato-no-lock', '--vibrato-no-brows
 /** Leading application menus: none (the File menu comes first). */
 export const MENU_LEADING: MenuItemConstructorOptions[] = [];
 
-/** The standard frame; the menu bar shows with Alt. */
-export function windowChrome(_buttons: { x: number; y: number }): BrowserWindowConstructorOptions {
-  return { autoHideMenuBar: true };
+/**
+ * No OS title bar: the page (wallpaper, Settings > Style colors) fills the whole window, as on macOS, and Windows
+ * draws only its minimize / maximize / close buttons over the top-right corner of the page's empty top band
+ * (`strip` px tall; the title bars are drag regions). The menu stays attached for its shortcuts.
+ */
+export function windowChrome(buttons: { x: number; y: number; strip: number }): BrowserWindowConstructorOptions {
+  return { autoHideMenuBar: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: '#e6e8ee', height: buttons.strip } };
 }
 
 /** A Node placed in the app folder, and the user's own from PATH. */

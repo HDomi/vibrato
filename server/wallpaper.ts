@@ -95,7 +95,7 @@ async function writeMeta(w: Wallpaper) {
   await fs.mkdir(WALL_DIR, { recursive: true });
   const tmp = `${META_FILE}.${process.pid}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(w, null, 2));
-  await fs.rename(tmp, META_FILE);
+  await replace(tmp, META_FILE);
 }
 
 /** Color, gradient, blur, dim and kind. Choosing "image" without an uploaded image is refused. */
@@ -131,7 +131,21 @@ export function wallpaperPath(which: WallFile): string {
 async function writeAtomic(target: string, file: File) {
   const tmp = `${target}.${process.pid}.tmp`;
   await fs.writeFile(tmp, Buffer.from(await file.arrayBuffer()));
-  await fs.rename(tmp, target);
+  await replace(tmp, target);
+}
+
+/**
+ * Moves `tmp` over `target`. On Windows the rename fails (EPERM / EACCES / EBUSY) while another handle has the
+ * target open (the image being served, an antivirus scan), so it retries for a moment before giving up.
+ */
+async function replace(tmp: string, target: string) {
+  for (let i = 0; ; i++) {
+    try { await fs.rename(tmp, target); return; } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= 10 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) { await fs.rm(tmp, { force: true }); throw e; }
+      await new Promise((r) => setTimeout(r, 50 * (i + 1)));
+    }
+  }
 }
 
 async function exists(p: string) {

@@ -203,7 +203,7 @@ async function openIdeWindow(root: string, file?: string) {
     if (file) open.webContents.send('ide-open-file', file);
     return;
   }
-  const win = createAppWindow({ width: 1280, height: 860, minWidth: 720, minHeight: 480, title: `${path.basename(root) || root} — IDE` }, { x: 12, y: 7 });
+  const win = createAppWindow({ width: 1280, height: 860, minWidth: 720, minHeight: 480, title: `${path.basename(root) || root} — IDE` }, { x: 12, y: 7, strip: 28 });
   ideWindows.set(root, win);
   win.on('closed', () => { if (ideWindows.get(root) === win) ideWindows.delete(root); });
   const url = new URL(DEV ? URL_DEV : URL_PROD);
@@ -212,8 +212,11 @@ async function openIdeWindow(root: string, file?: string) {
   await win.loadURL(url.toString());
 }
 
-/** `buttons`: where the window buttons sit (the IDE has a 28px strip instead of the 46px title bar). */
-function createAppWindow(size: { width: number; height: number; minWidth: number; minHeight: number; title: string }, buttons = { x: 14, y: 16 }) {
+/**
+ * `buttons`: where the window buttons sit (the IDE has a 28px strip instead of the 46px title bar); `strip`: the height
+ * of the empty band at the top that they may cover.
+ */
+function createAppWindow(size: { width: number; height: number; minWidth: number; minHeight: number; title: string }, buttons = { x: 14, y: 16, strip: 36 }) {
   const win = new BrowserWindow({
     ...size,
     ...platform.windowChrome(buttons), // main window: unchanged from before the 88px title bar (UsageBar)
@@ -264,7 +267,7 @@ ipcMain.handle('open-browser', async (e, url: unknown) => {
 
 /** The in-app browser's window (platform.cts start): same page as the app, `?browser=1`. */
 function createBrowserWindow() {
-  const win = createAppWindow({ width: 1440, height: 920, minWidth: 760, minHeight: 480, title: 'Vibrato Browser' }, { x: 12, y: 7 });
+  const win = createAppWindow({ width: 1440, height: 920, minWidth: 760, minHeight: 480, title: 'Vibrato Browser' }, { x: 12, y: 7, strip: 28 });
   const url = new URL(DEV ? URL_DEV : URL_PROD);
   url.searchParams.set('browser', '1');
   void win.loadURL(url.toString());

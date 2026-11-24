@@ -26,8 +26,8 @@ export const MENU_LEADING: MenuItemConstructorOptions[] = [{ role: 'appMenu' }];
 const APP_BUNDLE = (() => { const i = __dirname.indexOf('.app/Contents/Resources/app/'); return i < 0 ? null : __dirname.slice(0, i + 4); })();
 
 /** Window frame: hidden title bar with the traffic lights at `buttons`. */
-export function windowChrome(buttons: { x: number; y: number }): BrowserWindowConstructorOptions {
-  return { titleBarStyle: 'hiddenInset', trafficLightPosition: buttons };
+export function windowChrome(buttons: { x: number; y: number; strip: number }): BrowserWindowConstructorOptions {
+  return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: buttons.x, y: buttons.y } };
 }
 
 function loginShellLookup(cmd: string): Promise<string | null> {
