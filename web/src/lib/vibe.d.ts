@@ -130,6 +130,11 @@ declare global {
       saveDialog?: (opts: { defaultPath?: string; ext?: string; label?: string }) => Promise<string | null>;
       getPathForFile: (file: File) => string;
       loginItem: (enable: boolean | null) => Promise<boolean>;
+      /** Settings > Temp cleanup: data the app process holds (web cache, old browser stores). Absent in browser mode. */
+      storage?: {
+        list: () => Promise<{ id: string; dir: string; files: number; bytes: number }[]>;
+        clear: (id: string) => Promise<{ deleted: number; bytes: number; failed: number }>;
+      };
       /** Tell the main process the current UI language (updates the Language menu checkmark). */
       setLanguage: (lang: string) => void;
       /** Receive language changes made from the macOS menu bar. */

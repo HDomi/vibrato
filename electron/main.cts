@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -298,6 +298,57 @@ ipcMain.handle('login-item', (e, enable: boolean | null) => {
   if (!fromApp(e)) return false;
   if (typeof enable === 'boolean') app.setLoginItemSettings({ openAtLogin: enable });
   return app.getLoginItemSettings().openAtLogin;
+});
+
+// Settings > Temp cleanup: data only the app process holds. 'cache' is the web cache of the app's own windows
+// (rebuilt as pages load again); 'oldPartitions' are the stores of the old Electron browser tab (mvc-browser,
+// vibrato-browser), unused since the in-app browser moved to the native web view (2026-11).
+const OLD_PARTITIONS = ['mvc-browser', 'vibrato-browser'];
+function dirSize(dir: string): { files: number; bytes: number } {
+  let files = 0, bytes = 0;
+  const walk = (d: string, depth: number) => {
+    if (depth > 12) return;
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, depth + 1);
+      else if (e.isFile()) { try { bytes += fs.statSync(p).size; files++; } catch { /* gone meanwhile */ } }
+    }
+  };
+  walk(dir, 0);
+  return { files, bytes };
+}
+ipcMain.handle('storage:list', async (e) => {
+  if (!fromApp(e)) return [];
+  const out: { id: string; dir: string; files: number; bytes: number }[] = [];
+  out.push({ id: 'cache', dir: path.join(app.getPath('userData'), 'Cache'), files: 0, bytes: await session.defaultSession.getCacheSize() });
+  const parts = OLD_PARTITIONS.map((n) => path.join(app.getPath('userData'), 'Partitions', n)).filter((d) => fs.existsSync(d));
+  if (parts.length) {
+    const sizes = parts.map(dirSize);
+    out.push({ id: 'oldPartitions', dir: path.join(app.getPath('userData'), 'Partitions'), files: sizes.reduce((n, s) => n + s.files, 0), bytes: sizes.reduce((n, s) => n + s.bytes, 0) });
+  }
+  return out;
+});
+ipcMain.handle('storage:clear', async (e, id: unknown) => {
+  if (!fromApp(e)) return { deleted: 0, bytes: 0, failed: 0 };
+  if (id === 'cache') {
+    const bytes = await session.defaultSession.getCacheSize();
+    await session.defaultSession.clearCache();
+    await session.defaultSession.clearCodeCaches({}).catch(() => {});
+    return { deleted: 1, bytes, failed: 0 };
+  }
+  if (id === 'oldPartitions') {
+    let bytes = 0, deleted = 0, failed = 0;
+    for (const n of OLD_PARTITIONS) {
+      const d = path.join(app.getPath('userData'), 'Partitions', n);
+      if (!fs.existsSync(d)) continue;
+      const s = dirSize(d);
+      try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 2 }); bytes += s.bytes; deleted += s.files; } catch { failed++; }
+    }
+    return { deleted, bytes, failed };
+  }
+  return { deleted: 0, bytes: 0, failed: 0 };
 });
 
 // Settings > Permissions: the privacy states only the app process can read (platform.cts).

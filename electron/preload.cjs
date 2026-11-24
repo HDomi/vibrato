@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('vibe', {
   getPathForFile: (file) => webUtils.getPathForFile(file),
   // Read or set "open at login". Pass null to only read.
   loginItem: (enable) => ipcRenderer.invoke('login-item', enable),
+  // Settings > Temp cleanup: app-process data (web cache, old browser stores): list sizes, clear one.
+  storage: { list: () => ipcRenderer.invoke('storage:list'), clear: (id) => ipcRenderer.invoke('storage:clear', id) },
   // UI language sync with the macOS menu bar.
   setLanguage: (lang) => ipcRenderer.send('language', lang),
   onLanguage: (cb) => { ipcRenderer.on('language', (_e, lang) => cb(lang)); },

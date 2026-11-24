@@ -3,7 +3,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createFile, duplicate, findEnvFiles, FsError, grepFiles, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
-import { clearTemp, saveTmpImage, tempStats } from './tmpFiles.js';
+import { deleteProjectSessions } from './projectSessions.js';
+import { clearTemp, saveTmpImage, TEMP_TARGETS, tempStats, type TempId } from './tmpFiles.js';
 import { CUSTOM_PROMPT_MAX, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
@@ -403,7 +404,11 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     } catch (e) { return c.json({ error: (e as Error).message }, 400); }
   });
   app.get('/api/tmp', async (c) => c.json(await tempStats()));
-  app.delete('/api/tmp', async (c) => c.json(await clearTemp()));
+  app.delete('/api/tmp/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!TEMP_TARGETS.some((t) => t.id === id)) return c.json({ error: 'Unknown temp folder' }, 404);
+    return c.json(await clearTemp(id as TempId));
+  });
 
   // Claude Code transcript history for a project directory.
   app.get('/api/history', async (c) => {
@@ -430,6 +435,23 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     cfg.pinnedSessions = b.pinned ? [...new Set([...cfg.pinnedSessions, key])] : cfg.pinnedSessions.filter((k) => k !== key);
     await saveConfig(cfg);
     return c.json({ ok: true, pinned: b.pinned });
+  });
+  // Every saved session of one project folder (dock > favorite > "Delete all sessions"); pinned and open ones stay.
+  app.delete('/api/history-project', async (c) => {
+    const cwd = c.req.query('cwd');
+    if (!cwd) return c.json({ error: 'cwd required' }, 400);
+    const dir = resolvePath(cwd);
+    const [cfg, codexPath] = await Promise.all([loadConfig(), which('codex')]);
+    const result = await deleteProjectSessions({
+      claude: () => listSessions({ dir, limit: 100_000 }),
+      codex: () => (codexPath ? codexThreads(codexPath, dir, 100_000) : Promise.resolve([])),
+      deleteClaude: (id) => deleteSession(id, { dir }),
+      deleteCodex: (id) => codexThreadOp(codexPath!, 'delete', id).then(() => undefined),
+      pinned: new Set(cfg.pinnedSessions),
+      open: new Set((registry?.list() ?? []).map((s) => s.agentSessionId).filter((x): x is string => !!x)),
+    });
+    forgetCodexThreads();
+    return c.json(result);
   });
   app.delete('/api/history/:id', async (c) => {
     const agent = c.req.query('agent') ?? 'claude';

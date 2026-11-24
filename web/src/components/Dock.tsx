@@ -10,6 +10,8 @@ import { useEvent } from '../lib/useEvent';
 import ProjectIcon from './ProjectIcon';
 import AgentIcon from './AgentIcon';
 import Icon from './Icon';
+import ConfirmDialog from './ConfirmDialog';
+import { toast } from './Toast';
 import { baseName as nameOf } from '../lib/paths';
 
 interface Props {
@@ -80,6 +82,17 @@ export default memo(function Dock(p: Props) {
   const nav = useRef<HTMLElement>(null);
   const [tip, setTip] = useState<{ text: string; sub?: string; x: number; y: number } | null>(null);
   const [prompt, setPrompt] = useState<{ kind: 'newGroup' | 'renameGroup' | 'renameFav'; id?: string; value: string; y: number } | null>(null);
+  // "Delete all sessions" of a favorite, waiting for Cancel / Confirm.
+  const [wipe, setWipe] = useState<Favorite | null>(null);
+  const wipeSessions = async (f: Favorite) => {
+    try {
+      const r = await api.deleteProjectSessions(f.path);
+      const kept = [r.keptPinned ? t('sidebar.deleteSessions.keptPinned', { n: r.keptPinned }) : '', r.keptOpen ? t('sidebar.deleteSessions.keptOpen', { n: r.keptOpen }) : '', r.failed ? t('sidebar.deleteSessions.failed', { n: r.failed }) : ''].filter(Boolean).join(' · ');
+      toast(t('sidebar.deleteSessions.done', { name: f.name, n: r.deleted }) + (kept ? ` (${kept})` : ''), r.failed ? 'error' : 'info');
+      window.dispatchEvent(new Event('vibe:history-changed'));
+      window.dispatchEvent(new Event('vibe:pins-changed'));
+    } catch (e) { toast((e as Error).message, 'error'); }
+  };
   const [dragOver, setDragOver] = useState<string | null>(null);
   // Favorites that just appeared spring in; removed ones stay a moment (at their old place) to shrink away.
   const prevFavs = useRef<Favorite[] | null>(null);
@@ -131,6 +144,7 @@ export default memo(function Dock(p: Props) {
     ...commonItems(f.path),
     { separator: true },
     { label: t('sidebar.removeFavorite'), danger: true, onClick: () => apply(api.removeFavorite(f.path)) },
+    { label: t('sidebar.deleteSessions'), danger: true, onClick: () => { setTip(null); setWipe(f); } },
   ];
   const groupMenu = (g: FavoriteGroup, e: React.MouseEvent): MenuItem[] => [
     { label: t('common.rename'), onClick: () => ask(e, 'renameGroup', g.name, g.id) },
@@ -215,6 +229,8 @@ export default memo(function Dock(p: Props) {
       {recentOpen && <RecentSessions anchor={nav} onResume={(s) => { setRecentOpen(false); p.onResumeSession(s); }} onClose={() => setRecentOpen(false)} />}
       <Tip tip={tip} />
       {prompt && <Prompt at={{ x: dockRight(), y: prompt.y }} value={prompt.value} onCommit={commitPrompt} onCancel={() => setPrompt(null)} />}
+      {wipe && <ConfirmDialog danger message={t('sidebar.deleteSessions.confirm', { name: wipe.name })} confirmLabel={t('common.ok')}
+        onConfirm={() => wipeSessions(wipe)} onClose={() => setWipe(null)} />}
     </nav>
   );
 });

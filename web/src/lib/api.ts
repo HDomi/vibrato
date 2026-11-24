@@ -217,8 +217,8 @@ export const api = {
     return req<{ path: string; name: string; kind: 'image' | 'file'; mime?: string }>('/api/tmp/image', { method: 'POST', body: fd });
   },
   /** Temp folders (Settings > Temp cleanup): <config>/tmp and <config>/attachments. */
-  tmpStats: () => req<{ id: 'tmp' | 'attachments'; dir: string; files: number; bytes: number }[]>('/api/tmp'),
-  clearTmp: () => req<{ deleted: number; bytes: number; failed: number }>('/api/tmp', { method: 'DELETE' }),
+  tmpStats: () => req<{ id: string; dir: string; files: number; bytes: number; legacy?: boolean }[]>('/api/tmp'),
+  clearTmp: (id: string) => req<{ deleted: number; bytes: number; failed: number }>(`/api/tmp/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   attach: (files: File[]) => {
     const fd = new FormData();
     for (const f of files) fd.append('files', f, f.name);
@@ -230,6 +230,8 @@ export const api = {
   /** Pins live in the server config; every list that shows them reloads on `vibe:pins-changed`. */
   historyPin: (agent: 'claude' | 'codex', id: string, pinned: boolean) => post<{ ok: true }>('/api/history/pin', { agent, id, pinned })
     .then((r) => { window.dispatchEvent(new Event('vibe:pins-changed')); return r; }),
+  /** Delete every saved session of one project folder; pinned and open ones are kept. */
+  deleteProjectSessions: (cwd: string) => req<{ deleted: number; keptPinned: number; keptOpen: number; failed: number }>(`/api/history-project?cwd=${q(cwd)}`, { method: 'DELETE' }),
   historyDelete: (agent: 'claude' | 'codex', id: string, cwd?: string) => req<{ ok: true }>(`/api/history/${q(id)}?agent=${agent}${cwd ? `&cwd=${q(cwd)}` : ''}`, { method: 'DELETE' }),
   /** Zip of the exported markdown and its images, written to `dest` (Save As path). */
   exportZip: (dest: string, name: string, markdown: string, images: { name: string; src: string }[]) =>

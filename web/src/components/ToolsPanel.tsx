@@ -108,46 +108,68 @@ function GeneralSettings() {
   );
 }
 
-/** Temp folders under <config> (drawings to attach, uploads, tool images): their size, and one button to empty them. */
+/** One folder of temporary or leftover data: where it lives, what uses it, how big it is. */
+interface TempRow { id: string; dir: string; files: number; bytes: number; legacy?: boolean; app?: boolean }
+
+/**
+ * Temp cleanup: every folder of temporary or leftover data with its size and what it is for, each deleted on its own.
+ * Server folders come from /api/tmp (server/tmpFiles.ts); the app's own (web cache, old browser stores) from the
+ * Electron process (window.vibe.storage), so they only show in the desktop app.
+ */
 function TmpSettings({ active }: { active: boolean }) {
   useLang();
-  const [stats, setStats] = useState<{ id: 'tmp' | 'attachments'; dir: string; files: number; bytes: number }[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const load = () => api.tmpStats().then(setStats).catch(() => setStats(null));
+  const [rows, setRows] = useState<TempRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const load = async () => {
+    const [server, app] = await Promise.all([
+      api.tmpStats().catch(() => [] as TempRow[]),
+      window.vibe?.storage?.list().catch(() => [] as TempRow[]) ?? Promise.resolve([] as TempRow[]),
+    ]);
+    setRows([...server, ...app.map((x) => ({ ...x, app: true }))]);
+  };
   useEffect(() => { if (active) void load(); }, [active]);
-  const size = (b: number) => (b < 1024 * 1024 ? `${Math.max(b ? 1 : 0, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
-  const total = stats?.reduce((n, s) => n + s.files, 0) ?? 0;
-  const clear = async () => {
-    if (!total || !window.confirm(t('settings.tmp.confirm', { n: total }))) return;
-    setBusy(true); setNote(null);
+  const size = (b: number) => (b < 1024 * 1024 ? `${Math.max(b ? 1 : 0, Math.round(b / 1024))} KB` : b < 1024 ** 3 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(2)} GB`);
+  const clear = async (row: TempRow) => {
+    if (!window.confirm(t('settings.tmp.confirmOne', { name: t(`settings.tmp.target.${row.id}`), size: size(row.bytes) }))) return;
+    setBusy(row.id);
     try {
-      const r = await api.clearTmp();
-      setNote(t('settings.tmp.cleared', { n: r.deleted, size: size(r.bytes) }) + (r.failed ? ` ${t('settings.tmp.skipped', { n: r.failed })}` : ''));
-    } catch (e) { setNote(t('settings.tmp.failed', { reason: (e as Error).message })); }
-    setBusy(false);
+      const r = row.app ? await window.vibe!.storage!.clear(row.id) : await api.clearTmp(row.id);
+      setNotes((n) => ({ ...n, [row.id]: t('settings.tmp.clearedOne', { size: size(r.bytes) }) + (r.failed ? ` ${t('settings.tmp.skipped', { n: r.failed })}` : '') }));
+    } catch (e) { setNotes((n) => ({ ...n, [row.id]: t('settings.tmp.failed', { reason: (e as Error).message }) })); }
+    setBusy(null);
     void load();
   };
+  const total = rows?.reduce((n, r) => n + r.bytes, 0) ?? 0;
   return (
     <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-3" data-settings-tmp="">
-      <div className="font-medium">{t('settings.tab.tmp')}</div>
+      <div className="flex items-baseline gap-2">
+        <div className="font-medium">{t('settings.tab.tmp')}</div>
+        {rows && <div className="text-xs text-zinc-500 tabular-nums">{t('settings.tmp.total', { size: size(total) })}</div>}
+      </div>
       <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.tmp.note')}</div>
-      {stats ? (
-        <div className="space-y-2">
-          {stats.map((s) => (
-            <div key={s.id} className="text-sm text-zinc-300" data-tmp-target={s.id}>
-              <span className="mr-2">{t(`settings.tmp.target.${s.id}`)}</span>
-              <span className="text-zinc-400 tabular-nums">{s.files ? t('settings.tmp.count', { n: s.files, size: size(s.bytes) }) : t('settings.tmp.empty')}</span>
-              <div className="mt-0.5 font-mono text-[11px] text-zinc-500 break-all">{s.dir}</div>
+      {!rows ? <div className="text-sm text-zinc-500">…</div> : (
+        <div className="divide-y divide-white/5 rounded-xl border border-line">
+          {rows.map((r) => (
+            <div key={r.id} className="flex items-start gap-3 px-3.5 py-3" data-tmp-target={r.id}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 text-sm">
+                  <span className="text-zinc-200">{t(`settings.tmp.target.${r.id}`)}</span>
+                  {r.legacy || r.id === 'oldPartitions' ? <span className="rounded bg-amber-400/10 px-1.5 text-[10.5px] text-amber-200/90">{t('settings.tmp.unused')}</span> : null}
+                  <span className="ml-auto shrink-0 tabular-nums text-zinc-300">{r.bytes ? size(r.bytes) : t('settings.tmp.empty')}</span>
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500 leading-relaxed">{t(`settings.tmp.use.${r.id}`)}</div>
+                <div className="mt-0.5 font-mono text-[11px] text-zinc-600 break-all">{r.dir}</div>
+                {notes[r.id] && <div className="mt-1 text-xs text-zinc-400">{notes[r.id]}</div>}
+              </div>
+              <button type="button" disabled={!!busy || !r.bytes} onClick={() => void clear(r)} data-tmp-clear={r.id}
+                className="shrink-0 rounded-full bg-red-500/15 text-red-200 hover:bg-red-500/25 text-xs px-3.5 py-1.5 transition-colors disabled:opacity-40">
+                {busy === r.id ? t('settings.tmp.clearing') : t('settings.tmp.clearOne')}
+              </button>
             </div>
           ))}
         </div>
-      ) : <div className="text-sm text-zinc-500">…</div>}
-      <div className="flex items-center gap-3">
-        <button type="button" disabled={busy || !total} onClick={() => void clear()} data-tmp-clear=""
-          className="rounded-full bg-red-500/15 text-red-200 hover:bg-red-500/25 text-xs px-4 py-1.5 transition-colors disabled:opacity-40">{t('settings.tmp.clear')}</button>
-        {note && <span className="text-xs text-zinc-400">{note}</span>}
-      </div>
+      )}
     </div>
   );
 }
