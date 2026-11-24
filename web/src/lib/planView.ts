@@ -3,8 +3,9 @@ import { isInjected, liveTasks, todosFromInput, type ChatItem } from './chatStor
 import { codePathCandidate } from './localPath';
 import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, stepEntries } from './textPlan';
 import { isAbsPath, joinPath } from './paths';
-import { isPlanSetTool, planSetInput, type PlanSetStep, type Role } from './planSet';
+import { isPlanSetTool, planSetInput, ROLES, type PlanSetStep, type Role } from './planSet';
 import { diffPlans, matchTextPlans, roleTag, type PlanChange } from './planDiff';
+import { evidenceOf, roleOfTool, stepRole, type RoleEvidence, type RoleState } from './roles';
 
 export { doneMarks, textPlan } from './textPlan';
 
@@ -94,6 +95,8 @@ export interface PlanStep {
   role?: Role | null;
   /** The role was read off the work, not declared. */
   roleGuessed?: boolean;
+  /** What the step's own work shows per role (roles.ts): the evidence line under it. */
+  evidence?: RoleEvidence;
   /** Taken out of the plan by a revision (the reason given), or left out of a rewritten written plan after it was done. */
   removed?: { reason: string | null; dropped?: boolean };
 }
@@ -454,7 +457,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     const started = t.steps.some((x) => x.status !== 'pending');
     file(active ?? (started ? t.after : t.before), it);
   }
-  for (const t of turns) applyTextPlan(t);
+  for (const t of turns) { applyTextPlan(t); applyRoles(t); }
   return turns;
 }
 
@@ -557,6 +560,55 @@ function textRevisions(t: PlanTurn) {
       t.removed.push(step);
     }
   }
+}
+
+const mainTools = (step: PlanStep) => step.items.filter((it): it is Item<'tool'> => it.kind === 'tool' && !it.parent);
+
+/** Each step's role: the plan's (plan_set role, "[C]" tag), else read off its work and marked as guessed. */
+function applyRoles(t: PlanTurn) {
+  for (const step of [...t.steps, ...t.removed]) {
+    const tag = roleTag(step.content);
+    if (tag.role || tag.title !== step.content) { if (!step.role && tag.role) step.role = tag.role; step.content = tag.title; }
+    step.evidence = evidenceOf(mainTools(step));
+    if (!step.role) {
+      const r = stepRole(null, step.evidence.roles);
+      step.role = r.role;
+      step.roleGuessed = r.guessed;
+    }
+  }
+}
+
+/** Whether the turn shows the role bar: a role other than the lead was declared, or work of roles B-E happened. */
+export function usesRoles(t: PlanTurn): boolean {
+  if (!t.hasPlan) return false;
+  return t.steps.some((s) => (s.role && s.role !== 'A' && !s.roleGuessed) || s.evidence?.roles.some((r) => r !== 'A'));
+}
+
+export interface RoleChip { role: Role; state: RoleState; done: number; total: number; rounds: number }
+
+/** One chip per role for a turn. `live`: the turn is still running. */
+export function roleChips(t: PlanTurn, live: boolean): RoleChip[] {
+  const lastCheck = [...t.before.items, ...t.steps.flatMap((x) => x.items), ...t.after.items]
+    .filter((it): it is Item<'tool'> => it.kind === 'tool' && !it.parent && roleOfTool(it) === 'E').pop();
+  return ROLES.map((role) => {
+    const steps = t.steps.filter((s) => s.role === role);
+    const worked = t.steps.filter((s) => s.evidence?.roles.includes(role));
+    const done = steps.filter((s) => s.status === 'completed').length;
+    const rounds = Math.max(0, ...steps.map((s) => s.entries.length));
+    const chip = (state: RoleState): RoleChip => ({ role, state, done, total: steps.length, rounds });
+    // The lead runs every turn that shows the bar, with or without steps of its own.
+    if (!steps.length && !worked.length && role !== 'A') return chip('unused');
+    if (role === 'A' && live && t.pending.length) return chip('user');
+    const mine = [...new Set([...steps, ...worked])];
+    if (live && mine.some((s) => s.status === 'in_progress')) return chip('running');
+    // E fails on the turn's last check, wherever it was filed (a re-check after a re-plan lands after the steps).
+    const failed = steps.some((s) => s.skipped) || (role === 'E' && lastCheck?.isError === true);
+    if (failed) return chip('failed');
+    if (!live && mine.some((s) => s.status === 'in_progress')) return chip('stopped');
+    if (steps.length && done === steps.length) return chip('done');
+    if (!steps.length) return chip(live ? 'running' : 'done');
+    return chip(steps.some((s) => s.status !== 'pending') ? (live ? 'running' : 'stopped') : live ? 'planned' : 'stopped');
+  });
 }
 
 /** First sentence-ish of a note, for the one-line summary under a step. */

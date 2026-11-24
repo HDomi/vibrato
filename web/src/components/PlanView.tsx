@@ -3,7 +3,9 @@ import { api } from '../lib/api';
 import type { TaskInfo } from '../lib/agent';
 import type { ChatItem } from '../lib/chatStore';
 import { t, useLang } from '../lib/i18n';
-import { buildPlan, liveTasksByTurn, sharePlan, noteLine, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
+import { buildPlan, liveTasksByTurn, roleChips, sharePlan, noteLine, usesRoles, type PlanRevision, type PlanStep, type PlanTurn, type TurnTasks } from '../lib/planView';
+import type { Role } from '../lib/planSet';
+import { RoleBar, RoleTag, StepFlow, TurnRevisions } from './RoleBar';
 import { taskKind } from '../lib/taskGraph';
 import { resolveLocal } from '../lib/localPath';
 import { ApprovalItem, QuestionItem, STREAM_RENDER_MS } from './ChatItems';
@@ -65,6 +67,11 @@ function StepStatsLine({ step, now, running }: { step: PlanStep; now: number; ru
   if (s.denied) parts.push({ text: t('plan.stat.denied', { n: s.denied }), bad: true });
   if (s.errors) parts.push({ text: t('plan.stat.errors', { n: s.errors }), bad: true });
   if (s.files.length) parts.push({ text: t('plan.stat.files', { n: s.files.length }) });
+  // Role evidence (roles.ts): what backs the step's role.
+  const e = step.evidence;
+  if (e?.spec) parts.push({ text: t('plan.stat.spec', { n: e.spec }) });
+  if (e?.design) parts.push({ text: t('plan.stat.design', { n: e.design }) });
+  if (e?.checks) parts.push({ text: t('plan.stat.checks', { n: e.checks }), bad: e.lastCheckFailed });
   if (s.reads) parts.push({ text: t('plan.stat.reads', { n: s.reads }) });
   if (s.subagents) parts.push({ text: t('plan.stat.agents', { n: s.subagents }) });
   if (ms >= 1000) parts.push({ text: duration(ms) });
@@ -147,7 +154,7 @@ function StepEntries({ step, note }: { step: PlanStep; note: string | null }) {
 }
 
 /** One plan step: number and text, its accounts (a., b., …) or why it was skipped, what it took, and live, what is happening now. */
-function StepRow({ step, index, current, live, activity, now, tasks, onJump }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; tasks?: TaskInfo[]; onJump: (id: string) => void }) {
+function StepRow({ step, index, current, live, activity, now, tasks, onJump, revisions, focus }: { step: PlanStep; index: number; current: boolean; live: boolean; activity: string | null; now: number; tasks?: TaskInfo[]; onJump: (id: string) => void; revisions: PlanRevision[]; focus: Role | null }) {
   useLang();
   const done = step.status === 'completed';
   const title = current && step.activeForm ? step.activeForm : step.content;
@@ -157,16 +164,18 @@ function StepRow({ step, index, current, live, activity, now, tasks, onJump }: {
   const jump = () => { if (target) onJump(target); };
   return (
     <div role="button" tabIndex={target ? 0 : -1} aria-disabled={!target} onClick={jump} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); } }} title={target ? t('plan.jumpChat') : undefined}
-      className={`group w-full flex items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-200 outline-none ${current && live ? 'bg-amber-300/[0.07]' : target ? 'cursor-pointer hover:bg-fill focus-visible:bg-fill' : ''}`}>
+      data-plan-step={step.role ?? ''}
+      className={`group w-full flex items-start gap-3 rounded-xl px-2.5 py-2 text-left transition-[background-color,opacity] duration-200 outline-none ${current && live ? 'bg-amber-300/[0.07]' : target ? 'cursor-pointer hover:bg-fill focus-visible:bg-fill' : ''} ${focus ? (step.role === focus || step.evidence?.roles.includes(focus) ? 'ring-1 ring-white/25' : 'opacity-40') : ''}`}>
       <StatusIcon status={current ? 'in_progress' : step.status} live={live} skipped={step.skipped} />
       <div className="flex-1 min-w-0">
         <div className={`text-[13.5px] leading-5 transition-colors duration-300 ${done ? 'text-zinc-300' : current ? 'text-white font-medium' : 'text-zinc-400'}`}>
-          <span className="tabular-nums text-zinc-500 mr-1.5">{index + 1}.</span>{title}
+          <span className="tabular-nums text-zinc-500 mr-1.5">{index + 1}.</span><RoleTag step={step} />{title}
           {step.entries.length > 1 && <span className="ml-2 rounded-full bg-fill-2 px-1.5 py-px text-[10.5px] tabular-nums text-zinc-400">×{step.entries.length}</span>}
         </div>
         <StepEntries step={step} note={note} />
         {(done || current) && <StepStatsLine step={step} now={now} running={working} />}
         {working && activity && <ActivityLine text={activity} />}
+        <StepFlow step={step} revisions={revisions} />
         {!!tasks?.length && <TaskLines tasks={tasks} onJump={onJump} />}
       </div>
       {target && <span className="shrink-0 mt-0.5 text-[11px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity">{t('plan.jumpChat')} →</span>}
@@ -326,8 +335,16 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
   // The result streams in while it is written: re-render its markdown a few times a second, not per delta.
   const answer = useThrottled(turn.answer ?? '', STREAM_RENDER_MS, writing);
   const latest = live && !total ? noteLine(turn.texts[turn.texts.length - 1] ?? null, 200) : null;
+  const roles = usesRoles(turn);
+  const chips = useMemo(() => (roles ? roleChips(turn, live) : null), [roles, turn, live]);
+  const [focus, setFocus] = useState<Role | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const focusRole = (r: Role | null) => {
+    setFocus(r);
+    if (r) sectionRef.current?.querySelector(`[data-plan-step="${r}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
   return (
-    <section data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
+    <section ref={sectionRef} data-plan-turn={turn.id} className="rounded-[20px] border border-line bg-black/10 p-4 space-y-3">
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="text-[14.5px] leading-6 font-semibold text-zinc-100 line-clamp-2">{lines[0]}</div>
@@ -351,6 +368,7 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
       </div>
       {total > 0 ? (
         <div className="space-y-2">
+          {chips && <RoleBar chips={chips} focus={focus} onFocus={focusRole} sticky={live} />}
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 text-[11.5px] font-medium text-zinc-300">{t('plan.heading')}</span>
             <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
@@ -358,7 +376,8 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, cwd, activity, now,
             </div>
             <span className="shrink-0 text-[11px] text-zinc-400 tabular-nums">{done}/{total}</span>
           </div>
-          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} onJump={onJump} />)}</div>
+          <div className="-mx-1.5">{turn.steps.map((s, i) => <StepRow key={s.key} step={s} index={i} current={i === current} live={live} activity={activity} now={now} tasks={tasks?.byStep.get(i)} onJump={onJump} revisions={turn.revisions} focus={focus} />)}</div>
+          <TurnRevisions revisions={turn.revisions} removed={turn.removed} />
           {wrapping && !writing && (
             <div className="flex items-start gap-3 px-1 py-1 text-[13px] text-zinc-300" data-plan-wrapping="">
               <span className="w-5 h-5 shrink-0 rounded-full border-2 border-amber-300 border-t-transparent animate-spin" />
@@ -418,10 +437,14 @@ function SessionSummary({ turns }: { turns: PlanTurn[] }) {
   const cost = asked.reduce((sum, x) => sum + (x.result?.turnCostUsd ?? 0), 0);
   const created = new Set(asked.flatMap((x) => x.created)).size;
   const commits = asked.reduce((n, x) => n + x.commits.length, 0);
+  const revisions = asked.reduce((n, x) => n + x.revisions.length, 0);
+  const checksFailed = asked.reduce((n, x) => n + x.steps.reduce((m, s) => m + (s.evidence?.checksFailed ?? 0), 0), 0);
   const parts = [t('plan.sum.requests', { n: asked.length }), t('plan.sum.done', { n: done })];
   if (failed) parts.push(t('plan.sum.failed', { n: failed }));
   if (commits) parts.push(t('plan.sum.commits', { n: commits }));
   if (created) parts.push(t('plan.sum.created', { n: created }));
+  if (revisions) parts.push(t('plan.sum.revisions', { n: revisions }));
+  if (checksFailed) parts.push(t('plan.sum.checksFailed', { n: checksFailed }));
   if (cost) parts.push(`$${cost.toFixed(2)}`);
   return <div className="px-1 text-[11.5px] tabular-nums text-zinc-500">{parts.join(' · ')}</div>;
 }
