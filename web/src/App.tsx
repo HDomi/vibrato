@@ -38,6 +38,7 @@ import { BROWSER_CHANNEL, type BrowserChannelMessage } from './lib/browserChanne
 import { ViewActiveContext } from './lib/viewActive';
 import { shortcutKey } from './lib/keys';
 import { useEvent } from './lib/useEvent';
+import { useWheelScrollX } from './lib/hscroll';
 import { isInside, lastSegment } from './lib/paths';
 
 // The toolbox and schedules load the first time their view is shown.
@@ -186,6 +187,20 @@ function AppInner() {
     : (activeSession && S.sessions[activeSession] && inProject(S.sessions[activeSession], project) ? S.sessions[activeSession] : projectSessions[0]) ?? null;
   const projectBacklog = (project && B.backlogs[project]) || EMPTY_BACKLOG;
   const backlogTodo = projectBacklog.items.filter((i) => i.status === 'todo' || i.status === 'running').length;
+  // Session tabs: a mouse wheel scrolls the row, and the active tab is brought into view (a new one opens past the edge).
+  const tabStripWheel = useWheelScrollX<HTMLDivElement>();
+  const tabStrip = useRef<HTMLDivElement | null>(null);
+  const tabStripRef = useCallback((el: HTMLDivElement | null) => { tabStrip.current = el; tabStripWheel(el); }, [tabStripWheel]);
+  useEffect(() => {
+    if (!session) return;
+    const strip = tabStrip.current;
+    const tab = strip?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(session.id)}"]`);
+    if (!strip || !tab) return;
+    // Scrolls only the strip (scrollIntoView could also shift overflow-hidden ancestors and misalign the glass).
+    const left = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = left + tab.offsetWidth - strip.clientWidth;
+  }, [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   // A worktree session's files, terminal, Git and Run panels follow its own folder.
   const panelRoot = session?.worktree ? session.cwd : project;
 
@@ -526,11 +541,11 @@ function AppInner() {
               {project && projectSessions.length > 0 && (
                 <div className="h-11 shrink-0 flex items-center gap-1 px-2.5 border-b border-line text-xs">
                   {/* Only the tabs scroll; the backlog and new-session buttons stay pinned at the right end. */}
-                  <div className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto no-scrollbar">
+                  <div ref={tabStripRef} className="flex-1 min-w-0 h-full flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {projectSessions.map((s) => (
-                    <div key={s.id} onClick={() => setActiveSession(s.id)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
+                    <div key={s.id} data-tab={s.id} onClick={() => setActiveSession(s.id)} onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeSession(s.id); } }}
                       onContextMenu={(e) => menu.open(e, sessionMenu(s, { setPinned: S.setPinned, rename: () => setRenamingTab(s.id), close: () => closeSession(s.id), remove: () => deleteSession(s, () => closeSession(s.id, true)) }))} {...(s.id !== session?.id ? dropProps(s.id) : {})}
-                      className={`group flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 whitespace-nowrap cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill'}`}>
+                      className={`group shrink-0 flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1 whitespace-nowrap cursor-pointer transition-colors duration-150 ${dropTarget === s.id ? 'ring-2 ring-sky-400/70 bg-sky-400/15 text-white' : session?.id === s.id ? 'bg-fill-3 text-white' : 'text-zinc-400 hover:bg-fill'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${isWorking(s) ? 'bg-amber-400 animate-pulse' : s.status === 'closed' ? 'bg-zinc-600' : 'bg-emerald-400'}`} />
                       <AgentIcon agent={s.agent} size={14} />
                       {s.pinned && <span className="text-[9px]" title={t('common.pin')}>📌</span>}
