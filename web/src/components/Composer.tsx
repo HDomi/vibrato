@@ -10,6 +10,7 @@ import { draftKey as draftStorageKey, readDraft, writeDraft } from '../lib/draft
 import { mergeAttachments, resolveFiles, toAttachment } from '../lib/attachFiles';
 import TaskChips from './TaskChips';
 import type { TaskInfo } from '../lib/agent';
+import DrawDialog from './DrawDialog';
 
 interface Props {
   /** Session working directory; root for "@" file mentions. */
@@ -62,6 +63,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
   useEffect(() => writeDraft(storageKey, { text, attachments }), [storageKey, text, attachments]);
   const [dragging, setDragging] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [drawOpen, setDrawOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [cmdIdx, setCmdIdx] = useState(0);
@@ -274,10 +276,12 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
           )}
           <div className="flex-1" />
           {running && <button className="shrink-0 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-200 text-xs px-3.5 py-1.5 transition-colors" onClick={onStop}>{t('composer.stop')}</button>}
+          <button className="shrink-0 rounded-full bg-fill hover:bg-fill-2 transition-colors text-xs text-zinc-300 px-3 py-1.5 disabled:opacity-40" disabled={disabled} onClick={() => setDrawOpen(true)} title={t('composer.drawHint')} data-composer-draw="">{t('composer.draw')}</button>
           <button className="shrink-0 rounded-full bg-fill hover:bg-fill-2 transition-colors text-xs text-zinc-300 px-3 py-1.5 disabled:opacity-40" disabled={disabled} onClick={() => setFormOpen(true)} title={t('composer.formHint')}>{t('composer.form')}</button>
           <button className="shrink-0 rounded-full bg-selected hover:bg-white text-on-selected font-medium text-xs px-4 py-1.5 transition-colors disabled:opacity-40" disabled={disabled || uploading || (!text.trim() && !attachments.length)} onClick={submit}>{running ? t('composer.queue') : t('composer.send')}</button>
         </div>
       </div>
+      {drawOpen && <DrawDialog onClose={() => setDrawOpen(false)} onInsert={(file) => void addFiles([file])} />}
       {formOpen && (
         <PromptFormDialog cwd={cwd ?? null} agent={agent} draftKey={draftKey} running={!!running} onClose={() => setFormOpen(false)}
           onSend={(body, atts) => onSend(body, atts)} onInsert={insertText}
