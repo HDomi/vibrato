@@ -90,7 +90,7 @@ test('plan_step closes the step it names and moves to the next; work files under
 test('ED-1/ED-2 an addition shows where it came, then the plan change under it', () => {
   const [t] = buildPlan([user('u', 'go'), planSet('p1', S3), step('k1', 's1'), user('u2', '버튼 색도 바꿔줘', { followUp: true }), planSet('p2', [...S3, ['s4', 'D', '버튼 색']], '추가 요청')]);
   assert.deepEqual(t.additions, ['버튼 색도 바꿔줘']);
-  assert.deepEqual(t.additionItems, [{ text: '버튼 색도 바꿔줘', itemId: 'u2' }]);
+  assert.deepEqual(t.additionItems, [{ text: '버튼 색도 바꿔줘', itemId: 'u2', attachments: [] }]);
   assert.deepEqual(t.steps.find((s) => s.id === 's2')!.items.map((i) => i.id), ['u2', 'p2']);
 });
 
@@ -98,4 +98,12 @@ test('a rejected plan_set call changes nothing', () => {
   const [t] = buildPlan([user('u', 'go'), planSet('p1', S3), tool('p2', 'mcp__vibrato__plan_set', { steps: [] }, { isError: true })]);
   assert.equal(t.steps.length, 3);
   assert.equal(t.revisions.length, 0);
+});
+
+test('pictures sent with the request and with an addition stay with each', () => {
+  const pic = (p: string) => ({ path: p, name: p.split('/').pop()!, kind: 'image' as const });
+  const [t] = buildPlan([user('u', '시안대로', { attachments: [pic('/a/shot1.png')] }), planSet('p1', S3), step('k1', 's1'),
+    user('u2', '이것도 봐줘', { followUp: true, attachments: [pic('/a/shot2.png'), { path: '/a/spec.pdf', name: 'spec.pdf', kind: 'file' as const }] })]);
+  assert.deepEqual(t.user?.attachments.map((a) => a.name), ['shot1.png']);
+  assert.deepEqual(t.additionItems[0].attachments.map((a) => a.name), ['shot2.png', 'spec.pdf']);
 });

@@ -4,6 +4,7 @@ import type { ChatItem } from '../lib/chatStore';
 import type { PlanRevision, PlanStep, RoleChip } from '../lib/planView';
 import type { Role } from '../lib/planSet';
 import type { RoleState } from '../lib/roles';
+import { PlanAttachments } from './PlanAttachments';
 
 const CHIP_TONE: Record<RoleState, string> = {
   unused: 'border-line bg-transparent text-zinc-600',
@@ -81,7 +82,7 @@ export function StepFlow({ step, revisions }: { step: PlanStep; revisions: PlanR
   const lines: { key: string; node: ReactNode }[] = [];
   for (const it of step.items as ChatItem[]) {
     if (it.kind === 'user') {
-      lines.push({ key: it.id, node: <div className="flex gap-1.5 text-[11.5px] leading-4 text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{it.text.replace(/\s+/g, ' ').trim()}</span></div> });
+      lines.push({ key: it.id, node: <div><div className="flex gap-1.5 text-[11.5px] leading-4 text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{it.text.replace(/\s+/g, ' ').trim()}</span></div><PlanAttachments attachments={it.attachments ?? []} small /></div> });
     } else if (it.kind === 'tool') {
       const rev = revisions.find((r) => r.itemId === it.id);
       if (rev) lines.push({ key: it.id, node: <RevisionLine rev={rev} /> });

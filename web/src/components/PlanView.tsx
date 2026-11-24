@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import type { TaskInfo } from '../lib/agent';
 import type { ChatItem } from '../lib/chatStore';
@@ -19,6 +19,7 @@ import MarkdownView from './MarkdownView';
 import { useSkipOffscreen } from '../lib/skipOffscreen';
 import { useClock } from '../lib/clock';
 import { lastSep } from '../lib/paths';
+import { PlanAttachments, RemotePlan } from './PlanAttachments';
 
 type Item<K extends ChatItem['kind']> = Extract<ChatItem, { kind: K }>;
 
@@ -229,7 +230,6 @@ const CREATED_SHOWN = 6;
 
 /** Files the turn created: click to preview, or download a copy. */
 /** Rendering a remote host's session (RemoteView): no local file access. */
-const RemotePlan = createContext(false);
 
 function CreatedFiles({ paths }: { paths: string[] }) {
   useLang();
@@ -358,8 +358,12 @@ const TurnCard = memo(function TurnCard({ turn, live, tasks, allTasks, cwd, acti
         <div className="flex-1 min-w-0">
           <div className="text-[14.5px] leading-6 font-semibold text-zinc-100 line-clamp-2">{lines[0]}</div>
           {lines.length > 1 && <div className="mt-0.5 text-[12.5px] leading-relaxed text-zinc-400 line-clamp-2">{lines.slice(1).join(' · ')}</div>}
-          {turn.additions.map((a, i) => (
-            <div key={i} className="mt-1 flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.replace(/\s+/g, ' ').trim()}</span></div>
+          <PlanAttachments attachments={turn.user?.attachments ?? []} />
+          {turn.additionItems.map((a) => (
+            <div key={a.itemId} className="mt-1.5">
+              <div className="flex gap-1.5 text-[12.5px] leading-relaxed text-zinc-300"><span className="shrink-0 text-amber-200/80">{t('plan.addition')}</span><span className="line-clamp-2">{a.text.replace(/\s+/g, ' ').trim()}</span></div>
+              <PlanAttachments attachments={a.attachments} />
+            </div>
           ))}
         </div>
         {turn.user?.remote && !viewedRemotely && <RemoteChip origin={turn.user.remote} />}

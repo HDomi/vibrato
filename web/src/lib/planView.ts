@@ -120,7 +120,7 @@ export interface PlanTurn {
   /** Messages the user added while the agent was still on this request: part of it, not new requests. */
   additions: string[];
   /** The same, with the item each came in (also filed under the step in progress then, so it shows in place). */
-  additionItems: { text: string; itemId: string }[];
+  additionItems: { text: string; itemId: string; attachments: Item<'user'>['attachments'] }[];
   /** The plan came from plan_set: steps keep their ids across revisions. */
   structured?: boolean;
   /** Plan changes after the first plan, in order. */
@@ -329,7 +329,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
       const cur = turn as PlanTurn | null;
       if (it.followUp && cur?.user && !cur.result) {
         cur.additions.push(it.text);
-        cur.additionItems.push({ text: it.text, itemId: it.id });
+        cur.additionItems.push({ text: it.text, itemId: it.id, attachments: it.attachments ?? [] });
         const started = cur.steps.some((x) => x.status !== 'pending');
         (active ?? (started ? cur.after : cur.before)).items.push(it);
         continue;
