@@ -108,21 +108,22 @@ function GeneralSettings() {
   );
 }
 
-/** Images the app saved for attaching (the drawing pad) in <config>/tmp: how many, and a button to delete them all. */
+/** Temp folders under <config> (drawings to attach, uploads, tool images): their size, and one button to empty them. */
 function TmpSettings({ active }: { active: boolean }) {
   useLang();
-  const [stats, setStats] = useState<{ dir: string; files: number; bytes: number } | null>(null);
+  const [stats, setStats] = useState<{ id: 'tmp' | 'attachments'; dir: string; files: number; bytes: number }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const load = () => api.tmpStats().then(setStats).catch(() => setStats(null));
   useEffect(() => { if (active) void load(); }, [active]);
-  const size = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+  const size = (b: number) => (b < 1024 * 1024 ? `${Math.max(b ? 1 : 0, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+  const total = stats?.reduce((n, s) => n + s.files, 0) ?? 0;
   const clear = async () => {
-    if (!stats?.files || !window.confirm(t('settings.tmp.confirm', { n: stats.files }))) return;
+    if (!total || !window.confirm(t('settings.tmp.confirm', { n: total }))) return;
     setBusy(true); setNote(null);
     try {
       const r = await api.clearTmp();
-      setNote(t('settings.tmp.cleared', { n: r.deleted, size: size(r.bytes) }));
+      setNote(t('settings.tmp.cleared', { n: r.deleted, size: size(r.bytes) }) + (r.failed ? ` ${t('settings.tmp.skipped', { n: r.failed })}` : ''));
     } catch (e) { setNote(t('settings.tmp.failed', { reason: (e as Error).message })); }
     setBusy(false);
     void load();
@@ -131,12 +132,19 @@ function TmpSettings({ active }: { active: boolean }) {
     <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-3" data-settings-tmp="">
       <div className="font-medium">{t('settings.tab.tmp')}</div>
       <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.tmp.note')}</div>
-      <div className="text-sm text-zinc-300">
-        {stats ? (stats.files ? t('settings.tmp.count', { n: stats.files, size: size(stats.bytes) }) : t('settings.tmp.empty')) : '…'}
-        {stats && <div className="mt-0.5 font-mono text-[11px] text-zinc-500 break-all">{stats.dir}</div>}
-      </div>
+      {stats ? (
+        <div className="space-y-2">
+          {stats.map((s) => (
+            <div key={s.id} className="text-sm text-zinc-300" data-tmp-target={s.id}>
+              <span className="mr-2">{t(`settings.tmp.target.${s.id}`)}</span>
+              <span className="text-zinc-400 tabular-nums">{s.files ? t('settings.tmp.count', { n: s.files, size: size(s.bytes) }) : t('settings.tmp.empty')}</span>
+              <div className="mt-0.5 font-mono text-[11px] text-zinc-500 break-all">{s.dir}</div>
+            </div>
+          ))}
+        </div>
+      ) : <div className="text-sm text-zinc-500">…</div>}
       <div className="flex items-center gap-3">
-        <button type="button" disabled={busy || !stats?.files} onClick={() => void clear()} data-tmp-clear=""
+        <button type="button" disabled={busy || !total} onClick={() => void clear()} data-tmp-clear=""
           className="rounded-full bg-red-500/15 text-red-200 hover:bg-red-500/25 text-xs px-4 py-1.5 transition-colors disabled:opacity-40">{t('settings.tmp.clear')}</button>
         {note && <span className="text-xs text-zinc-400">{note}</span>}
       </div>

@@ -216,8 +216,9 @@ export const api = {
     fd.append('file', file, file.name);
     return req<{ path: string; name: string; kind: 'image' | 'file'; mime?: string }>('/api/tmp/image', { method: 'POST', body: fd });
   },
-  tmpStats: () => req<{ dir: string; files: number; bytes: number }>('/api/tmp'),
-  clearTmp: () => req<{ deleted: number; bytes: number }>('/api/tmp', { method: 'DELETE' }),
+  /** Temp folders (Settings > Temp cleanup): <config>/tmp and <config>/attachments. */
+  tmpStats: () => req<{ id: 'tmp' | 'attachments'; dir: string; files: number; bytes: number }[]>('/api/tmp'),
+  clearTmp: () => req<{ deleted: number; bytes: number; failed: number }>('/api/tmp', { method: 'DELETE' }),
   attach: (files: File[]) => {
     const fd = new FormData();
     for (const f of files) fd.append('files', f, f.name);

@@ -1,15 +1,20 @@
 /*
- * Images the app makes for the user to attach (the composer's "Draw & insert" pad) live in <config>/tmp until the
- * user clears them (Settings > Temp files). Kept apart from <config>/attachments so clearing never touches files the
- * user attached themselves.
+ * Temporary files the app keeps under <config> (Settings > Temp cleanup):
+ *  - tmp: images the app makes for the user to attach (the composer's "Draw & insert" pad);
+ *  - attachments: files uploaded from the composer (paste, browser mode) and images tools returned (tool-images).
+ * Both are only referenced by past chat items, so clearing them loses those previews and nothing else.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CONFIG_DIR } from './config.js';
+import { ATTACH_DIR } from './attachments.js';
 
 export const TMP_DIR = path.join(CONFIG_DIR, 'tmp');
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp)$/i;
+
+export interface TempTarget { id: 'tmp' | 'attachments'; dir: string }
+export const TEMP_TARGETS: TempTarget[] = [{ id: 'tmp', dir: TMP_DIR }, { id: 'attachments', dir: ATTACH_DIR }];
 
 /** Save one image into the tmp folder and return its absolute path. Only image types are taken. */
 export async function saveTmpImage(file: File, dir = TMP_DIR): Promise<string> {
@@ -21,30 +26,39 @@ export async function saveTmpImage(file: File, dir = TMP_DIR): Promise<string> {
   return dest;
 }
 
-/** How many images the tmp folder holds and their total size. A missing folder is empty. */
-export async function tmpStats(dir = TMP_DIR): Promise<{ dir: string; files: number; bytes: number }> {
-  const names = await fs.readdir(dir).catch(() => [] as string[]);
-  let files = 0, bytes = 0;
-  for (const n of names) {
-    if (!IMAGE.test(n)) continue;
-    const st = await fs.stat(path.join(dir, n)).catch(() => null);
-    if (!st?.isFile()) continue;
-    files++; bytes += st.size;
+/** Every file under a folder (sub folders included), with its size. A missing folder has none. */
+async function filesUnder(dir: string, depth = 0): Promise<{ path: string; size: number }[]> {
+  if (depth > 4) return [];
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const out: { path: string; size: number }[] = [];
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...await filesUnder(p, depth + 1));
+    else if (e.isFile()) { const st = await fs.stat(p).catch(() => null); if (st) out.push({ path: p, size: st.size }); }
   }
-  return { dir, files, bytes };
+  return out;
 }
 
-/** Delete every image in the tmp folder (other files and folders stay). */
-export async function clearTmpImages(dir = TMP_DIR): Promise<{ deleted: number; bytes: number }> {
-  const names = await fs.readdir(dir).catch(() => [] as string[]);
-  let deleted = 0, bytes = 0;
-  for (const n of names) {
-    if (!IMAGE.test(n)) continue;
-    const p = path.join(dir, n);
-    const st = await fs.stat(p).catch(() => null);
-    if (!st?.isFile()) continue;
-    await fs.rm(p, { force: true });
-    deleted++; bytes += st.size;
+export interface TempStat { id: TempTarget['id']; dir: string; files: number; bytes: number }
+
+/** How many files each temp folder holds and their total size. */
+export async function tempStats(targets = TEMP_TARGETS): Promise<TempStat[]> {
+  return Promise.all(targets.map(async (t) => {
+    const files = await filesUnder(t.dir);
+    return { id: t.id, dir: t.dir, files: files.length, bytes: files.reduce((n, f) => n + f.size, 0) };
+  }));
+}
+
+/**
+ * Delete every file in the temp folders (the folders themselves stay). A file that cannot be removed (in use, as
+ * Windows reports for an open file, or read-only) is skipped and counted, so one stuck file does not stop the rest.
+ */
+export async function clearTemp(targets = TEMP_TARGETS): Promise<{ deleted: number; bytes: number; failed: number }> {
+  let deleted = 0, bytes = 0, failed = 0;
+  for (const t of targets) {
+    for (const f of await filesUnder(t.dir)) {
+      try { await fs.rm(f.path, { force: true, maxRetries: 2 }); deleted++; bytes += f.size; } catch { failed++; }
+    }
   }
-  return { deleted, bytes };
+  return { deleted, bytes, failed };
 }

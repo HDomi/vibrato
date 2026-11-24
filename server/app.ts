@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createFile, duplicate, findEnvFiles, FsError, grepFiles, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
-import { clearTmpImages, saveTmpImage, tmpStats } from './tmpFiles.js';
+import { clearTemp, saveTmpImage, tempStats } from './tmpFiles.js';
 import { CUSTOM_PROMPT_MAX, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
@@ -392,7 +392,7 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     return c.json(saved);
   });
 
-  // Images the app made for attaching (server/tmpFiles.ts): save one, count them, clear them (Settings > Temp files).
+  // Temp files (server/tmpFiles.ts): save a drawing to attach; count and clear tmp + attachments (Settings > Temp cleanup).
   app.post('/api/tmp/image', async (c) => {
     const body = await c.req.parseBody();
     const f = body['file'];
@@ -402,8 +402,8 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
       return c.json({ path: p, name: f.name, kind: 'image' as const, mime: f.type || 'image/png' });
     } catch (e) { return c.json({ error: (e as Error).message }, 400); }
   });
-  app.get('/api/tmp', async (c) => c.json(await tmpStats()));
-  app.delete('/api/tmp', async (c) => c.json(await clearTmpImages()));
+  app.get('/api/tmp', async (c) => c.json(await tempStats()));
+  app.delete('/api/tmp', async (c) => c.json(await clearTemp()));
 
   // Claude Code transcript history for a project directory.
   app.get('/api/history', async (c) => {
