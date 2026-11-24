@@ -6,7 +6,7 @@ import { ClaudeSession } from './agents/claude.js';
 import { CodexSession } from './agents/codex.js';
 import { which } from './shell.js';
 import { loadConfig, PORT } from './config.js';
-import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME, registerBrowserSession } from './browserMcp.js';
+import { browserMcpUrl, codexBrowserArgs, MCP_SERVER_NAME, registerBrowserSession, resetPlanLedger } from './browserMcp.js';
 import { claudeFlagSettings, codexConfigArgs, sanitizeExtensions } from './agentExtensions.js';
 import { runVerify, verifySettings } from './verify.js';
 import { changedFiles, repoRelative, snapshot, type Snapshot } from './turns.js';
@@ -119,6 +119,8 @@ interface Entry {
   /** Files the session's own edit tools touched this turn, and whether it ran shell commands (which can touch anything). */
   turnPaths: Set<string>;
   turnShell: boolean;
+  /** MCP token of the session (browserMcp.ts): its plan ledger is cleared when a new turn starts. */
+  planToken?: string;
   /** Sends are serialized: a message waiting for its snapshot must not be overtaken by the next one. */
   sendChain: Promise<void>;
   /** Origin of the message being sent through the remote host; stamped on the `user` event it produces. */
@@ -210,7 +212,8 @@ export class SessionRegistry {
     const groups = { browser: browserTools, plan: cfg?.alwaysPlan !== false };
     const mcp = groups.browser || groups.plan;
     // Each session's browser cursor and tabs carry its own colour and label ("Claude · project").
-    const browserToken = browserTools ? registerBrowserSession(`${cmd.agent === 'claude' ? 'Claude' : 'Codex'} · ${path.basename(cmd.cwd) || cmd.cwd}`) : undefined;
+    // The plan tools keep one turn's plan per token (browserMcp.ts plan ledger), so a plan-only session gets one too.
+    const browserToken = mcp ? registerBrowserSession(`${cmd.agent === 'claude' ? 'Claude' : 'Codex'} · ${path.basename(cmd.cwd) || cmd.cwd}`) : undefined;
     if (cmd.agent === 'claude') {
       const claudePath = await which('claude');
       if (!claudePath) throw new Error('claude CLI not found. Install it from Settings.');
@@ -224,7 +227,7 @@ export class SessionRegistry {
       throw new Error(`Unknown agent: ${cmd.agent}`);
     }
     if (this.closing || (ws && ws.readyState !== ws.OPEN)) throw new Error('Connection closed before session started');
-    const entry: Entry = { session, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set(ws ? [ws] : []), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, waiting: new Set(), touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false };
+    const entry: Entry = { session, buffer: new ReplayBuffer(), seq: 0, subscribers: new Set(ws ? [ws] : []), createdAt: Date.now(), lastActivity: Date.now(), running: false, closed: false, waiting: new Set(), touched: false, sendChain: Promise.resolve(), turnPaths: new Set(), turnShell: false, planToken: browserToken };
     this.entries.set(session.id, entry);
     session.onEvent((event) => this.broadcast(entry, event));
     this.changed();
@@ -275,6 +278,7 @@ export class SessionRegistry {
     const job = e.sendChain.then(async () => {
       if (e.closed || !this.entries.has(id)) throw new Error('Session closed');
       if (!e.running) {
+        resetPlanLedger(e.planToken);
         // Past the budget the send goes ahead without a base, and the snapshot's git process is killed
         // (or never started, if it was still queued behind another snapshot of the same repository).
         const abort = new AbortController();

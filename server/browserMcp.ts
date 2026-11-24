@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { WebSocket, WebSocketServer } from 'ws';
+import { emptyLedger, validatePlanSet, validatePlanStep, type PlanLedger } from '../web/src/lib/planSet.js';
 
 /**
  * Vibrato browser tools for agents, served as an MCP server over Streamable HTTP at /mcp/browser.
@@ -88,14 +89,31 @@ export const BROWSER_TOOLS = [
  * stays on step 1. A tool call always arrives, and the plan view reads it as that "✓ n." line.
  */
 export const PLAN_TOOLS = [
+  { name: 'plan_set', description: 'Vibrato checklist: set your plan ("진행 계획") as steps with ids that stay the same across revisions. Call it right after writing the plan, and again with every step whenever the plan changes (done steps kept, the same id for the same step, a new id for a new step, plus a reason). role (optional, for code changes): A lead, B spec, C design, D code, E verify.',
+    inputSchema: { type: 'object', properties: {
+      steps: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', description: 's1, s2, ...' }, role: { type: 'string', enum: ['A', 'B', 'C', 'D', 'E'] }, title: { type: 'string', description: "The step as an outcome, in the user's language." } }, required: ['id', 'title'] } },
+      reason: { type: 'string', description: 'Required from the second call in a turn: why the plan changes, one sentence.' } }, required: ['steps'] } },
   { name: 'plan_step', description: 'Vibrato checklist: mark one step of your plan ("진행 계획") done, the moment it ends and before the next step\'s first tool call. The user\'s checklist moves on this call; text you write between tool calls may not reach them. One call per step; skipped: true for a step you could not do (the note says why).',
-    inputSchema: { type: 'object', properties: { step: { type: 'number', description: 'Step number in your plan, from 1.' }, note: { type: 'string', description: "How it was done or what was found: one short sentence in the user's language." }, skipped: { type: 'boolean' } }, required: ['step', 'note'] } },
+    inputSchema: { type: 'object', properties: { step: { type: 'number', description: 'Step number in your plan, from 1.' }, id: { type: 'string', description: 'Step id from plan_set (instead of the number).' }, note: { type: 'string', description: "How it was done or what was found: one short sentence in the user's language." }, skipped: { type: 'boolean' } }, required: ['note'] } },
 ] as const;
-const PLAN_TOOL_INSTRUCTIONS = 'Vibrato checklist: when a step of your plan is done, call plan_step (step number, one sentence) right away, before the next step. The user watches the checklist move on these calls.';
+const PLAN_TOOL_INSTRUCTIONS = 'Vibrato checklist: after writing your plan, call plan_set with the same steps; when a step is done, call plan_step (step id or number, one sentence) right away, before the next step. The user watches the checklist move on these calls.';
 
 /** Which tool groups a session's MCP URL offers: browser tools (Settings > browser tools) and the plan checklist. */
 export interface ToolGroups { browser: boolean; plan: boolean }
 const BROWSER_ONLY: ToolGroups = { browser: true, plan: false };
+
+// ---------- plan ledger: one turn's plan per session token, so plan_set revisions follow the rules (web/src/lib/planSet.ts) ----------
+
+const ledgers = new Map<string, PlanLedger>();
+const NO_TOKEN = '-';
+/** A new turn starts with no plan. */
+export function resetPlanLedger(token: string | undefined) { ledgers.delete(token ?? NO_TOKEN); }
+const ledgerOf = (token: string | undefined) => ledgers.get(token ?? NO_TOKEN) ?? emptyLedger();
+function setLedger(token: string | undefined, l: PlanLedger) {
+  ledgers.delete(token ?? NO_TOKEN);
+  ledgers.set(token ?? NO_TOKEN, l);
+  if (ledgers.size > 500) ledgers.delete(ledgers.keys().next().value!);
+}
 
 export const BROWSER_INSTRUCTIONS = [
   'Vibrato in-app browser. When the user asks you to check, test or measure a web page ("실측", "브라우저로 확인", "playwright", QA of a local dev server), use these tools instead of launching your own browser: the user watches the same window, and their sign-ins (Google included) are already there.',
@@ -175,6 +193,7 @@ const instructionsOf = (g: ToolGroups) => [g.browser ? BROWSER_INSTRUCTIONS : ''
 /** One JSON-RPC message; null for notifications (no reply). `call` is injectable for tests. */
 export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<string, unknown>) => Promise<unknown>, session?: BrowserSession, groups: ToolGroups = BROWSER_ONLY): Promise<RpcReply | null> {
   const run = call ?? ((tool: string, args: Record<string, unknown>) => callHost(tool, args, session));
+  const token = session?.key;
   const id = msg.id ?? null;
   const ok = (result: unknown): RpcReply => ({ jsonrpc: '2.0', id, result });
   const fail = (code: number, message: string): RpcReply => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -193,10 +212,17 @@ export async function handleRpc(msg: Rpc, call?: (tool: string, args: Record<str
       if (!toolsOf(groups).some((t) => t.name === name)) return fail(-32602, `Unknown tool: ${name}`);
       const args = (msg.params?.arguments && typeof msg.params.arguments === 'object' ? msg.params.arguments : {}) as Record<string, unknown>;
       // The checklist is read off the call itself (web/src/lib/textPlan.ts planStepMark); nothing to run.
+      if (name === 'plan_set') {
+        const r = validatePlanSet(ledgerOf(token), args);
+        if (!r.ok) return ok({ content: [{ type: 'text', text: r.error }], isError: true });
+        setLedger(token, r.ledger);
+        return ok({ content: [{ type: 'text', text: `Plan set: ${r.value.steps.length} step${r.value.steps.length > 1 ? 's' : ''}. Close each with plan_step as it ends.` }] });
+      }
       if (name === 'plan_step') {
-        const step = Number(args.step);
-        if (!Number.isInteger(step) || step < 1) return ok({ content: [{ type: 'text', text: 'step must be the step number in your plan, from 1.' }], isError: true });
-        return ok({ content: [{ type: 'text', text: `Step ${step} ${args.skipped ? 'closed as not done' : 'checked'}. Carry on with the next step.` }] });
+        const r = validatePlanStep(ledgerOf(token), args);
+        if (!r.ok) return ok({ content: [{ type: 'text', text: r.error }], isError: true });
+        setLedger(token, r.ledger);
+        return ok({ content: [{ type: 'text', text: `Step ${r.value} ${args.skipped ? 'closed as not done' : 'checked'}. Carry on with the next step.` }] });
       }
       try {
         const content = await run(name, args);

@@ -15,13 +15,14 @@ Every request, questions and one-line changes included, goes: plan, then each st
    1. <step>
    2. <step>
    If you also have a task list tool (TaskCreate / TaskUpdate or TodoWrite in Claude Code, update_plan in Codex), keep it in step with the same steps.
+   If you have the plan_set tool (Vibrato), call it right after writing the plan with the same steps (ids s1, s2, ...): the checklist is built from it. For a request that changes code, give each step the role of its work (A lead: reading and asking, B spec check, C design check, D code, E verify) and tag the written steps the same way ("2. [D] 버튼 수정"); a question needs no roles.
 2. ONE ✓ LINE PER STEP. Work the steps in order. The moment a step is done, write one line in exactly this form before starting the next:
    ✓ <step number>. <how it was done or what was found, one short sentence>
    Every step gets its own line, reading and investigating steps included. Never skip a number, never merge several steps into one line; when several finish together, write one line for each. A step you could not do still gets its line: ✓ <n>. Not done: <why>.
    The checklist moves only when a step is closed. Close it right when the step ends, before the next step's first tool call; never save ✓ lines up for the end, or the user watches step 1 spin until everything is over.
    If you have the plan_step tool (Vibrato), close each step by calling it (step number, the same one sentence): text written between tool calls does not always reach the user, the call always does, and it counts as the ✓ line.
 3. RESULT LAST. End the reply with "결과:" (or "Result:" in English) and the outcome. The result must stand on its own, since it is often all the user reads: gather what every step found, changed, verified or left undone, not just the last step. One line when there is one outcome; when several steps produced something the user needs, one short bullet each under the result line; the full answer under it when the request asked for an explanation, a summary or a report. Never point back at earlier text ("see above").
-4. CHANGES. If the user adds or changes something while you work, write the updated plan the same way, then carry on.
+4. CHANGES. If the user adds or changes something while you work, write the updated plan the same way, then carry on. With plan_set, call it again with every step (done ones kept, the same id for the same step, a new id for a new step) and a reason.
 
 Before you finish, check: the plan is at the top, every step number has its ✓ line, and the reply ends with a result that covers every step's outcome.`;
 

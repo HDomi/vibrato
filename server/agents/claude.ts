@@ -5,6 +5,7 @@ import { query, type HookJSONOutput, type HookInput, type Options, type Permissi
 import { saveToolImage } from '../attachments.js';
 import { PlanProgress, planGap } from '../planGuard.js';
 import { isPlanStepTool, planStepMark } from '../../web/src/lib/textPlan.js';
+import { isPlanSetTool, planSetInput, planSetText, withStepNumber, type PlanSetStep } from '../../web/src/lib/planSet.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
 import { MCP_SERVER_NAME } from '../browserMcp.js';
 import { tokenSum, turnCost } from './turnCost.js';
@@ -16,7 +17,7 @@ import { homedir } from 'node:os';
 
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 /** Tools that are housekeeping, not work on a step: they do not count toward the plan progress reminder. */
-const SILENT_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'mcp__vibrato__plan_step']);
+const SILENT_TOOLS = new Set(['ToolSearch', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'mcp__vibrato__plan_step', 'mcp__vibrato__plan_set']);
 
 interface Pending {
   kind: 'approval' | 'question';
@@ -93,6 +94,8 @@ export class ClaudeSession implements AgentSession {
   private turnTexts: string[] = [];
   /** Tool calls since the last ✓ line, for the mid-turn reminder to close a finished step (planGuard.ts). */
   private progress = new PlanProgress();
+  /** The turn's plan from plan_set (main thread): plan_step ids map to its step numbers. */
+  private turnPlan: PlanSetStep[] = [];
 
   constructor(private opts: ClaudeSessionOptions) {
     this.cwd = opts.cwd;
@@ -242,8 +245,10 @@ export class ClaudeSession implements AgentSession {
           else if (b.type === 'thinking') blocks.push({ type: 'thinking', text: String(b.thinking ?? '') });
           else if (b.type === 'tool_use') {
             blocks.push({ type: 'tool_use', id: String(b.id), name: String(b.name), input: b.input });
-            // A plan_step call is the "✓ n." line it stands for, for the plan checks.
-            const mark = !m.parent_tool_use_id && isPlanStepTool(String(b.name)) ? planStepMark(b.input) : null;
+            // A plan_set call is the plan it stands for, and a plan_step call the "✓ n." line, for the plan checks.
+            const plan = !m.parent_tool_use_id && isPlanSetTool(String(b.name)) ? planSetInput(b.input) : null;
+            if (plan?.steps.length) { this.turnPlan = plan.steps; this.turnTexts.push(planSetText(plan.steps)); }
+            const mark = !m.parent_tool_use_id && isPlanStepTool(String(b.name)) ? planStepMark(withStepNumber(b.input, this.turnPlan)) : null;
             if (mark) this.turnTexts.push(mark);
             this.emit({ kind: 'tool.start', toolUseId: String(b.id), name: String(b.name), input: b.input, parent: m.parent_tool_use_id });
           }
@@ -442,7 +447,7 @@ export class ClaudeSession implements AgentSession {
     await this.relaunching;
     if (this.closed) throw new Error('Session closed');
     // A message sent while the agent works joins the turn in progress.
-    if (!this.running) { this.turnTexts = []; this.progress.reset(); }
+    if (!this.running) { this.turnTexts = []; this.progress.reset(); this.turnPlan = []; }
     this.running = true;
     this.emit({ kind: 'status', status: 'running' });
     this.input.push({ type: 'user', uuid: uuid as `${string}-${string}-${string}-${string}-${string}`, message: { role: 'user', content: content as never }, parent_tool_use_id: null });
