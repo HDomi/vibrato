@@ -210,6 +210,14 @@ export const api = {
     return req<Wallpaper>('/api/wallpaper/image', { method: 'POST', body: fd });
   },
   wallpaperUrl: (which: 'original' | 'blur', version: number) => `/api/wallpaper/${which}?v=${version}`,
+  /** Save an image the app made (the drawing pad) into <config>/tmp; it comes back as an attachment. */
+  tmpImage: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    return req<{ path: string; name: string; kind: 'image' | 'file'; mime?: string }>('/api/tmp/image', { method: 'POST', body: fd });
+  },
+  tmpStats: () => req<{ dir: string; files: number; bytes: number }>('/api/tmp'),
+  clearTmp: () => req<{ deleted: number; bytes: number }>('/api/tmp', { method: 'DELETE' }),
   attach: (files: File[]) => {
     const fd = new FormData();
     for (const f of files) fd.append('files', f, f.name);

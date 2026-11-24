@@ -23,6 +23,7 @@ const SHARED_TABS: { id: Tab; key: string }[] = [
   { id: 'formTypes', key: 'settings.tab.formTypes' },
   { id: 'agents', key: 'settings.tab.agents' },
   { id: 'permissions', key: 'settings.tab.permissions' },
+  { id: 'tmp', key: 'settings.tab.tmp' },
 ];
 /** The shared sections, each followed by the platform's own sections that go after it (platform/settings.tsx). */
 const TABS: { id: Tab; key: string; available?: () => boolean }[] = SHARED_TABS.flatMap((x) => [x, ...SETTINGS_TABS.filter((p) => p.after === x.id)]);
@@ -103,6 +104,42 @@ function GeneralSettings() {
         </div>
       )}
       <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.shortcuts')}</div>
+    </div>
+  );
+}
+
+/** Images the app saved for attaching (the drawing pad) in <config>/tmp: how many, and a button to delete them all. */
+function TmpSettings({ active }: { active: boolean }) {
+  useLang();
+  const [stats, setStats] = useState<{ dir: string; files: number; bytes: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const load = () => api.tmpStats().then(setStats).catch(() => setStats(null));
+  useEffect(() => { if (active) void load(); }, [active]);
+  const size = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+  const clear = async () => {
+    if (!stats?.files || !window.confirm(t('settings.tmp.confirm', { n: stats.files }))) return;
+    setBusy(true); setNote(null);
+    try {
+      const r = await api.clearTmp();
+      setNote(t('settings.tmp.cleared', { n: r.deleted, size: size(r.bytes) }));
+    } catch (e) { setNote(t('settings.tmp.failed', { reason: (e as Error).message })); }
+    setBusy(false);
+    void load();
+  };
+  return (
+    <div className="rounded-2xl border border-line bg-black/15 p-5 space-y-3" data-settings-tmp="">
+      <div className="font-medium">{t('settings.tab.tmp')}</div>
+      <div className="text-xs text-zinc-500 leading-relaxed">{t('settings.tmp.note')}</div>
+      <div className="text-sm text-zinc-300">
+        {stats ? (stats.files ? t('settings.tmp.count', { n: stats.files, size: size(stats.bytes) }) : t('settings.tmp.empty')) : '…'}
+        {stats && <div className="mt-0.5 font-mono text-[11px] text-zinc-500 break-all">{stats.dir}</div>}
+      </div>
+      <div className="flex items-center gap-3">
+        <button type="button" disabled={busy || !stats?.files} onClick={() => void clear()} data-tmp-clear=""
+          className="rounded-full bg-red-500/15 text-red-200 hover:bg-red-500/25 text-xs px-4 py-1.5 transition-colors disabled:opacity-40">{t('settings.tmp.clear')}</button>
+        {note && <span className="text-xs text-zinc-400">{note}</span>}
+      </div>
     </div>
   );
 }
@@ -196,6 +233,7 @@ export default function ToolsPanel({ onClose, focusTab, focusFormTypes }: Props)
             <div className={tab === 'formTypes' ? '' : 'hidden'}><FormTypesSettings focus={focusFormTypes} /></div>
             {SETTINGS_TABS.map((x) => <div key={x.id} className={tab === x.id ? '' : 'hidden'}>{x.render({ focus: focusTab === x.id })}</div>)}
             <div className={tab === 'permissions' ? '' : 'hidden'}><PermissionsSettings active={tab === 'permissions'} /></div>
+            <div className={tab === 'tmp' ? '' : 'hidden'}><TmpSettings active={tab === 'tmp'} /></div>
             <div className={tab === 'agents' ? 'space-y-4' : 'hidden'}>
               {!info && <div className="text-sm text-zinc-500">{t('settings.detecting')}</div>}
               {info?.tools.map((tool) => (

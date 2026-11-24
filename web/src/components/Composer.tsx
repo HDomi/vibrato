@@ -281,7 +281,11 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
           <button className="shrink-0 rounded-full bg-selected hover:bg-white text-on-selected font-medium text-xs px-4 py-1.5 transition-colors disabled:opacity-40" disabled={disabled || uploading || (!text.trim() && !attachments.length)} onClick={submit}>{running ? t('composer.queue') : t('composer.send')}</button>
         </div>
       </div>
-      {drawOpen && <DrawDialog onClose={() => setDrawOpen(false)} onInsert={(file) => void addFiles([file])} />}
+      {drawOpen && <DrawDialog onClose={() => setDrawOpen(false)} onInsert={async (file) => {
+        // Saved in <config>/tmp (Settings > Temp files clears it), then attached like any picture; sending carries it.
+        const att = await api.tmpImage(file);
+        setAttachments((a) => mergeAttachments(a, [att]));
+      }} />}
       {formOpen && (
         <PromptFormDialog cwd={cwd ?? null} agent={agent} draftKey={draftKey} running={!!running} onClose={() => setFormOpen(false)}
           onSend={(body, atts) => onSend(body, atts)} onInsert={insertText}

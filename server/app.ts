@@ -3,6 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createFile, duplicate, findEnvFiles, FsError, grepFiles, homeInfo, listDir, mkdir, rawFile, readText, rename, resolvePath, searchFiles, statPath, transfer, trash, writeText } from './fs.js';
+import { clearTmpImages, saveTmpImage, tmpStats } from './tmpFiles.js';
 import { CUSTOM_PROMPT_MAX, loadConfig, PORT, saveConfig, withConfigLock } from './config.js';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
@@ -58,12 +59,13 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
   app.use('*', async (c, next) => {
     const reason = rejectReason({ host: c.req.header('host'), origin: c.req.header('origin'), secFetchSite: c.req.header('sec-fetch-site') }, port);
     if (reason) return c.json({ error: `Forbidden (${reason})`, code: 'FORBIDDEN' }, 403);
-    if (['POST', 'PATCH', 'PUT'].includes(c.req.method) && c.req.path !== '/api/attach' && c.req.path !== '/api/wallpaper/image' && !/^application\/json(?:;|$)/i.test(c.req.header('content-type') ?? '')) return c.json({ error: 'JSON body required', code: 'BAD_REQUEST' }, 415);
+    if (['POST', 'PATCH', 'PUT'].includes(c.req.method) && c.req.path !== '/api/attach' && c.req.path !== '/api/tmp/image' && c.req.path !== '/api/wallpaper/image' && !/^application\/json(?:;|$)/i.test(c.req.header('content-type') ?? '')) return c.json({ error: 'JSON body required', code: 'BAD_REQUEST' }, 415);
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
     if (c.res.headers.get('content-type')?.includes('text/html') && !c.res.headers.has('content-security-policy')) c.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
   });
   app.use('/api/attach', bodyLimit({ maxSize: 32 * 1024 * 1024 }));
+  app.use('/api/tmp/image', bodyLimit({ maxSize: 32 * 1024 * 1024 }));
   app.use('/api/fs/text', bodyLimit({ maxSize: 16 * 1024 * 1024 }));
   app.use('/api/export/zip', bodyLimit({ maxSize: 96 * 1024 * 1024 }));
   app.use('/api/image/write', bodyLimit({ maxSize: 128 * 1024 * 1024 }));
@@ -389,6 +391,19 @@ export function createApp(registry?: SessionRegistry, port = PORT, scheduler?: S
     }
     return c.json(saved);
   });
+
+  // Images the app made for attaching (server/tmpFiles.ts): save one, count them, clear them (Settings > Temp files).
+  app.post('/api/tmp/image', async (c) => {
+    const body = await c.req.parseBody();
+    const f = body['file'];
+    if (!(f instanceof File)) return c.json({ error: 'Expected a file' }, 400);
+    try {
+      const p = await saveTmpImage(f);
+      return c.json({ path: p, name: f.name, kind: 'image' as const, mime: f.type || 'image/png' });
+    } catch (e) { return c.json({ error: (e as Error).message }, 400); }
+  });
+  app.get('/api/tmp', async (c) => c.json(await tmpStats()));
+  app.delete('/api/tmp', async (c) => c.json(await clearTmpImages()));
 
   // Claude Code transcript history for a project directory.
   app.get('/api/history', async (c) => {

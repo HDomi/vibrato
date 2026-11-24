@@ -31,10 +31,10 @@ const ICON: Record<DrawTool, ReactNode> = {
 };
 
 /**
- * "Draw & insert": a sketch pad over the whole app (pencil, eraser, four outline shapes, a colour). Insert hands the
- * drawing to the composer as a PNG attachment; X closes without inserting.
+ * "Draw & insert": a sketch pad over the whole app (pencil, eraser, four outline shapes, a colour). "Insert as picture"
+ * in the footer saves the drawing as a PNG in the tmp folder and attaches it to the composer; X closes without inserting.
  */
-export default function DrawDialog({ onClose, onInsert }: { onClose: () => void; onInsert: (file: File) => void }) {
+export default function DrawDialog({ onClose, onInsert }: { onClose: () => void; /** Saves the picture and attaches it; a rejection keeps the pad open with the reason. */ onInsert: (file: File) => Promise<void> | void }) {
   useLang();
   const [tool, setTool] = useState<DrawTool>('pencil');
   const [color, setColor] = useState('#111827');
@@ -120,13 +120,21 @@ export default function DrawDialog({ onClose, onInsert }: { onClose: () => void;
     setDirty(true);
   };
 
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const insert = () => {
-    paper.current?.toBlob((blob) => {
-      if (!blob) return;
+    setSaving(true); setError(null);
+    paper.current?.toBlob(async (blob) => {
+      if (!blob) { setSaving(false); return; }
       const d = new Date(), two = (n: number) => String(n).padStart(2, '0');
       const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
-      onInsert(new File([blob], `drawing-${stamp}.png`, { type: 'image/png' }));
-      onClose();
+      try {
+        await onInsert(new File([blob], `drawing-${stamp}.png`, { type: 'image/png' }));
+        onClose();
+      } catch (e) {
+        setError(t('draw.saveFailed', { reason: (e as Error).message }));
+        setSaving(false);
+      }
     }, 'image/png');
   };
 
@@ -157,14 +165,17 @@ export default function DrawDialog({ onClose, onInsert }: { onClose: () => void;
               className="w-8 h-8 rounded-md border border-white/15 bg-transparent p-0.5 cursor-pointer" />
             <span className="font-mono text-[11px] uppercase">{color}</span>
           </label>
-          <div className="flex-1" />
-          <button type="button" disabled={!dirty} onClick={insert} data-draw-insert=""
-            className="rounded-full bg-selected hover:bg-white text-on-selected font-medium text-xs px-4 py-1.5 transition-colors disabled:opacity-40">{t('draw.insert')}</button>
         </div>
         <div ref={box} className="relative flex-1 min-h-0 m-3 rounded-lg overflow-hidden bg-white">
           <canvas ref={paper} className="absolute inset-0 w-full h-full" />
           <canvas ref={preview} className={`absolute inset-0 w-full h-full touch-none ${tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair'}`}
             onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} data-draw-canvas="" />
+        </div>
+        <div className="flex items-center gap-3 px-4 h-14 shrink-0 border-t border-white/10">
+          {error && <span className="text-red-300 truncate">{error}</span>}
+          <div className="flex-1" />
+          <button type="button" disabled={!dirty || saving} onClick={insert} data-draw-insert=""
+            className="rounded-full bg-selected hover:bg-white text-on-selected font-medium text-xs px-4 py-1.5 transition-colors disabled:opacity-40">{saving ? t('draw.saving') : t('draw.insert')}</button>
         </div>
       </div>
     </div>,
