@@ -7,6 +7,7 @@ import Icon from './Icon';
 import { useHostClients, useRemoteState, useRemoteUnread } from '../lib/remote';
 import { useScheduleCount } from '../lib/scheduleCount';
 import { PLATFORM } from '../platform';
+import { useHiddenUsage } from '../lib/usageVisibility';
 
 export type ViewMode = 'vibe' | 'agent' | 'tools' | 'schedule' | 'remote';
 export const VIEW_ORDER: ViewMode[] = [...PLATFORM.views];
@@ -135,6 +136,10 @@ function ModeTabs({ mode, onMode }: { mode: ViewMode; onMode: (m: ViewMode) => v
 export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }: Props) {
   useLang();
   const { usage: u, loading, error: loadError, forecast } = useUsage();
+  // Settings > Agent CLIs > "Show status": a hidden agent's chips go, the rest stay flush right.
+  const hidden = useHiddenUsage();
+  const showClaude = !hidden.includes('claude');
+  const showCodex = !hidden.includes('codex');
   const [fullScreen, setFullScreen] = useState(false);
   useEffect(() => window.vibe?.onFullScreen?.(setFullScreen), []);
   const windowButtons = typeof window !== 'undefined' && !!window.vibe?.isElectron && PLATFORM.windowButtons && !fullScreen;
@@ -165,12 +170,20 @@ export default function UsageBar({ mode, onMode, onPickFolder, onOpenSettings }:
         )}
       </div>
       <div className="min-w-0 flex items-center justify-end gap-1.5 pr-[42px]">
-        <UsageChip agent="claude" label="5h" win={u?.claude?.fiveHour ?? null} error={claudeError} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
-        <UsageChip agent="claude" label={t('usage.week')} win={u?.claude?.weekly ?? null} error={claudeError} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
-        {u?.claude?.model && <UsageChip agent="claude" label={u.claude.model.name.slice(0, 5)} win={u.claude.model} loading={loading} />}
-        <span className="w-2.5 shrink-0" aria-hidden="true" />
-        <UsageChip agent="codex" label="5h" win={u?.codex?.fiveHour ?? null} error={codexError} loading={loading} empty={forecast('codex.fiveHour', u?.codex?.fiveHour ?? null)} />
-        <UsageChip agent="codex" label={t('usage.week')} win={u?.codex?.weekly ?? null} error={codexError} loading={loading} empty={forecast('codex.weekly', u?.codex?.weekly ?? null)} />
+        {showClaude && (
+          <>
+            <UsageChip agent="claude" label="5h" win={u?.claude?.fiveHour ?? null} error={claudeError} loading={loading} empty={forecast('claude.fiveHour', u?.claude?.fiveHour ?? null)} />
+            <UsageChip agent="claude" label={t('usage.week')} win={u?.claude?.weekly ?? null} error={claudeError} loading={loading} empty={forecast('claude.weekly', u?.claude?.weekly ?? null)} />
+            {u?.claude?.model && <UsageChip agent="claude" label={u.claude.model.name.slice(0, 5)} win={u.claude.model} loading={loading} />}
+          </>
+        )}
+        {showClaude && showCodex && <span className="w-2.5 shrink-0" aria-hidden="true" data-usage-gap="" />}
+        {showCodex && (
+          <>
+            <UsageChip agent="codex" label="5h" win={u?.codex?.fiveHour ?? null} error={codexError} loading={loading} empty={forecast('codex.fiveHour', u?.codex?.fiveHour ?? null)} />
+            <UsageChip agent="codex" label={t('usage.week')} win={u?.codex?.weekly ?? null} error={codexError} loading={loading} empty={forecast('codex.weekly', u?.codex?.weekly ?? null)} />
+          </>
+        )}
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import AgentDefaultsSettings from './AgentDefaultsSettings';
 import PermissionsSettings from './PermissionsSettings';
 import AgentExtensionsSettings from './AgentExtensionsSettings';
 import { UpdateBadge } from './UpdatePanel';
+import { setUsageVisible, useHiddenUsage, type UsageAgent } from '../lib/usageVisibility';
 import { PLATFORM } from '../platform';
 import { SETTINGS_TABS } from '../platform/settings';
 
@@ -197,6 +198,7 @@ function CustomPromptSettings() {
 
 export default function ToolsPanel({ onClose, focusTab, focusFormTypes }: Props) {
   useLang();
+  const hiddenUsage = useHiddenUsage();
   const [info, setInfo] = useState<ToolsInfo | null>(null);
   const [log, setLog] = useState<{ line: string; err: boolean }[]>([]);
   const [running, setRunning] = useState<string | null>(null);
@@ -277,6 +279,12 @@ export default function ToolsPanel({ onClose, focusTab, focusFormTypes }: Props)
                       <span className="text-xs text-zinc-500">{t('settings.notInstalled')}</span>
                     )}
                     <div className="flex-1" />
+                    {(tool.id === 'claude' || tool.id === 'codex') && (
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none" title={t('settings.showStatusHint')} data-show-status={tool.id}>
+                        <input type="checkbox" checked={!hiddenUsage.includes(tool.id)} onChange={(e) => setUsageVisible(tool.id as UsageAgent, e.target.checked)} />
+                        {t('settings.showStatus')}
+                      </label>
+                    )}
                     {tool.installed && (
                       <button disabled={!!running} className="text-xs rounded-full bg-fill-2 hover:bg-fill-3 px-3 py-1 disabled:opacity-40 transition-colors"
                         onClick={() => run(tool.id, 'update')}>{t('settings.update')}</button>
