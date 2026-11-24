@@ -6,6 +6,9 @@ import { saveToolImage } from '../attachments.js';
 import { PlanProgress, planGap } from '../planGuard.js';
 import { isPlanStepTool, planStepMark } from '../../web/src/lib/textPlan.js';
 import { isPlanSetTool, planSetInput, planSetText, withStepNumber, type PlanSetStep } from '../../web/src/lib/planSet.js';
+import { roleOfTool } from '../../web/src/lib/roles.js';
+import { roleTag } from '../../web/src/lib/planDiff.js';
+import { textPlan } from '../../web/src/lib/textPlan.js';
 import { PLAN_REMINDER } from '../planInstructions.js';
 import { MCP_SERVER_NAME } from '../browserMcp.js';
 import { tokenSum, turnCost } from './turnCost.js';
@@ -96,6 +99,8 @@ export class ClaudeSession implements AgentSession {
   private progress = new PlanProgress();
   /** The turn's plan from plan_set (main thread): plan_step ids map to its step numbers. */
   private turnPlan: PlanSetStep[] = [];
+  /** Roles of the turn's main-thread tool calls (web/src/lib/roles.ts), for the verification check. */
+  private turnRoles = new Set<string>();
 
   constructor(private opts: ClaudeSessionOptions) {
     this.cwd = opts.cwd;
@@ -308,7 +313,9 @@ export class ClaudeSession implements AgentSession {
   private async planStop(input: HookInput): Promise<HookJSONOutput> {
     if (input.hook_event_name !== 'Stop' || input.stop_hook_active || !this.turnTexts.length) return {};
     const gap = planGap(this.turnTexts);
-    return gap ? { decision: 'block', reason: gap } : {};
+    if (gap) return { decision: 'block', reason: gap };
+    const unverified = verificationGap(this.turnPlan, textPlan(this.turnTexts), this.turnRoles);
+    return unverified ? { decision: 'block', reason: unverified } : {};
   }
 
   /**
@@ -317,6 +324,8 @@ export class ClaudeSession implements AgentSession {
    */
   private async planProgress(input: HookInput): Promise<HookJSONOutput> {
     if (input.hook_event_name !== 'PostToolUse' || input.agent_id || SILENT_TOOLS.has(input.tool_name)) return {};
+    const role = roleOfTool({ name: input.tool_name, input: input.tool_input });
+    if (role) this.turnRoles.add(role);
     const nudge = this.progress.tool(this.turnTexts);
     return nudge ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: nudge } } : {};
   }
@@ -447,7 +456,7 @@ export class ClaudeSession implements AgentSession {
     await this.relaunching;
     if (this.closed) throw new Error('Session closed');
     // A message sent while the agent works joins the turn in progress.
-    if (!this.running) { this.turnTexts = []; this.progress.reset(); this.turnPlan = []; }
+    if (!this.running) { this.turnTexts = []; this.progress.reset(); this.turnPlan = []; this.turnRoles = new Set(); }
     this.running = true;
     this.emit({ kind: 'status', status: 'running' });
     this.input.push({ type: 'user', uuid: uuid as `${string}-${string}-${string}-${string}-${string}`, message: { role: 'user', content: content as never }, parent_tool_use_id: null });
@@ -566,4 +575,14 @@ async function fetchClaudeModels(claudePath: string): Promise<{ id: string; name
   } finally {
     try { q.close(); } catch { /* ignore */ }
   }
+}
+
+/**
+ * A turn that edited files must end with verification: a check that ran (E work), or an E step in its plan (closed as
+ * done, or as not done with the reason, which the plan check already demands). Null when it did or edited nothing.
+ */
+export function verificationGap(plan: PlanSetStep[], written: string[] | null, roles: Set<string>): string | null {
+  if (!roles.has('D') || roles.has('E')) return null;
+  if (plan.some((s) => s.role === 'E') || (written ?? []).some((t) => roleTag(t).role === 'E')) return null;
+  return 'Vibrato plan check: this turn changed files but has no verification. Add an E step (call plan_set again with every step and a reason), then verify (run the checks: tests, type check, or the in-app browser) and close it with plan_step, or close it with skipped: true and why verification is not needed. Then write the result again. Do not redo the work.';
 }

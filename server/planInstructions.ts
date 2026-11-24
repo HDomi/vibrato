@@ -24,6 +24,8 @@ Every request, questions and one-line changes included, goes: plan, then each st
 3. RESULT LAST. End the reply with "결과:" (or "Result:" in English) and the outcome. The result must stand on its own, since it is often all the user reads: gather what every step found, changed, verified or left undone, not just the last step. One line when there is one outcome; when several steps produced something the user needs, one short bullet each under the result line; the full answer under it when the request asked for an explanation, a summary or a report. Never point back at earlier text ("see above").
 4. CHANGES. If the user adds or changes something while you work, write the updated plan the same way, then carry on. With plan_set, call it again with every step (done ones kept, the same id for the same step, a new id for a new step) and a reason.
 
+5. VERIFY. A turn that changes files ends with a verification step (role E): run the checks that fit (tests, type check, the in-app browser). If none applies, close that step as not done with the reason.
+
 Before you finish, check: the plan is at the top, every step number has its ✓ line, and the reply ends with a result that covers every step's outcome.`;
 
 /** Repeated with every message (Claude: UserPromptSubmit hook), so the protocol does not fade in a long session. */
