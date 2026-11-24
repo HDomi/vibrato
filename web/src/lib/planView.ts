@@ -3,6 +3,8 @@ import { isInjected, liveTasks, todosFromInput, type ChatItem } from './chatStor
 import { codePathCandidate } from './localPath';
 import { doneMarks, isPlanStepTool, mergedPlan, planIn, planStepMark, resultOf, stepEntries } from './textPlan';
 import { isAbsPath, joinPath } from './paths';
+import { isPlanSetTool, planSetInput, type PlanSetStep, type Role } from './planSet';
+import { diffPlans, matchTextPlans, roleTag, type PlanChange } from './planDiff';
 
 export { doneMarks, textPlan } from './textPlan';
 
@@ -86,7 +88,18 @@ export interface PlanStep {
   /** First and last timed item filed under it (server ms). */
   startedAt?: number;
   endedAt?: number;
+  /** plan_set step id: the same step across plan revisions. */
+  id?: string;
+  /** The role the plan gave it (plan_set, or a "[C]" tag in a written plan); see roles.ts for the rest. */
+  role?: Role | null;
+  /** The role was read off the work, not declared. */
+  roleGuessed?: boolean;
+  /** Taken out of the plan by a revision (the reason given), or left out of a rewritten written plan after it was done. */
+  removed?: { reason: string | null; dropped?: boolean };
 }
+
+/** A plan revision: where it happened, why, and what changed (guessed for a plan written only as text). */
+export interface PlanRevision { itemId: string; n: number; reason: string | null; changes: PlanChange[]; guessed: boolean }
 
 /** One account of a step: the plan title it had in that round, what was done, and the round's headline. */
 export interface PlanEntry {
@@ -103,6 +116,14 @@ export interface PlanTurn {
   user: Item<'user'> | null;
   /** Messages the user added while the agent was still on this request: part of it, not new requests. */
   additions: string[];
+  /** The same, with the item each came in (also filed under the step in progress then, so it shows in place). */
+  additionItems: { text: string; itemId: string }[];
+  /** The plan came from plan_set: steps keep their ids across revisions. */
+  structured?: boolean;
+  /** Plan changes after the first plan, in order. */
+  revisions: PlanRevision[];
+  /** Steps a revision took out (struck through in the view). */
+  removed: PlanStep[];
   /** When the first timed item of the turn happened (server ms); absent for turns loaded from saved history. */
   startedAt?: number;
   /** Work before the first checklist (reading around, asking), or the whole turn when there is no checklist. */
@@ -290,7 +311,7 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
   };
   let at = 0;
   const start = (user: Item<'user'> | null, id: string) => {
-    turn = { id, user, additions: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, hasResult: false, commits: [], pushed: false, created: [], mentioned: [] };
+    turn = { id, user, additions: [], additionItems: [], revisions: [], removed: [], before: group('before', ''), steps: [], after: group('after', ''), hasPlan: false, result: null, changes: [], verify: [], pending: [], texts: [], textIds: [], answer: null, answerFull: false, hasResult: false, commits: [], pushed: false, created: [], mentioned: [] };
     turns.push(turn);
     turnFrom.set(turn, at);
     active = null;
@@ -303,7 +324,13 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     if (it.kind === 'user' && !isInjected(it)) {
       // Assigned inside start(), which the compiler does not follow.
       const cur = turn as PlanTurn | null;
-      if (it.followUp && cur?.user && !cur.result) { cur.additions.push(it.text); continue; }
+      if (it.followUp && cur?.user && !cur.result) {
+        cur.additions.push(it.text);
+        cur.additionItems.push({ text: it.text, itemId: it.id });
+        const started = cur.steps.some((x) => x.status !== 'pending');
+        (active ?? (started ? cur.after : cur.before)).items.push(it);
+        continue;
+      }
       const t = start(it, it.id);
       const carried = [...tasks.values()].find((x) => x.status === 'in_progress');
       if (carried) { t.hasPlan = true; active = taskStep(t, carried); }
@@ -311,6 +338,53 @@ export function buildPlan(items: ChatItem[]): PlanTurn[] {
     }
     const t: PlanTurn = turn ?? start(null, `pre-${it.id}`);
     if ('at' in it && it.at && !t.startedAt) t.startedAt = it.at;
+    if (it.kind === 'tool' && isPlanSetTool(it.name)) {
+      const plan = !it.isError ? planSetInput(it.input) : null;
+      if (!plan?.steps.length) continue;
+      if (t.structured) {
+        const prev: PlanSetStep[] = t.steps.filter((x) => x.id).map((x) => ({ id: x.id!, title: x.content, ...(x.role ? { role: x.role } : {}) }));
+        t.revisions.push({ itemId: it.id, n: t.revisions.length + 1, reason: plan.reason ?? null, changes: diffPlans(prev, plan.steps), guessed: false });
+        // The marker sits where the change happened: under the step in progress then.
+        const started = t.steps.some((x) => x.status !== 'pending');
+        (active ?? (started ? t.after : t.before)).items.push(it);
+      }
+      t.hasPlan = true;
+      t.structured = true;
+      const byId = new Map(t.steps.filter((x) => x.id).map((x) => [x.id!, x]));
+      const kept = new Set(plan.steps.map((x) => x.id));
+      for (const old of byId.values()) if (!kept.has(old.id!) && old.status !== 'completed') { old.removed = { reason: plan.reason ?? null }; old.status = 'pending'; t.removed.push(old); }
+      const next = plan.steps.map((x) => {
+        const step = byId.get(x.id) ?? group(`set:${x.id}`, x.title);
+        step.id = x.id; step.content = x.title; step.role = x.role ?? null;
+        return step;
+      });
+      // A done step a revision left out stays (the server refuses that, but a saved session may have it).
+      for (const old of byId.values()) if (old.status === 'completed' && !kept.has(old.id!)) next.push(old);
+      t.steps = next;
+      const was: PlanStep | null = active;
+      active = t.steps.find((x) => x.status === 'in_progress') ?? t.steps.find((x) => x.status === 'pending') ?? null;
+      if (active) active.status = 'in_progress';
+      if (was && was !== active && was.status === 'in_progress') was.status = 'pending';
+      continue;
+    }
+    if (t.structured && it.kind === 'tool' && isPlanStepTool(it.name)) {
+      const i = (it.input ?? {}) as { id?: unknown; step?: unknown; note?: unknown; skipped?: unknown };
+      const step = typeof i.id === 'string' ? t.steps.find((x) => x.id === i.id) : t.steps[Number(i.step) - 1];
+      if (!step || it.isError) continue;
+      const note = typeof i.note === 'string' ? i.note.replace(/\s+/g, ' ').trim() : '';
+      step.entries.push({ title: step.content, note, detail: null, skipped: !!i.skipped, itemId: it.id });
+      step.note = note || null;
+      step.skipped = !!i.skipped;
+      step.status = 'completed';
+      const mark = planStepMark({ step: t.steps.indexOf(step) + 1, note, skipped: i.skipped });
+      if (mark) { t.texts.push(mark); t.textIds.push(it.id); }
+      if (active === step || !active) {
+        justDone = step;
+        active = t.steps.find((x) => x.status === 'in_progress' && x !== step) ?? t.steps.find((x) => x.status === 'pending') ?? null;
+        if (active) active.status = 'in_progress';
+      }
+      continue;
+    }
     if (it.kind === 'tool' && it.name === PLAN_TOOL) {
       const todos = todosFromInput(it.input);
       if (!todos) continue;
@@ -422,6 +496,8 @@ function applyTextPlan(t: PlanTurn) {
       fileTextSteps(t);
     }
   }
+  if (t.structured) { finishText(t, text); return; }
+  textRevisions(t);
   // "✓ n." lines are the step's account, whichever way the plan came; a step done again in later rounds has several.
   const entries = text.entries;
   t.steps.forEach((step, i) => {
@@ -439,12 +515,48 @@ function applyTextPlan(t: PlanTurn) {
   // its own "✓" line was skipped. Steps from the task tools carry their own status.
   const lastDone = t.steps.reduce((at, s, i) => (s.key.startsWith('text:') && s.status === 'completed' ? i : at), -1);
   t.steps.forEach((step, i) => { if (i < lastDone && step.key.startsWith('text:')) step.status = 'completed'; });
+  finishText(t, text);
+}
+
+function finishText(t: PlanTurn, text: TurnText) {
   const last = t.texts[t.texts.length - 1];
   const result = text.result;
   t.hasResult = !!result;
   // Without a plan the reply is the work itself (a report, an answer), so it is shown in full.
   t.answerFull = result ? result.full : !t.hasPlan && !!last?.trim();
   t.answer = result ? result.text : t.answerFull ? last.trim() : noteLine(last ?? null, 240);
+}
+
+/**
+ * A plan written only as text, rewritten in the same turn: matched to the plan before by role tag and title
+ * (planDiff.ts), so the view can mark what came and went. The steps themselves still merge by number.
+ */
+function textRevisions(t: PlanTurn) {
+  const plans: { plan: string[]; itemId: string }[] = [];
+  t.texts.forEach((text, i) => { const plan = planIn(text); if (plan) plans.push({ plan, itemId: t.textIds[i] }); });
+  for (let k = 1; k < plans.length; k++) {
+    const prev = plans[k - 1].plan;
+    const next = plans[k].plan;
+    const { match, removed } = matchTextPlans(prev, next);
+    const changes: PlanChange[] = [];
+    next.forEach((title, i) => {
+      const j = match[i];
+      if (j === null) changes.push({ kind: 'added', id: `t${i + 1}`, title: roleTag(title).title });
+      else if (roleTag(prev[j]).title !== roleTag(title).title) changes.push({ kind: 'renamed', id: `t${i + 1}`, from: roleTag(prev[j]).title, to: roleTag(title).title });
+    });
+    for (const j of removed) changes.push({ kind: 'removed', id: `t${j + 1}`, title: roleTag(prev[j]).title });
+    if (!changes.length) continue;
+    t.revisions.push({ itemId: plans[k].itemId, n: t.revisions.length + 1, reason: null, changes, guessed: true });
+    // A step that was done and is gone from the rewritten plan stays, as done.
+    const marks = doneMarks(t.texts.slice(0, t.textIds.indexOf(plans[k].itemId) + 1));
+    for (const j of removed) {
+      if (!marks.has(j + 1)) continue;
+      const step = group(`dropped:${k}:${j}`, roleTag(prev[j]).title);
+      step.status = 'completed';
+      step.removed = { reason: null, dropped: true };
+      t.removed.push(step);
+    }
+  }
 }
 
 /** First sentence-ish of a note, for the one-line summary under a step. */
