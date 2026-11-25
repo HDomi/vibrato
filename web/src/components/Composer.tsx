@@ -247,7 +247,7 @@ export default function Composer({ cwd, agent, disabled, running, mode, commands
         )}
         <textarea ref={ta} value={text} onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }} onPaste={onPaste}
           onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)} onClick={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)} onKeyUp={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
-          disabled={disabled} onKeyDown={onKeyDown}
+          disabled={disabled} onKeyDown={onKeyDown} data-composer-session={draftKey}
           placeholder={disabled ? t('composer.startFirst') : running ? t('composer.queueHint') : t('composer.placeholder')}
           className="w-full bg-transparent px-4 pt-3 pb-2 text-[14px] outline-none resize-none min-h-11" rows={1} />
         <div className="flex items-center gap-2 px-2 pb-2 whitespace-nowrap">

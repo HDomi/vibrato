@@ -451,6 +451,20 @@ function AppInner() {
 
   const rightTabs = [['files', t('app.tab.files')], ['preview', t('app.tab.preview')], ['terminal', t('app.tab.terminal')], ['git', t('app.tab.git')], ['run', t('app.tab.run')]] as const;
   const TAB_KEYS = ['1', '2', '3', '4', '5'];
+  /** The live session whose composer has focus, if the key event came from one. */
+  const composerSession = (target: EventTarget | null): ChatSession | null => {
+    const id = (target as HTMLElement | null)?.closest?.('[data-composer-session]')?.getAttribute('data-composer-session');
+    const s = id ? S.sessions[id] : undefined;
+    return s && s.status !== 'closed' ? s : null;
+  };
+  // ⌘T from a composer: a fresh session beside it with the same folder (its worktree shared), agent, mode and model.
+  const startLike = async (s: ChatSession) => {
+    try {
+      const id = await S.start(s.cwd, { agent: s.agent, permissionMode: s.permissionMode, model: s.model, worktree: s.worktree && { ...s.worktree, shared: true } });
+      focusSession.current(id);
+      setTimeout(() => window.dispatchEvent(new Event('vibe:focus-composer')), 50);
+    } catch (err) { window.alert((err as Error).message); }
+  };
   // Global keyboard shortcuts. Registered once; the handler always sees the latest state.
   const onGlobalKey = useEvent((e: KeyboardEvent) => {
     if (document.querySelector('[data-update-locked="true"]')) return;
@@ -467,6 +481,7 @@ function AppInner() {
     else if (k === 'j') { e.preventDefault(); setRightCollapsed((v) => !v); }
     else if (k === 'k') { e.preventDefault(); window.dispatchEvent(new Event('vibe:focus-composer')); }
     else if (k === 'f' && !e.shiftKey && !(e.target as HTMLElement)?.closest?.('[data-own-find]')) { e.preventDefault(); window.dispatchEvent(new Event('vibe:chat-search')); }
+    else if (k === 't' && !e.shiftKey && composerSession(e.target)) { e.preventDefault(); void startLike(composerSession(e.target)!); }
     else if (k === 'n' && !e.shiftKey) { e.preventDefault(); if (view === 'agent') setAgentActive('new'); else if (project) setActiveSession('new'); }
     else if (k === 'w') {
       e.preventDefault();
